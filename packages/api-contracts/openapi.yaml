@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: EruoFood AI API
+  version: 0.1.0
+  description: >
+    Contract-first REST API for EruoFood AI. This specification is the single
+    source of truth for the API surface; TypeScript (web) and Dart (mobile)
+    types are generated from it so clients and server never drift
+    (MASTER_PLAN.md §6.1). The foundation defines only cross-cutting/operational
+    endpoints — no business resources yet.
+  license:
+    name: Proprietary
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local (through the Nginx edge)
+  - url: https://api.eruofood.ai/v1
+    description: Production
+
+tags:
+  - name: Platform
+    description: Operational and health endpoints.
+
+paths:
+  /health:
+    get:
+      tags: [Platform]
+      operationId: getHealth
+      summary: Platform health/status
+      description: Returns liveness and build metadata for the API.
+      responses:
+        "200":
+          description: The platform is responding.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/SystemStatus"
+
+components:
+  schemas:
+    SystemStatus:
+      type: object
+      required: [status, service, version, environment, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+          example: EruoFood AI
+        version:
+          type: string
+          example: 0.1.0
+        environment:
+          type: string
+          example: local
+        timestamp:
+          type: string
+          format: date-time
+
+    # Standard error envelope (RFC 7807-aligned) — MASTER_PLAN.md §6.3.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: VALIDATION_FAILED
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object

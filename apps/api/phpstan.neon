@@ -1,0 +1,18 @@
+# EruoFood AI — static analysis (Larastan on top of PHPStan)
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 8
+    paths:
+        - app
+        - modules
+    excludePaths:
+        - bootstrap/cache
+        - storage
+    # Enforce architectural boundaries: the Domain layer must stay
+    # framework-agnostic. This is asserted by tests and reviewed in PRs;
+    # a custom rule can be added here once modules are populated.
+    checkModelProperties: true
+    checkOctaneCompatibility: false
+    reportUnmatchedIgnoredErrors: true

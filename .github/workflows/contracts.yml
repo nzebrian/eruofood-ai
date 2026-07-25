@@ -1,0 +1,37 @@
+name: CI · API Contracts (OpenAPI)
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["packages/api-contracts/**", ".github/workflows/contracts.yml"]
+  pull_request:
+    paths: ["packages/api-contracts/**", ".github/workflows/contracts.yml"]
+
+concurrency:
+  group: ci-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: packages/api-contracts
+
+jobs:
+  validate:
+    name: Lint spec · Generate types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Lint OpenAPI specification
+        run: npm run lint
+
+      - name: Generate TypeScript types (drift check)
+        run: npm run generate:ts

@@ -1,0 +1,25 @@
+# EruoFood AI — Dart/Flutter static analysis (enterprise-strict).
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    # Treat missing return types and unawaited futures as errors.
+    always_declare_return_types: error
+    unawaited_futures: error
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - build/**
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_final_locals: true
+    require_trailing_commas: true
+    avoid_print: true
+    sort_pub_dependencies: false
+    directives_ordering: true

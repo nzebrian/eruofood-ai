@@ -1,0 +1,40 @@
+{
+  "name": "EruoFood AI",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [8080, 5173, 5432, 6379, 8025],
+  "portsAttributes": {
+    "8080": { "label": "API (nginx)" },
+    "5173": { "label": "Web (Vite)" },
+    "8025": { "label": "Mailpit UI" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bmewburn.vscode-intelephense-client",
+        "xdebug.php-debug",
+        "EditorConfig.EditorConfig",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "dart-code.dart-code",
+        "dart-code.flutter",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": { "source.fixAll": "explicit" },
+        "[php]": { "editor.defaultFormatter": "bmewburn.vscode-intelephense-client" }
+      }
+    }
+  },
+  "postCreateCommand": "make install",
+  "remoteUser": "vscode"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@eruofood/api-contracts",
+  "private": true,
+  "version": "0.1.0",
+  "description": "EruoFood AI — OpenAPI contract and generated client types (source of truth).",
+  "type": "module",
+  "scripts": {
+    "lint": "redocly lint openapi.yaml",
+    "generate:ts": "openapi-typescript openapi.yaml -o generated/ts/schema.d.ts",
+    "preview": "redocly preview-docs openapi.yaml"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.25.0",
+    "openapi-typescript": "^7.4.1"
+  }
+}

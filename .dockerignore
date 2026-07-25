@@ -1,0 +1,19 @@
+# Keep build contexts small and reproducible
+**/.git
+**/.github
+**/node_modules
+**/vendor
+**/dist
+**/build
+**/.dart_tool
+apps/api/storage/logs/*
+apps/api/storage/framework/cache/*
+apps/mobile
+docs
+*.md
+!README.md
+.env
+.env.*
+!.env.example
+.docker-data
+coverage

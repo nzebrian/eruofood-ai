@@ -1,0 +1,53 @@
+name: CI · API (Laravel)
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["apps/api/**", ".github/workflows/ci-api.yml"]
+  pull_request:
+    paths: ["apps/api/**", ".github/workflows/ci-api.yml"]
+
+concurrency:
+  group: ci-api-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/api
+
+jobs:
+  quality:
+    name: Lint · Analyse · Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_pgsql, redis, intl, zip, bcmath, pcntl
+          coverage: xdebug
+          tools: composer:v2
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: apps/api/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Copy environment
+        run: cp .env.example .env && php artisan key:generate
+
+      - name: Coding standards (Pint)
+        run: composer run lint
+
+      - name: Static analysis (PHPStan/Larastan)
+        run: composer run analyse
+
+      - name: Tests (Pest) with coverage gate
+        run: composer run test:coverage
