@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 
 import '../../features/auth/auth_injection.dart';
+import '../../features/catalog/catalog_injection.dart';
 import '../config/app_config.dart';
 import '../network/api_client.dart';
 import '../storage/token_store.dart';
@@ -25,4 +26,5 @@ Future<void> configureDependencies() async {
 
   // Feature registrations.
   registerAuthFeature(sl);
+  registerCatalogFeature(sl);
 }

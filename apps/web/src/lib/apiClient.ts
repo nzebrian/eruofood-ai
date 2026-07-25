@@ -93,8 +93,33 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   return (body as ApiEnvelope<T>).data;
 }
 
+/** Like request(), but returns the whole envelope (keeps `meta` for lists). */
+async function requestEnvelope<T>(path: string, retry = true): Promise<T> {
+  const response = await fetch(`${config.apiBaseUrl}${path}`, {
+    headers: { Accept: 'application/json', ...authHeaders() },
+  });
+
+  if (response.status === 401 && retry && !path.startsWith('/auth/')) {
+    if (await tryRefresh()) {
+      return requestEnvelope<T>(path, false);
+    }
+  }
+
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const err = (body as { error?: ApiError } | null)?.error ?? {
+      code: 'UNKNOWN',
+      message: response.statusText,
+    };
+    throw new ApiRequestError(response.status, err);
+  }
+  return body as T;
+}
+
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
+  /** GET a paginated/enveloped response ({ data, meta }). */
+  getPage: <T>(path: string) => requestEnvelope<T>(path),
   post: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(payload ?? {}) }),
   put: <T>(path: string, payload?: unknown) =>

@@ -9,7 +9,8 @@
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10",
         "firebase/php-jwt": "^6.10",
-        "pragmarx/google2fa": "^8.0"
+        "pragmarx/google2fa": "^8.0",
+        "league/flysystem-aws-s3-v3": "^3.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -27,6 +28,7 @@
             "EruoFood\\Shared\\": "modules/Shared/src/",
             "EruoFood\\Platform\\": "modules/Platform/src/",
             "EruoFood\\Identity\\": "modules/Identity/src/",
+            "EruoFood\\Catalog\\": "modules/Catalog/src/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
         }
@@ -36,7 +38,8 @@
             "Tests\\": "tests/",
             "EruoFood\\Shared\\Tests\\": "modules/Shared/tests/",
             "EruoFood\\Platform\\Tests\\": "modules/Platform/tests/",
-            "EruoFood\\Identity\\Tests\\": "modules/Identity/tests/"
+            "EruoFood\\Identity\\Tests\\": "modules/Identity/tests/",
+            "EruoFood\\Catalog\\Tests\\": "modules/Catalog/tests/"
         }
     },
     "scripts": {

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.2.0
+  version: 0.3.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -28,6 +28,12 @@ tags:
     description: Active session (refresh-token) management.
   - name: Admin
     description: Administrative user & role management (RBAC).
+  - name: Foods
+    description: Nigerian food database — browse, search, detail.
+  - name: Recipes
+    description: Recipes — browse, detail, CRUD, reviews, favourites, versions.
+  - name: Catalog Admin
+    description: Admin management of foods, categories, and ingredients.
 
 security:
   - bearerAuth: []
@@ -453,6 +459,404 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/User" }
 
+  # ---- Catalog: categories & ingredients (public) --------------------------
+  /categories:
+    get:
+      tags: [Foods]
+      operationId: listCategories
+      summary: List food categories
+      security: []
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Category" } }
+
+  /ingredients:
+    get:
+      tags: [Foods]
+      operationId: searchIngredients
+      summary: Search ingredients
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+      responses:
+        "200":
+          description: Ingredients.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Ingredient" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+
+  # ---- Catalog: foods (public) --------------------------------------------
+  /foods:
+    get:
+      tags: [Foods]
+      operationId: searchFoods
+      summary: Browse/search the food database
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Free-text name search. }
+        - { name: category_id, in: query, schema: { type: string, format: uuid } }
+        - { name: region, in: query, schema: { type: string, enum: [north_central, north_east, north_west, south_east, south_south, south_west, nationwide] } }
+        - { name: state, in: query, schema: { type: string }, description: Nigerian state where the food is popular. }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [name, recent] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+      responses:
+        "200":
+          description: Paginated foods (summary shape).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/FoodSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+
+  /foods/{slug}:
+    get:
+      tags: [Foods]
+      operationId: getFood
+      summary: Food detail by slug
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Food detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Food" } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /foods/{foodId}/recipes:
+    get:
+      tags: [Recipes]
+      operationId: recipesForFood
+      summary: Recipes for a food
+      security: []
+      parameters:
+        - { name: foodId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Paginated recipes (summary).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/RecipeSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+
+  # ---- Catalog: recipes ----------------------------------------------------
+  /recipes:
+    get:
+      tags: [Recipes]
+      operationId: searchRecipes
+      summary: Browse/search recipes
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: food_id, in: query, schema: { type: string, format: uuid } }
+        - { name: difficulty, in: query, schema: { type: string, enum: [easy, medium, hard] } }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: max_minutes, in: query, schema: { type: integer } }
+        - { name: sort, in: query, schema: { type: string, enum: [recent, rating, quick] } }
+      responses:
+        "200":
+          description: Paginated recipes (summary).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/RecipeSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Recipes]
+      operationId: createRecipe
+      summary: Create a recipe (authenticated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecipeInput" }
+      responses:
+        "201":
+          description: Created recipe.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Recipe" } }
+
+  /recipes/{slug}:
+    get:
+      tags: [Recipes]
+      operationId: getRecipe
+      summary: Recipe detail by slug
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Recipe detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Recipe" } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /recipes/{id}:
+    put:
+      tags: [Recipes]
+      operationId: updateRecipe
+      summary: Update a recipe (owner or admin; bumps version)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecipeInput" }
+      responses:
+        "200":
+          description: Updated recipe.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Recipe" } }
+        "403": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Recipes]
+      operationId: deleteRecipe
+      summary: Delete a recipe (owner or admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+
+  /recipes/{id}/related:
+    get:
+      tags: [Recipes]
+      operationId: relatedRecipes
+      summary: Related recipes
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Related recipes (summary).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/RecipeSummary" } }
+
+  /recipes/{id}/reviews:
+    get:
+      tags: [Recipes]
+      operationId: listRecipeReviews
+      summary: List a recipe's reviews
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Paginated reviews.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/RecipeReview" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Recipes]
+      operationId: submitRecipeReview
+      summary: Submit/update a rating & review (authenticated)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, nullable: true }
+      responses:
+        "201":
+          description: Saved review.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/RecipeReview" } }
+
+  /recipes/{id}/versions:
+    get:
+      tags: [Recipes]
+      operationId: recipeVersions
+      summary: Recipe version history
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Version snapshots (newest first).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version: { type: integer }
+                        snapshot: { type: object, additionalProperties: true }
+                        created_at: { type: string, format: date-time }
+
+  # ---- Favourites (authenticated) -----------------------------------------
+  /me/favourites:
+    get:
+      tags: [Recipes]
+      operationId: listFavourites
+      summary: List the user's favourite recipes
+      responses:
+        "200":
+          description: Paginated favourite recipes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/RecipeSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+
+  /me/favourites/{recipeId}:
+    post:
+      tags: [Recipes]
+      operationId: addFavourite
+      summary: Favourite a recipe
+      parameters:
+        - { name: recipeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "201": { $ref: "#/components/responses/Message" }
+    delete:
+      tags: [Recipes]
+      operationId: removeFavourite
+      summary: Un-favourite a recipe
+      parameters:
+        - { name: recipeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Removed. }
+
+  # ---- Catalog admin (role:admin) -----------------------------------------
+  /admin/foods:
+    post:
+      tags: [Catalog Admin]
+      operationId: adminCreateFood
+      summary: Create a food
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FoodInput" }
+      responses:
+        "201":
+          description: Created food.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Food" } }
+
+  /admin/foods/{id}/publish:
+    post:
+      tags: [Catalog Admin]
+      operationId: adminPublishFood
+      summary: Publish a food
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Published food.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Food" } }
+
+  /admin/foods/{id}/images:
+    post:
+      tags: [Catalog Admin]
+      operationId: adminUploadFoodImage
+      summary: Upload a food image
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image: { type: string, format: binary }
+      responses:
+        "201":
+          description: Food with the new image.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Food" } }
+
+  /admin/categories:
+    post:
+      tags: [Catalog Admin]
+      operationId: adminCreateCategory
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type]
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [soup, swallow, rice, protein, snack, street_food, drink, dessert, breakfast, side_dish] }
+                description: { type: string, nullable: true }
+                sort_order: { type: integer }
+      responses:
+        "201":
+          description: Created category.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Category" } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -619,3 +1023,160 @@ components:
             details:
               type: array
               items: { type: object }
+
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        type: { type: string, enum: [soup, swallow, rice, protein, snack, street_food, drink, dessert, breakfast, side_dish] }
+        description: { type: string, nullable: true }
+        sort_order: { type: integer }
+        active: { type: boolean }
+
+    LocalName:
+      type: object
+      properties:
+        name: { type: string, example: Iyan }
+        language: { type: string, example: yoruba }
+
+    Nutrition:
+      type: object
+      properties:
+        calories: { type: integer }
+        protein_grams: { type: number }
+        carbohydrate_grams: { type: number }
+        fat_grams: { type: number }
+        fiber_grams: { type: number }
+        basis: { type: string, example: per_serving }
+
+    Ingredient:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        local_names: { type: array, items: { $ref: "#/components/schemas/LocalName" } }
+        nutrition_per_100g: { $ref: "#/components/schemas/Nutrition" }
+
+    FoodSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        category_id: { type: string, format: uuid }
+        region: { type: string }
+        tags: { type: array, items: { type: string } }
+        status: { type: string, enum: [draft, published, archived] }
+        primary_image: { type: string, nullable: true }
+
+    Food:
+      allOf:
+        - $ref: "#/components/schemas/FoodSummary"
+        - type: object
+          properties:
+            description: { type: string, nullable: true }
+            states: { type: array, items: { type: string } }
+            local_names: { type: array, items: { $ref: "#/components/schemas/LocalName" } }
+            nutrition: { $ref: "#/components/schemas/Nutrition" }
+            images: { type: array, items: { type: string } }
+            video_url: { type: string, nullable: true }
+
+    FoodInput:
+      type: object
+      required: [name, category_id, region]
+      properties:
+        name: { type: string }
+        category_id: { type: string, format: uuid }
+        region: { type: string, enum: [north_central, north_east, north_west, south_east, south_south, south_west, nationwide] }
+        description: { type: string, nullable: true }
+        states: { type: array, items: { type: string } }
+        local_names: { type: array, items: { $ref: "#/components/schemas/LocalName" } }
+        nutrition: { $ref: "#/components/schemas/Nutrition" }
+        tags: { type: array, items: { type: string } }
+
+    RecipeIngredientInput:
+      type: object
+      required: [name, amount, unit]
+      properties:
+        name: { type: string }
+        amount: { type: number }
+        unit: { type: string, enum: [g, kg, ml, l, cup, tbsp, tsp, piece, pinch, handful, wrap, to_taste] }
+        ingredient_id: { type: string, format: uuid, nullable: true }
+        note: { type: string, nullable: true }
+
+    CookingStepInput:
+      type: object
+      required: [order, instruction]
+      properties:
+        order: { type: integer }
+        instruction: { type: string }
+        duration_minutes: { type: integer, nullable: true }
+
+    RecipeInput:
+      type: object
+      required: [food_id, title, prep_time_minutes, cook_time_minutes, difficulty, serving_size, ingredients, steps]
+      properties:
+        food_id: { type: string, format: uuid }
+        title: { type: string }
+        summary: { type: string, nullable: true }
+        prep_time_minutes: { type: integer }
+        cook_time_minutes: { type: integer }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        serving_size: { type: integer }
+        ingredients: { type: array, items: { $ref: "#/components/schemas/RecipeIngredientInput" } }
+        steps: { type: array, items: { $ref: "#/components/schemas/CookingStepInput" } }
+        tips: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+
+    RecipeSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        food_id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        summary: { type: string, nullable: true }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        prep_time_minutes: { type: integer }
+        cook_time_minutes: { type: integer }
+        total_time_minutes: { type: integer }
+        serving_size: { type: integer }
+        rating_average: { type: number }
+        rating_count: { type: integer }
+        tags: { type: array, items: { type: string } }
+        status: { type: string, enum: [draft, published, archived] }
+
+    Recipe:
+      allOf:
+        - $ref: "#/components/schemas/RecipeSummary"
+        - type: object
+          properties:
+            author_id: { type: string, format: uuid }
+            version: { type: integer }
+            ingredients: { type: array, items: { $ref: "#/components/schemas/RecipeIngredientInput" } }
+            steps:
+              type: array
+              items:
+                type: object
+                properties:
+                  order: { type: integer }
+                  instruction: { type: string }
+                  image_url: { type: string, nullable: true }
+                  duration_minutes: { type: integer, nullable: true }
+            tips: { type: array, items: { type: string } }
+            related_recipe_ids: { type: array, items: { type: string, format: uuid } }
+            is_favourited: { type: boolean }
+
+    RecipeReview:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        recipe_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }

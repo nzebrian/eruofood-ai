@@ -40,9 +40,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // decoupled from any specific module's exception classes.
             $status = match ($e->errorCode()) {
                 'INVALID_CREDENTIALS', 'INVALID_TWO_FACTOR_CODE' => 401,
-                'ACCOUNT_SUSPENDED' => 403,
-                'USER_NOT_FOUND' => 404,
-                'EMAIL_ALREADY_REGISTERED' => 409,
+                'ACCOUNT_SUSPENDED', 'NOT_AUTHORIZED' => 403,
+                'USER_NOT_FOUND', 'CATALOG_RESOURCE_NOT_FOUND' => 404,
+                'EMAIL_ALREADY_REGISTERED', 'DUPLICATE_SLUG', 'ALREADY_REVIEWED' => 409,
                 'INVALID_ARGUMENT' => 422,
                 default => 400,
             };
