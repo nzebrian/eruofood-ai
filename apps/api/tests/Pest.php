@@ -19,4 +19,5 @@ use Tests\TestCase;
 uses(TestCase::class)->in('Feature');
 uses(TestCase::class)->in(
     __DIR__.'/../modules/Platform/tests/Feature',
+    __DIR__.'/../modules/Identity/tests/Feature',
 );

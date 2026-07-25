@@ -1,13 +1,12 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.1.0
+  version: 0.2.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
     types are generated from it so clients and server never drift
-    (MASTER_PLAN.md §6.1). The foundation defines only cross-cutting/operational
-    endpoints — no business resources yet.
+    (MASTER_PLAN.md §6.1). Milestone 2 adds the Identity & Access endpoints.
   license:
     name: Proprietary
 servers:
@@ -19,6 +18,19 @@ servers:
 tags:
   - name: Platform
     description: Operational and health endpoints.
+  - name: Authentication
+    description: Registration, login, tokens, verification, password reset.
+  - name: Two-Factor
+    description: TOTP two-factor enrolment and management.
+  - name: Profile
+    description: The authenticated user's own account.
+  - name: Sessions
+    description: Active session (refresh-token) management.
+  - name: Admin
+    description: Administrative user & role management (RBAC).
+
+security:
+  - bearerAuth: []
 
 paths:
   /health:
@@ -26,7 +38,7 @@ paths:
       tags: [Platform]
       operationId: getHealth
       summary: Platform health/status
-      description: Returns liveness and build metadata for the API.
+      security: []
       responses:
         "200":
           description: The platform is responding.
@@ -34,34 +46,566 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/SystemStatus" }
+
+  # ---- Authentication ------------------------------------------------------
+  /auth/register:
+    post:
+      tags: [Authentication]
+      operationId: register
+      summary: Register a new user (email + password)
+      description: Creates an account, sends a verification email, and returns tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/AuthSuccess" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Log in with email + password
+      description: Returns tokens, or a two-factor challenge if 2FA is enabled.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AuthSuccessOrChallenge" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /auth/login/two-factor:
+    post:
+      tags: [Authentication]
+      operationId: loginTwoFactor
+      summary: Complete a two-factor login challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_token, code]
+              properties:
+                challenge_token: { type: string }
+                code: { type: string, example: "123456" }
+      responses:
+        "200": { $ref: "#/components/responses/AuthSuccess" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /auth/login/social:
+    post:
+      tags: [Authentication]
+      operationId: loginSocial
+      summary: Log in with a social provider (Google; Apple architecture-ready)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, id_token]
+              properties:
+                provider: { type: string, enum: [google, apple] }
+                id_token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/AuthSuccess" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refresh
+      summary: Exchange a refresh token for a new access token (rotates the refresh token)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: New token pair.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Tokens" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Revoke the current refresh token (end the session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "204": { description: Logged out. }
+
+  /auth/email/verify:
+    post:
+      tags: [Authentication]
+      operationId: verifyEmail
+      summary: Verify an email address using the emailed token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uid, token]
+              properties:
+                uid: { type: string, format: uuid }
+                token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+
+  /auth/email/resend:
+    post:
+      tags: [Authentication]
+      operationId: resendVerification
+      summary: Resend the email-verification message
+      responses:
+        "202": { $ref: "#/components/responses/Message" }
+
+  /auth/password/forgot:
+    post:
+      tags: [Authentication]
+      operationId: forgotPassword
+      summary: Request a password-reset link
+      description: Always returns 202 to avoid account enumeration.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "202": { $ref: "#/components/responses/Message" }
+
+  /auth/password/reset:
+    post:
+      tags: [Authentication]
+      operationId: resetPassword
+      summary: Reset the password using the emailed token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResetPasswordRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  # ---- Profile -------------------------------------------------------------
+  /me:
+    get:
+      tags: [Profile]
+      operationId: getProfile
+      summary: Get the authenticated user's profile
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+        "401": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Profile]
+      operationId: updateProfile
+      summary: Update name and phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                phone: { type: string, nullable: true, example: "+2348012345678" }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+    delete:
+      tags: [Profile]
+      operationId: deleteAccount
+      summary: Soft-delete the authenticated account
+      responses:
+        "204": { description: Account deleted. }
+
+  /me/password:
+    put:
+      tags: [Profile]
+      operationId: changePassword
+      summary: Change the password (requires the current password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password, password_confirmation]
+              properties:
+                current_password: { type: string }
+                password: { type: string }
+                password_confirmation: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /me/preferences:
+    put:
+      tags: [Profile]
+      operationId: updatePreferences
+      summary: Update the user's preferences (free-form JSON object)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [preferences]
+              properties:
+                preferences: { type: object, additionalProperties: true }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+
+  /me/avatar:
+    post:
+      tags: [Profile]
+      operationId: uploadAvatar
+      summary: Upload a profile photo
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [avatar]
+              properties:
+                avatar: { type: string, format: binary }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+
+  /me/two-factor/enable:
+    post:
+      tags: [Two-Factor]
+      operationId: enableTwoFactor
+      summary: Begin 2FA enrolment (returns secret, provisioning URI, recovery codes)
+      responses:
+        "200":
+          description: Enrolment details.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/TwoFactorEnrollment" }
+
+  /me/two-factor/confirm:
+    post:
+      tags: [Two-Factor]
+      operationId: confirmTwoFactor
+      summary: Confirm 2FA with the first TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /me/two-factor:
+    delete:
+      tags: [Two-Factor]
+      operationId: disableTwoFactor
+      summary: Disable 2FA (requires the account password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+
+  # ---- Sessions ------------------------------------------------------------
+  /me/sessions:
+    get:
+      tags: [Sessions]
+      operationId: listSessions
+      summary: List active sessions (devices)
+      responses:
+        "200":
+          description: Active sessions.
+          content:
+            application/json:
+              schema:
+                type: object
                 properties:
                   data:
-                    $ref: "#/components/schemas/SystemStatus"
+                    type: array
+                    items: { $ref: "#/components/schemas/Session" }
+
+  /me/sessions/{sessionId}:
+    delete:
+      tags: [Sessions]
+      operationId: revokeSession
+      summary: Revoke a specific session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Session revoked. }
+
+  # ---- Admin ---------------------------------------------------------------
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: listUsers
+      summary: List users (admin only)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        "200":
+          description: Paginated users.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /admin/users/{userId}/roles:
+    post:
+      tags: [Admin]
+      operationId: assignRole
+      summary: Assign a role to a user (admin only)
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [admin, moderator, user] }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+    delete:
+      tags: [Admin]
+      operationId: revokeRole
+      summary: Revoke a role from a user (admin only)
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [admin, moderator, user] }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error envelope.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Message:
+      description: Simple message envelope.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  message: { type: string }
+    User:
+      description: A user resource.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/User" }
+    AuthSuccess:
+      description: Authenticated — user + tokens.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/AuthPayload" }
+    AuthSuccessOrChallenge:
+      description: Either authenticated (user + tokens) or a two-factor challenge.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/AuthPayload" }
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/TwoFactorChallenge" }
+
   schemas:
     SystemStatus:
       type: object
       required: [status, service, version, environment, timestamp]
       properties:
-        status:
-          type: string
-          enum: [ok, degraded]
-        service:
-          type: string
-          example: EruoFood AI
-        version:
-          type: string
-          example: 0.1.0
-        environment:
-          type: string
-          example: local
-        timestamp:
-          type: string
-          format: date-time
+        status: { type: string, enum: [ok, degraded] }
+        service: { type: string }
+        version: { type: string }
+        environment: { type: string }
+        timestamp: { type: string, format: date-time }
 
-    # Standard error envelope (RFC 7807-aligned) — MASTER_PLAN.md §6.3.
+    RegisterRequest:
+      type: object
+      required: [name, email, password, password_confirmation]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        password_confirmation: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    ResetPasswordRequest:
+      type: object
+      required: [email, token, password, password_confirmation]
+      properties:
+        email: { type: string, format: email }
+        token: { type: string }
+        password: { type: string, minLength: 8 }
+        password_confirmation: { type: string }
+
+    Tokens:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, description: Access-token lifetime in seconds. }
+        refresh_token: { type: string }
+
+    AuthPayload:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        tokens: { $ref: "#/components/schemas/Tokens" }
+
+    TwoFactorChallenge:
+      type: object
+      properties:
+        two_factor_required: { type: boolean, example: true }
+        challenge_token: { type: string }
+
+    TwoFactorEnrollment:
+      type: object
+      properties:
+        secret: { type: string }
+        provisioning_uri: { type: string, description: otpauth:// URI for QR codes. }
+        recovery_codes:
+          type: array
+          items: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string, nullable: true }
+        email_verified: { type: boolean }
+        avatar_url: { type: string, nullable: true }
+        roles:
+          type: array
+          items: { type: string, enum: [admin, moderator, user] }
+        permissions:
+          type: array
+          items: { type: string }
+        preferences: { type: object, additionalProperties: true }
+        two_factor_enabled: { type: boolean }
+        status: { type: string, enum: [active, suspended] }
+
+    Session:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        ip_address: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+
     Error:
       type: object
       required: [error]
@@ -70,12 +614,8 @@ components:
           type: object
           required: [code, message]
           properties:
-            code:
-              type: string
-              example: VALIDATION_FAILED
-            message:
-              type: string
+            code: { type: string, example: INVALID_CREDENTIALS }
+            message: { type: string }
             details:
               type: array
-              items:
-                type: object
+              items: { type: object }

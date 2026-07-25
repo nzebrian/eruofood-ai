@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use EruoFood\Shared\Domain\Exception\DomainException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /*
 |------------------------------------------------------------------------------
@@ -26,7 +29,30 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: []);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // Domain exceptions are mapped to RFC 7807 problem responses in a
-        // dedicated handler once modules are populated (Phase 3+).
+        // Map domain exceptions to the standard API error envelope with a
+        // sensible HTTP status. Keeps HTTP concerns out of the domain.
+        $exceptions->render(function (DomainException $e, Request $request): ?JsonResponse {
+            if (! $request->expectsJson() && ! $request->is('api/*')) {
+                return null;
+            }
+
+            // Map on the stable machine-readable code so the app shell stays
+            // decoupled from any specific module's exception classes.
+            $status = match ($e->errorCode()) {
+                'INVALID_CREDENTIALS', 'INVALID_TWO_FACTOR_CODE' => 401,
+                'ACCOUNT_SUSPENDED' => 403,
+                'USER_NOT_FOUND' => 404,
+                'EMAIL_ALREADY_REGISTERED' => 409,
+                'INVALID_ARGUMENT' => 422,
+                default => 400,
+            };
+
+            return new JsonResponse([
+                'error' => [
+                    'code' => $e->errorCode(),
+                    'message' => $e->getMessage(),
+                ],
+            ], $status);
+        });
     })
     ->create();

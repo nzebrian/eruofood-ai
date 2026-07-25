@@ -1,15 +1,16 @@
-import { config } from '@config/env';
+import { RouterProvider } from 'react-router-dom';
+import { AuthProvider } from '@features/auth/AuthProvider';
+import { router } from '@app/router';
 
 /**
- * Application shell. Intentionally minimal in the foundation phase — routing,
- * providers, and feature composition are added as features arrive.
+ * Application shell: wires the auth context and the router. Feature routing
+ * lives in @app/router; auth state in @features/auth.
  */
 export function App(): React.JSX.Element {
   return (
-    <main>
-      <h1>{config.appName}</h1>
-      <p>Enterprise foundation is ready. Environment: {config.appEnv}.</p>
-    </main>
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   );
 }
 

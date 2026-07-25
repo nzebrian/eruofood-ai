@@ -17,4 +17,5 @@ return [
     // ---- Bounded context / foundation modules ----
     EruoFood\Shared\Infrastructure\Provider\SharedServiceProvider::class,
     EruoFood\Platform\Infrastructure\Provider\PlatformServiceProvider::class,
+    EruoFood\Identity\Infrastructure\Provider\IdentityServiceProvider::class,
 ];

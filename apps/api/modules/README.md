@@ -12,9 +12,10 @@ by touching another module's internals or tables.
 |--------|---------|
 | `Shared` | Shared Kernel — framework-agnostic primitives (Money, Uuid, Clock, EventBus, AggregateRoot, DomainEvent, DomainException) used by every context. Deliberately minimal. |
 | `Platform` | Operational/foundation context. Ships the health/status vertical slice that exercises all four layers end-to-end. Contains **no business logic**. |
+| `Identity` | Identity & Access (Milestone 2): authentication, user management, roles & permissions, sessions, 2FA, audit. See its [README](Identity/README.md). |
 
-> Business contexts (Catalog, Ordering, Payments, Delivery, …) are introduced in
-> their respective roadmap phases (MASTER_PLAN.md §11). None exist yet.
+> Remaining business contexts (Catalog, Ordering, Payments, Delivery, …) are
+> introduced in their respective roadmap phases (MASTER_PLAN.md §11).
 
 ## Standard module layout
 

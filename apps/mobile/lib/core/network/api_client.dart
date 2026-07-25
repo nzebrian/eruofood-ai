@@ -2,11 +2,11 @@ import 'package:dio/dio.dart';
 
 import '../config/app_config.dart';
 
-/// Thin wrapper around Dio that standardises the base URL, headers, and
-/// timeouts for all REST calls. Feature data sources depend on this; no
-/// business endpoints are defined in the foundation.
+/// Thin wrapper around Dio that standardises the base URL, headers, timeouts,
+/// and bearer-token injection for all REST calls. Feature data sources depend
+/// on this; no business endpoints are defined in the foundation.
 class ApiClient {
-  ApiClient(AppConfig config)
+  ApiClient(AppConfig config, {Future<String?> Function()? tokenProvider})
       : _dio = Dio(
           BaseOptions(
             baseUrl: config.apiBaseUrl,
@@ -17,7 +17,21 @@ class ApiClient {
               'Content-Type': 'application/json',
             },
           ),
-        );
+        ) {
+    if (tokenProvider != null) {
+      _dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (RequestOptions options, RequestInterceptorHandler handler) async {
+            final String? token = await tokenProvider();
+            if (token != null) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
+            handler.next(options);
+          },
+        ),
+      );
+    }
+  }
 
   final Dio _dio;
 
@@ -29,5 +43,9 @@ class ApiClient {
 
   Future<Response<T>> post<T>(String path, {Object? data}) {
     return _dio.post<T>(path, data: data);
+  }
+
+  Future<Response<T>> put<T>(String path, {Object? data}) {
+    return _dio.put<T>(path, data: data);
   }
 }

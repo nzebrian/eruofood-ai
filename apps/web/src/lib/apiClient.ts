@@ -1,11 +1,10 @@
 import { config } from '@config/env';
+import { tokenStorage } from '@lib/tokenStorage';
 
 /**
- * Minimal, framework-agnostic REST client for the EruoFood API.
- *
- * This is foundation only: it standardises the base URL, headers, and the
- * platform's response/error envelope (MASTER_PLAN.md §6.3). Feature modules
- * build typed hooks on top of it; no business endpoints are defined here.
+ * REST client for the EruoFood API. Attaches the bearer access token, unwraps
+ * the standard `{ data }` envelope, and transparently refreshes the access
+ * token once on a 401 before retrying (MASTER_PLAN.md §6).
  */
 
 export interface ApiEnvelope<T> {
@@ -29,15 +28,57 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+function authHeaders(): Record<string, string> {
+  const tokens = tokenStorage.get();
+  return tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {};
+}
+
+async function tryRefresh(): Promise<boolean> {
+  const tokens = tokenStorage.get();
+  if (!tokens) return false;
+
+  const response = await fetch(`${config.apiBaseUrl}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: tokens.refreshToken }),
+  });
+
+  if (!response.ok) {
+    tokenStorage.clear();
+    return false;
+  }
+
+  const body = (await response.json()) as ApiEnvelope<{
+    access_token: string;
+    refresh_token: string;
+  }>;
+  tokenStorage.set({
+    accessToken: body.data.access_token,
+    refreshToken: body.data.refresh_token,
+  });
+  return true;
+}
+
+async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const response = await fetch(`${config.apiBaseUrl}${path}`, {
     ...init,
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      ...authHeaders(),
       ...init.headers,
     },
   });
+
+  if (response.status === 401 && retry && !path.startsWith('/auth/')) {
+    if (await tryRefresh()) {
+      return request<T>(path, init, false);
+    }
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
 
   const body: unknown = await response.json().catch(() => null);
 
