@@ -49,6 +49,9 @@ final class AiServiceProvider extends ServiceProvider
         $this->bindProviderRegistry($ai);
         $this->bindCrossCuttingAdapters($ai);
         $this->bindSettings($ai);
+
+        // Public contract used by other bounded contexts (e.g. Nutrition).
+        $this->app->bind(\EruoFood\Ai\Contracts\AiAdvisor::class, \EruoFood\Ai\Infrastructure\Advisor\AiAdvisorAdapter::class);
     }
 
     public function boot(): void

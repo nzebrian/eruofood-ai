@@ -15,6 +15,7 @@ by touching another module's internals or tables.
 | `Identity` | Identity & Access (Milestone 2): authentication, user management, roles & permissions, sessions, 2FA, audit. See its [README](Identity/README.md). |
 | `Catalog` | Nigerian Food Database & Recipes (Milestone 3): foods, categories, ingredients, recipes, reviews, favourites, versioning. See its [README](Catalog/README.md). |
 | `Ai` | AI Engine & Intelligent Recipe Generation (Milestone 4): multi-provider AI service layer, versioned prompt system, recipe generation, cooking assistant + chat history, usage & cost tracking. See its [README](Ai/README.md). |
+| `Nutrition` | Nutrition, Health & Personalisation (Milestone 5): nutrition database, health profiles, BMI/BMR/TDEE calculators, food diary, meal plans + shopping lists, progress tracking, and AI personalisation (via the Ai module's contract). See its [README](Nutrition/README.md). |
 
 > Remaining business contexts (Ordering, Payments, Delivery, …) are introduced
 > in their respective roadmap phases (MASTER_PLAN.md §11).

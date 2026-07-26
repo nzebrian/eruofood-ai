@@ -1,13 +1,14 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.4.0
+  version: 0.5.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
     types are generated from it so clients and server never drift
-    (MASTER_PLAN.md §6.1). Milestone 4 adds the AI Engine endpoints (recipe
-    generation, the cooking assistant, chat history, usage and prompt admin).
+    (MASTER_PLAN.md §6.1). Milestone 5 adds the Nutrition, Health &
+    Personalisation endpoints (profile, calculators, diary, meal plans,
+    progress and AI recommendations).
   license:
     name: Proprietary
 servers:
@@ -39,6 +40,10 @@ tags:
     description: AI-powered recipe generation, cooking assistant, chat history and usage.
   - name: AI Admin
     description: Admin management of the versioned prompt system (RBAC).
+  - name: Nutrition
+    description: Health profiles, calculators, food diary, meal plans, progress and AI personalisation.
+  - name: Nutrition Admin
+    description: Admin management of the nutrition database (RBAC).
 
 security:
   - bearerAuth: []
@@ -1172,6 +1177,372 @@ paths:
                 type: object
                 properties: { data: { $ref: "#/components/schemas/PromptTemplate" } }
 
+  # ---- Nutrition, Health & Personalisation (Milestone 5) ------------------
+  /nutrition/items:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionItems
+      summary: Search the nutrition database
+      security: []
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: category, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Paginated nutrition items.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/NutritionItem" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /nutrition/items/{id}:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionItem
+      summary: A nutrition item's full panel
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The nutrition item.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/NutritionItem" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /nutrition/calculate:
+    post:
+      tags: [Nutrition]
+      operationId: nutritionCalculate
+      summary: Ad-hoc BMI/BMR/TDEE/target calculation
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CalculationRequest" }
+      responses:
+        "200":
+          description: The assessment.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/NutritionAssessment" } }
+  /nutrition/analyse:
+    post:
+      tags: [Nutrition]
+      operationId: nutritionAnalyse
+      summary: Meal / recipe nutrition analysis
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnalysisRequest" }
+      responses:
+        "200":
+          description: Totals + per-item breakdown.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/MealAnalysis" } }
+  /nutrition/profile:
+    get:
+      tags: [Nutrition]
+      operationId: getHealthProfile
+      summary: The caller's health profile (or null)
+      responses:
+        "200":
+          description: The profile, or null if not set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/HealthProfile" } }
+    put:
+      tags: [Nutrition]
+      operationId: saveHealthProfile
+      summary: Create or update the caller's health profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HealthProfileRequest" }
+      responses:
+        "200":
+          description: The saved profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/HealthProfile" } }
+  /nutrition/assessment:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionAssessment
+      summary: Assessment from the saved profile
+      responses:
+        "200":
+          description: The assessment.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/NutritionAssessment" } }
+        "422": { $ref: "#/components/responses/Error" }
+  /nutrition/diary:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionDiaryDay
+      summary: A day's diary, totals and targets
+      parameters:
+        - { name: date, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: The day's tracking summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/DailyNutritionSummary" } }
+    post:
+      tags: [Nutrition]
+      operationId: nutritionLogDiary
+      summary: Log a food for a day + meal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DiaryEntryRequest" }
+      responses:
+        "201":
+          description: The logged entry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/DiaryEntry" } }
+  /nutrition/diary/{id}:
+    delete:
+      tags: [Nutrition]
+      operationId: nutritionDeleteDiary
+      summary: Delete a diary entry
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/Error" }
+  /nutrition/meal-plans:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionMealPlans
+      summary: List the caller's meal plans
+      responses:
+        "200":
+          description: Paginated meal plans.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/MealPlan" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Nutrition]
+      operationId: nutritionCreateMealPlan
+      summary: Create a meal plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MealPlanRequest" }
+      responses:
+        "201":
+          description: The created plan.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/MealPlan" } }
+  /nutrition/meal-plans/{id}:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionMealPlan
+      summary: A meal plan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The plan.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/MealPlan" } }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Nutrition]
+      operationId: nutritionDeleteMealPlan
+      summary: Delete a meal plan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/Error" }
+  /nutrition/meal-plans/{id}/adjust:
+    post:
+      tags: [Nutrition]
+      operationId: nutritionAdjustMealPlan
+      summary: Scale all portions in a plan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [factor]
+              properties: { factor: { type: number, minimum: 0.1, maximum: 10 } }
+      responses:
+        "200":
+          description: The adjusted plan.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/MealPlan" } }
+  /nutrition/meal-plans/{id}/shopping-list:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionShoppingList
+      summary: Generate a shopping list from a plan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The shopping list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/ShoppingList" } }
+  /nutrition/progress:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionProgress
+      summary: The caller's weight history (newest first)
+      responses:
+        "200":
+          description: Progress measurements.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/ProgressEntry" } }
+    post:
+      tags: [Nutrition]
+      operationId: nutritionRecordProgress
+      summary: Record a weight measurement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProgressRequest" }
+      responses:
+        "201":
+          description: The recorded measurement.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/ProgressEntry" } }
+  /nutrition/recommendations/meals:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionRecommendMeals
+      summary: AI personalised meal recommendations
+      responses:
+        "200": { $ref: "#/components/responses/NutritionAdvice" }
+        "422": { $ref: "#/components/responses/Error" }
+  /nutrition/recommendations/suggestions:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionSuggestions
+      summary: AI smart nutrition suggestions for today
+      parameters:
+        - { name: date, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        "200": { $ref: "#/components/responses/NutritionAdvice" }
+  /nutrition/recommendations/diet-improvement:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionDietImprovement
+      summary: AI diet improvement recommendations
+      responses:
+        "200": { $ref: "#/components/responses/NutritionAdvice" }
+  /nutrition/recommendations/weekly-insights:
+    get:
+      tags: [Nutrition]
+      operationId: nutritionWeeklyInsights
+      summary: AI weekly nutrition & progress insights
+      responses:
+        "200": { $ref: "#/components/responses/NutritionAdvice" }
+  /admin/nutrition/items:
+    post:
+      tags: [Nutrition Admin]
+      operationId: adminCreateNutritionItem
+      summary: Create a nutrition-database item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NutritionItemRequest" }
+      responses:
+        "201":
+          description: The created item.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/NutritionItem" } }
+  /admin/nutrition/items/{id}:
+    put:
+      tags: [Nutrition Admin]
+      operationId: adminUpdateNutritionItem
+      summary: Update a nutrition-database item
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NutritionItemRequest" }
+      responses:
+        "200":
+          description: The updated item.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/NutritionItem" } }
+    delete:
+      tags: [Nutrition Admin]
+      operationId: adminDeleteNutritionItem
+      summary: Delete a nutrition-database item
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1224,6 +1595,14 @@ components:
               - type: object
                 properties:
                   data: { $ref: "#/components/schemas/TwoFactorChallenge" }
+    NutritionAdvice:
+      description: AI personalisation advice + provenance.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/NutritionAdvicePayload" }
 
   schemas:
     SystemStatus:
@@ -1688,3 +2067,259 @@ components:
         model: { type: string, nullable: true }
         variables: { type: array, items: { type: string } }
         activate: { type: boolean, default: true }
+
+    # ---- Nutrition schemas (Milestone 5) ----
+    NutritionFacts:
+      type: object
+      properties:
+        calories: { type: number }
+        protein_grams: { type: number }
+        carb_grams: { type: number }
+        fat_grams: { type: number }
+        fibre_grams: { type: number }
+        sugar_grams: { type: number }
+        sodium_mg: { type: number }
+        cholesterol_mg: { type: number }
+        water_ml: { type: number }
+        micronutrients: { type: object, additionalProperties: { type: number } }
+
+    NutritionFactsInput:
+      type: object
+      required: [calories, protein_grams, carb_grams, fat_grams]
+      properties:
+        calories: { type: number, minimum: 0 }
+        protein_grams: { type: number, minimum: 0 }
+        carb_grams: { type: number, minimum: 0 }
+        fat_grams: { type: number, minimum: 0 }
+        fibre_grams: { type: number, minimum: 0 }
+        sugar_grams: { type: number, minimum: 0 }
+        sodium_mg: { type: number, minimum: 0 }
+        cholesterol_mg: { type: number, minimum: 0 }
+        water_ml: { type: number, minimum: 0 }
+        micronutrients: { type: object, additionalProperties: { type: number } }
+
+    NutritionItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        category: { type: string }
+        serving_size:
+          type: object
+          properties: { label: { type: string }, grams: { type: number } }
+        nutrition: { $ref: "#/components/schemas/NutritionFacts" }
+        food_id: { type: string, format: uuid, nullable: true }
+
+    NutritionItemRequest:
+      type: object
+      required: [name, serving_size, nutrition]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 160 }
+        category: { type: string }
+        serving_size:
+          type: object
+          required: [label, grams]
+          properties: { label: { type: string }, grams: { type: number, minimum: 0.1 } }
+        nutrition: { $ref: "#/components/schemas/NutritionFactsInput" }
+        food_id: { type: string, format: uuid, nullable: true }
+
+    MacroTargets:
+      type: object
+      properties:
+        protein_grams: { type: integer }
+        carb_grams: { type: integer }
+        fat_grams: { type: integer }
+
+    NutritionAssessment:
+      type: object
+      properties:
+        bmi: { type: number }
+        bmi_category: { type: string, enum: [underweight, normal, overweight, obese] }
+        bmr: { type: integer }
+        tdee: { type: integer }
+        calorie_target: { type: integer }
+        macro_targets: { $ref: "#/components/schemas/MacroTargets" }
+
+    CalculationRequest:
+      type: object
+      required: [weight_kg, height_cm, age, gender]
+      properties:
+        weight_kg: { type: number, minimum: 20, maximum: 500 }
+        height_cm: { type: number, minimum: 50, maximum: 260 }
+        age: { type: integer, minimum: 1, maximum: 120 }
+        gender: { type: string, enum: [male, female, other] }
+        activity_level: { type: string, enum: [sedentary, light, moderate, active, very_active] }
+        goal: { type: string, enum: [lose_weight, maintain, gain_weight, gain_muscle] }
+
+    HealthProfile:
+      type: object
+      nullable: true
+      properties:
+        user_id: { type: string, format: uuid }
+        weight_kg: { type: number }
+        height_cm: { type: number }
+        age: { type: integer }
+        gender: { type: string, enum: [male, female, other] }
+        activity_level: { type: string, enum: [sedentary, light, moderate, active, very_active] }
+        goal: { type: string, enum: [lose_weight, maintain, gain_weight, gain_muscle] }
+        dietary_preferences: { type: array, items: { type: string } }
+        allergies: { type: array, items: { type: string } }
+        medical_restrictions: { type: array, items: { type: string } }
+        updated_at: { type: string, format: date-time }
+
+    HealthProfileRequest:
+      type: object
+      required: [weight_kg, height_cm, age, gender, activity_level, goal]
+      properties:
+        weight_kg: { type: number, minimum: 20, maximum: 500 }
+        height_cm: { type: number, minimum: 50, maximum: 260 }
+        age: { type: integer, minimum: 1, maximum: 120 }
+        gender: { type: string, enum: [male, female, other] }
+        activity_level: { type: string, enum: [sedentary, light, moderate, active, very_active] }
+        goal: { type: string, enum: [lose_weight, maintain, gain_weight, gain_muscle] }
+        dietary_preferences: { type: array, items: { type: string } }
+        allergies: { type: array, items: { type: string } }
+        medical_restrictions: { type: array, items: { type: string } }
+
+    DiaryEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        date: { type: string, format: date }
+        meal_type: { type: string, enum: [breakfast, lunch, dinner, snack] }
+        item_name: { type: string }
+        servings: { type: number }
+        nutrition_item_id: { type: string, format: uuid, nullable: true }
+        nutrition: { $ref: "#/components/schemas/NutritionFacts" }
+
+    DiaryEntryRequest:
+      type: object
+      required: [date, meal_type, servings]
+      properties:
+        date: { type: string, format: date }
+        meal_type: { type: string, enum: [breakfast, lunch, dinner, snack] }
+        servings: { type: number, minimum: 0.1, maximum: 100 }
+        nutrition_item_id: { type: string, format: uuid, nullable: true }
+        item_name: { type: string, nullable: true }
+        nutrition: { $ref: "#/components/schemas/NutritionFactsInput" }
+
+    DailyNutritionSummary:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        entries: { type: array, items: { $ref: "#/components/schemas/DiaryEntry" } }
+        totals: { $ref: "#/components/schemas/NutritionFacts" }
+        targets:
+          oneOf:
+            - { $ref: "#/components/schemas/NutritionAssessment" }
+            - { type: "null" }
+        remaining_calories: { type: integer, nullable: true }
+
+    MealAnalysis:
+      type: object
+      properties:
+        totals: { $ref: "#/components/schemas/NutritionFacts" }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              servings: { type: number }
+              facts: { $ref: "#/components/schemas/NutritionFacts" }
+
+    AnalysisRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [nutrition_item_id, servings]
+            properties:
+              nutrition_item_id: { type: string, format: uuid }
+              servings: { type: number, minimum: 0.1, maximum: 100 }
+
+    MealPlanEntry:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        meal_type: { type: string, enum: [breakfast, lunch, dinner, snack] }
+        label: { type: string }
+        servings: { type: number }
+        nutrition_item_id: { type: string, format: uuid, nullable: true }
+        estimated_cost: { type: number, nullable: true }
+
+    MealPlan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        period: { type: string, enum: [daily, weekly, monthly] }
+        start_date: { type: string, format: date }
+        entries: { type: array, items: { $ref: "#/components/schemas/MealPlanEntry" } }
+        estimated_cost: { type: number }
+        created_at: { type: string, format: date-time }
+
+    MealPlanRequest:
+      type: object
+      required: [title, period, start_date]
+      properties:
+        title: { type: string, minLength: 2, maxLength: 160 }
+        period: { type: string, enum: [daily, weekly, monthly] }
+        start_date: { type: string, format: date }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [date, meal_type, label, servings]
+            properties:
+              date: { type: string, format: date }
+              meal_type: { type: string, enum: [breakfast, lunch, dinner, snack] }
+              label: { type: string }
+              servings: { type: number, minimum: 0.1, maximum: 100 }
+              nutrition_item_id: { type: string, format: uuid, nullable: true }
+              estimated_cost: { type: number, nullable: true }
+
+    ShoppingList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              servings: { type: number }
+              estimated_cost: { type: number, nullable: true }
+        total_estimated_cost: { type: number }
+
+    ProgressEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        date: { type: string, format: date }
+        weight_kg: { type: number }
+        note: { type: string, nullable: true }
+
+    ProgressRequest:
+      type: object
+      required: [date, weight_kg]
+      properties:
+        date: { type: string, format: date }
+        weight_kg: { type: number, minimum: 20, maximum: 500 }
+        note: { type: string, nullable: true }
+
+    NutritionAdvicePayload:
+      type: object
+      properties:
+        advice: { type: string }
+        meta:
+          type: object
+          properties:
+            provider: { type: string }
+            model: { type: string }
+            cached: { type: boolean }

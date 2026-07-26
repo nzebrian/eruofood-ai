@@ -20,4 +20,5 @@ return [
     EruoFood\Identity\Infrastructure\Provider\IdentityServiceProvider::class,
     EruoFood\Catalog\Infrastructure\Provider\CatalogServiceProvider::class,
     EruoFood\Ai\Infrastructure\Provider\AiServiceProvider::class,
+    EruoFood\Nutrition\Infrastructure\Provider\NutritionServiceProvider::class,
 ];

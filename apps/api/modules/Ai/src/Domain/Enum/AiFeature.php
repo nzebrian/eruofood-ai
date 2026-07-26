@@ -24,6 +24,14 @@ enum AiFeature: string
     case CookingTips = 'cooking_tips';
     case FoodDescription = 'food_description';
 
+    /**
+     * A generic bucket for AI requests made by *other* bounded contexts through
+     * the published {@see \EruoFood\Ai\Contracts\AiAdvisor} contract (e.g. the
+     * Nutrition module's personalisation). Keeps their usage on the same ledger
+     * without the AI module knowing their concerns.
+     */
+    case ExternalAdvice = 'external_advice';
+
     /** Chat features keep multi-turn history; one-shot features do not. */
     public function isConversational(): bool
     {

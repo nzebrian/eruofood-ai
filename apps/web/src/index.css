@@ -319,3 +319,12 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Nutrition feature ---- */
+.success {
+  color: #15803d;
+}
+.usage dd small {
+  color: var(--muted);
+  font-weight: 400;
+}

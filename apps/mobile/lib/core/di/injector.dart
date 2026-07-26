@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 import '../../features/ai/ai_injection.dart';
 import '../../features/auth/auth_injection.dart';
 import '../../features/catalog/catalog_injection.dart';
+import '../../features/nutrition/nutrition_injection.dart';
 import '../config/app_config.dart';
 import '../network/api_client.dart';
 import '../storage/token_store.dart';
@@ -29,4 +30,5 @@ Future<void> configureDependencies() async {
   registerAuthFeature(sl);
   registerCatalogFeature(sl);
   registerAiFeature(sl);
+  registerNutritionFeature(sl);
 }

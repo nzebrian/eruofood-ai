@@ -11,6 +11,7 @@ import 'features/auth/presentation/pages/profile_page.dart';
 import 'features/ai/presentation/pages/ai_hub_page.dart';
 import 'features/catalog/presentation/pages/favourites_page.dart';
 import 'features/catalog/presentation/pages/food_catalogue_page.dart';
+import 'features/nutrition/presentation/pages/nutrition_hub_page.dart';
 
 /// Root application widget: provides the AuthCubit and the tabbed home shell.
 class EruoFoodApp extends StatelessWidget {
@@ -51,6 +52,9 @@ class _HomeShellState extends State<HomeShell> {
         final pages = <Widget>[
           const FoodCataloguePage(),
           authenticated ? const AiHubPage() : const _AuthPrompt(message: 'Sign in to use the AI features.'),
+          authenticated
+              ? const NutritionHubPage()
+              : const _AuthPrompt(message: 'Sign in to use the nutrition features.'),
           authenticated ? const FavouritesPage() : const _AuthPrompt(message: 'Sign in to see favourites.'),
           authenticated ? const ProfilePage() : const LoginPage(),
         ];
@@ -64,6 +68,7 @@ class _HomeShellState extends State<HomeShell> {
             destinations: const <NavigationDestination>[
               NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Foods'),
               NavigationDestination(icon: Icon(Icons.auto_awesome), label: 'AI'),
+              NavigationDestination(icon: Icon(Icons.monitor_heart_outlined), label: 'Health'),
               NavigationDestination(icon: Icon(Icons.favorite_border), label: 'Favourites'),
               NavigationDestination(icon: Icon(Icons.person_outline), label: 'Account'),
             ],

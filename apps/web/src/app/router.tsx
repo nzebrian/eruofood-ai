@@ -14,6 +14,10 @@ import { AiRecipeGeneratorPage } from '@features/ai/pages/AiRecipeGeneratorPage'
 import { CookingAssistantPage } from '@features/ai/pages/CookingAssistantPage';
 import { ChatHistoryPage } from '@features/ai/pages/ChatHistoryPage';
 import { AiSettingsPage } from '@features/ai/pages/AiSettingsPage';
+import { NutritionDashboardPage } from '@features/nutrition/pages/NutritionDashboardPage';
+import { HealthProfilePage } from '@features/nutrition/pages/HealthProfilePage';
+import { MealPlannerPage } from '@features/nutrition/pages/MealPlannerPage';
+import { ProgressDashboardPage } from '@features/nutrition/pages/ProgressDashboardPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -77,6 +81,40 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AiSettingsPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Nutrition, Health & Personalisation
+  {
+    path: '/nutrition',
+    element: (
+      <ProtectedRoute>
+        <NutritionDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/nutrition/profile',
+    element: (
+      <ProtectedRoute>
+        <HealthProfilePage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/nutrition/meal-planner',
+    element: (
+      <ProtectedRoute>
+        <MealPlannerPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/nutrition/progress',
+    element: (
+      <ProtectedRoute>
+        <ProgressDashboardPage />
       </ProtectedRoute>
     ),
   },
