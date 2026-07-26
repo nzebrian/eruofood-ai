@@ -18,6 +18,8 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
           {user ? (
             <>
               <Link to="/favourites">Favourites</Link>
+              <Link to="/ai/recipe-generator">AI Chef</Link>
+              <Link to="/ai/assistant">Assistant</Link>
               {user.roles.includes('admin') ? <Link to="/admin/foods">Admin</Link> : null}
               <Link to="/account">Account</Link>
             </>

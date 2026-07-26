@@ -8,6 +8,7 @@ import 'features/auth/presentation/cubit/auth_cubit.dart';
 import 'features/auth/presentation/cubit/auth_state.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/auth/presentation/pages/profile_page.dart';
+import 'features/ai/presentation/pages/ai_hub_page.dart';
 import 'features/catalog/presentation/pages/favourites_page.dart';
 import 'features/catalog/presentation/pages/food_catalogue_page.dart';
 
@@ -49,6 +50,7 @@ class _HomeShellState extends State<HomeShell> {
 
         final pages = <Widget>[
           const FoodCataloguePage(),
+          authenticated ? const AiHubPage() : const _AuthPrompt(message: 'Sign in to use the AI features.'),
           authenticated ? const FavouritesPage() : const _AuthPrompt(message: 'Sign in to see favourites.'),
           authenticated ? const ProfilePage() : const LoginPage(),
         ];
@@ -61,6 +63,7 @@ class _HomeShellState extends State<HomeShell> {
             onDestinationSelected: (i) => setState(() => _index = i),
             destinations: const <NavigationDestination>[
               NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Foods'),
+              NavigationDestination(icon: Icon(Icons.auto_awesome), label: 'AI'),
               NavigationDestination(icon: Icon(Icons.favorite_border), label: 'Favourites'),
               NavigationDestination(icon: Icon(Icons.person_outline), label: 'Account'),
             ],

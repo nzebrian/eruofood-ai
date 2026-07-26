@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.3.0
+  version: 0.4.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
     types are generated from it so clients and server never drift
-    (MASTER_PLAN.md §6.1). Milestone 2 adds the Identity & Access endpoints.
+    (MASTER_PLAN.md §6.1). Milestone 4 adds the AI Engine endpoints (recipe
+    generation, the cooking assistant, chat history, usage and prompt admin).
   license:
     name: Proprietary
 servers:
@@ -34,6 +35,10 @@ tags:
     description: Recipes — browse, detail, CRUD, reviews, favourites, versions.
   - name: Catalog Admin
     description: Admin management of foods, categories, and ingredients.
+  - name: AI
+    description: AI-powered recipe generation, cooking assistant, chat history and usage.
+  - name: AI Admin
+    description: Admin management of the versioned prompt system (RBAC).
 
 security:
   - bearerAuth: []
@@ -857,6 +862,316 @@ paths:
                 type: object
                 properties: { data: { $ref: "#/components/schemas/Category" } }
 
+  # ---- AI Engine (Milestone 4) --------------------------------------------
+  /ai/recipes/generate:
+    post:
+      tags: [AI]
+      operationId: aiGenerateRecipe
+      summary: Generate a Nigerian recipe from a brief
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiRecipeGenerationRequest" }
+      responses:
+        "200":
+          description: A generated recipe with provenance metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiStructuredResult" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /ai/recipes/improve:
+    post:
+      tags: [AI]
+      operationId: aiImproveRecipe
+      summary: Improve an existing recipe toward a goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiRecipeImprovementRequest" }
+      responses:
+        "200":
+          description: The improved recipe.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiStructuredResult" } }
+  /ai/recipes/leftovers:
+    post:
+      tags: [AI]
+      operationId: aiLeftoverRecipe
+      summary: Turn leftover ingredients into a recipe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiLeftoverRequest" }
+      responses:
+        "200":
+          description: A recipe built from the leftovers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiStructuredResult" } }
+  /ai/recipes/summarize:
+    post:
+      tags: [AI]
+      operationId: aiSummarizeRecipe
+      summary: Summarise a recipe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiSummarizationRequest" }
+      responses:
+        "200":
+          description: A short text summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiTextResult" } }
+  /ai/recipes/translate:
+    post:
+      tags: [AI]
+      operationId: aiTranslateRecipe
+      summary: Translate recipe content
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiTranslationRequest" }
+      responses:
+        "200":
+          description: The translated text.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiTextResult" } }
+  /ai/foods/describe:
+    post:
+      tags: [AI]
+      operationId: aiDescribeFood
+      summary: Generate an appetising food description
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiFoodDescriptionRequest" }
+      responses:
+        "200":
+          description: A short description.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiTextResult" } }
+  /ai/assistant/chat:
+    post:
+      tags: [AI]
+      operationId: aiChat
+      summary: Send a message to the Smart Cooking Assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiChatRequest" }
+      responses:
+        "200":
+          description: The assistant reply plus the updated conversation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiChatTurn" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /ai/assistant/tips:
+    post:
+      tags: [AI]
+      operationId: aiCookingTips
+      summary: Generate cooking tips for a topic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiCookingTipsRequest" }
+      responses:
+        "200":
+          description: Cooking tips text.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiTextResult" } }
+  /ai/assistant/substitute:
+    post:
+      tags: [AI]
+      operationId: aiSubstitute
+      summary: Suggest ingredient substitutions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiSubstitutionRequest" }
+      responses:
+        "200":
+          description: Substitution suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiStructuredResult" } }
+  /ai/assistant/meals:
+    post:
+      tags: [AI]
+      operationId: aiMealSuggestions
+      summary: Suggest meal ideas
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiMealSuggestionRequest" }
+      responses:
+        "200":
+          description: Meal suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiStructuredResult" } }
+  /ai/conversations:
+    get:
+      tags: [AI]
+      operationId: aiListConversations
+      summary: List the caller's chat conversations
+      responses:
+        "200":
+          description: Paginated conversation summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/ConversationSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /ai/conversations/{id}:
+    get:
+      tags: [AI]
+      operationId: aiGetConversation
+      summary: Read a full conversation thread
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The conversation with its messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Conversation" } }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [AI]
+      operationId: aiRenameConversation
+      summary: Rename a conversation
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties: { title: { type: string, maxLength: 160 } }
+      responses:
+        "200":
+          description: The renamed conversation summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/ConversationSummary" } }
+    delete:
+      tags: [AI]
+      operationId: aiDeleteConversation
+      summary: Delete a conversation
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/Error" }
+  /ai/usage:
+    get:
+      tags: [AI]
+      operationId: aiUsage
+      summary: The caller's AI usage & cost summary
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, default: 30 } }
+      responses:
+        "200":
+          description: Usage summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/AiUsageSummary" } }
+  /admin/ai/prompts:
+    get:
+      tags: [AI Admin]
+      operationId: aiListPromptVersions
+      summary: List a feature's prompt versions
+      parameters:
+        - { name: feature, in: query, required: true, schema: { $ref: "#/components/schemas/AiFeature" } }
+      responses:
+        "200":
+          description: Prompt versions, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/PromptTemplate" } }
+    post:
+      tags: [AI Admin]
+      operationId: aiCreatePromptVersion
+      summary: Publish a new prompt version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromptRequest" }
+      responses:
+        "201":
+          description: The created prompt version.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/PromptTemplate" } }
+  /admin/ai/prompts/{id}/activate:
+    post:
+      tags: [AI Admin]
+      operationId: aiActivatePrompt
+      summary: Activate an existing prompt version
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The activated prompt version.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/PromptTemplate" } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1180,3 +1495,196 @@ components:
         rating: { type: integer, minimum: 1, maximum: 5 }
         comment: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
+
+    # ---- AI Engine schemas (Milestone 4) ----
+    AiFeature:
+      type: string
+      enum:
+        - recipe_generation
+        - recipe_improvement
+        - recipe_translation
+        - ingredient_substitution
+        - cooking_assistant
+        - meal_suggestions
+        - leftover_recipes
+        - recipe_summarization
+        - cooking_tips
+        - food_description
+
+    AiMeta:
+      type: object
+      description: Provenance for a generation (provider, model, cache, tokens).
+      properties:
+        provider: { type: string, enum: [anthropic, openai, gemini, local, mock] }
+        model: { type: string }
+        cached: { type: boolean }
+        finish_reason: { type: string }
+        tokens:
+          type: object
+          properties:
+            input: { type: integer }
+            output: { type: integer }
+            total: { type: integer }
+
+    AiStructuredResult:
+      type: object
+      description: A structured (JSON) generation result plus its metadata.
+      properties:
+        content: { type: object, additionalProperties: true }
+        meta: { $ref: "#/components/schemas/AiMeta" }
+
+    AiTextResult:
+      type: object
+      description: A plain-text generation result plus its metadata.
+      properties:
+        content: { type: string }
+        meta: { $ref: "#/components/schemas/AiMeta" }
+
+    AiRecipeGenerationRequest:
+      type: object
+      required: [dish_name]
+      properties:
+        dish_name: { type: string, minLength: 2, maxLength: 160 }
+        servings: { type: integer, minimum: 1, maximum: 50 }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        dietary_preferences: { type: array, items: { type: string } }
+        available_ingredients: { type: array, items: { type: string } }
+        notes: { type: string, nullable: true }
+
+    AiRecipeImprovementRequest:
+      type: object
+      required: [title, ingredients, steps]
+      properties:
+        title: { type: string }
+        ingredients: { type: array, items: { type: string } }
+        steps: { type: array, items: { type: string } }
+        goal: { type: string, nullable: true }
+
+    AiLeftoverRequest:
+      type: object
+      required: [ingredients]
+      properties:
+        ingredients: { type: array, items: { type: string } }
+        dietary_preferences: { type: array, items: { type: string } }
+        meal_type: { type: string, nullable: true }
+
+    AiSummarizationRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, maxLength: 8000 }
+        max_words: { type: integer, minimum: 10, maximum: 400 }
+
+    AiTranslationRequest:
+      type: object
+      required: [content, target_language]
+      properties:
+        content: { type: string, maxLength: 8000 }
+        target_language: { type: string }
+
+    AiFoodDescriptionRequest:
+      type: object
+      required: [food_name]
+      properties:
+        food_name: { type: string, minLength: 2, maxLength: 160 }
+        region: { type: string, nullable: true }
+        keywords: { type: array, items: { type: string } }
+
+    AiCookingTipsRequest:
+      type: object
+      required: [topic]
+      properties:
+        topic: { type: string, minLength: 2, maxLength: 160 }
+        skill_level: { type: string, enum: [beginner, "home cook", intermediate, advanced] }
+
+    AiSubstitutionRequest:
+      type: object
+      required: [ingredient]
+      properties:
+        ingredient: { type: string }
+        reason: { type: string, nullable: true }
+        dish_context: { type: string, nullable: true }
+        dietary_preferences: { type: array, items: { type: string } }
+
+    AiMealSuggestionRequest:
+      type: object
+      properties:
+        meal_type: { type: string }
+        dietary_preferences: { type: array, items: { type: string } }
+        count: { type: integer, minimum: 1, maximum: 10 }
+        budget: { type: string, nullable: true }
+
+    AiChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 4000 }
+        conversation_id: { type: string, format: uuid, nullable: true }
+
+    ChatMessage:
+      type: object
+      properties:
+        role: { type: string, enum: [system, user, assistant] }
+        content: { type: string }
+        created_at: { type: string, format: date-time }
+
+    ConversationSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        feature: { $ref: "#/components/schemas/AiFeature" }
+        message_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Conversation:
+      allOf:
+        - $ref: "#/components/schemas/ConversationSummary"
+        - type: object
+          properties:
+            messages: { type: array, items: { $ref: "#/components/schemas/ChatMessage" } }
+
+    AiChatTurn:
+      type: object
+      properties:
+        conversation_id: { type: string, format: uuid }
+        reply: { type: string }
+        conversation: { $ref: "#/components/schemas/Conversation" }
+        meta: { $ref: "#/components/schemas/AiMeta" }
+
+    AiUsageSummary:
+      type: object
+      properties:
+        requests: { type: integer }
+        cached_requests: { type: integer }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        total_tokens: { type: integer }
+        cost_usd: { type: number }
+
+    PromptTemplate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        feature: { $ref: "#/components/schemas/AiFeature" }
+        version: { type: integer }
+        name: { type: string }
+        system_template: { type: string }
+        user_template: { type: string }
+        model: { type: string, nullable: true }
+        variables: { type: array, items: { type: string } }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    PromptRequest:
+      type: object
+      required: [feature, name, user_template]
+      properties:
+        feature: { $ref: "#/components/schemas/AiFeature" }
+        name: { type: string, maxLength: 160 }
+        system_template: { type: string, nullable: true }
+        user_template: { type: string }
+        model: { type: string, nullable: true }
+        variables: { type: array, items: { type: string } }
+        activate: { type: boolean, default: true }

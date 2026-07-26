@@ -33,6 +33,10 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="FILESYSTEM_DISK" value="public"/>
         <env name="CATALOG_MEDIA_DISK" value="public"/>
+        <env name="AI_PROVIDER" value="mock"/>
+        <env name="AI_FALLBACKS" value=""/>
+        <env name="AI_CACHE_ENABLED" value="false"/>
+        <env name="AI_RATE_LIMIT_ENABLED" value="false"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

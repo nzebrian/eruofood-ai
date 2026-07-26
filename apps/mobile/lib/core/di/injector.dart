@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 
+import '../../features/ai/ai_injection.dart';
 import '../../features/auth/auth_injection.dart';
 import '../../features/catalog/catalog_injection.dart';
 import '../config/app_config.dart';
@@ -27,4 +28,5 @@ Future<void> configureDependencies() async {
   // Feature registrations.
   registerAuthFeature(sl);
   registerCatalogFeature(sl);
+  registerAiFeature(sl);
 }

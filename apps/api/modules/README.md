@@ -14,6 +14,7 @@ by touching another module's internals or tables.
 | `Platform` | Operational/foundation context. Ships the health/status vertical slice that exercises all four layers end-to-end. Contains **no business logic**. |
 | `Identity` | Identity & Access (Milestone 2): authentication, user management, roles & permissions, sessions, 2FA, audit. See its [README](Identity/README.md). |
 | `Catalog` | Nigerian Food Database & Recipes (Milestone 3): foods, categories, ingredients, recipes, reviews, favourites, versioning. See its [README](Catalog/README.md). |
+| `Ai` | AI Engine & Intelligent Recipe Generation (Milestone 4): multi-provider AI service layer, versioned prompt system, recipe generation, cooking assistant + chat history, usage & cost tracking. See its [README](Ai/README.md). |
 
 > Remaining business contexts (Ordering, Payments, Delivery, …) are introduced
 > in their respective roadmap phases (MASTER_PLAN.md §11).

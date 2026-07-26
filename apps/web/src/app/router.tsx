@@ -10,6 +10,10 @@ import { RecipesPage } from '@features/catalog/pages/RecipesPage';
 import { RecipeDetailPage } from '@features/catalog/pages/RecipeDetailPage';
 import { FavouritesPage } from '@features/catalog/pages/FavouritesPage';
 import { AdminFoodsPage } from '@features/catalog/pages/admin/AdminFoodsPage';
+import { AiRecipeGeneratorPage } from '@features/ai/pages/AiRecipeGeneratorPage';
+import { CookingAssistantPage } from '@features/ai/pages/CookingAssistantPage';
+import { ChatHistoryPage } from '@features/ai/pages/ChatHistoryPage';
+import { AiSettingsPage } from '@features/ai/pages/AiSettingsPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -39,6 +43,40 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <ProfilePage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // AI Engine
+  {
+    path: '/ai/recipe-generator',
+    element: (
+      <ProtectedRoute>
+        <AiRecipeGeneratorPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/ai/assistant',
+    element: (
+      <ProtectedRoute>
+        <CookingAssistantPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/ai/history',
+    element: (
+      <ProtectedRoute>
+        <ChatHistoryPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/ai/settings',
+    element: (
+      <ProtectedRoute>
+        <AiSettingsPage />
       </ProtectedRoute>
     ),
   },

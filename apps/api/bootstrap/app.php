@@ -41,9 +41,13 @@ return Application::configure(basePath: dirname(__DIR__))
             $status = match ($e->errorCode()) {
                 'INVALID_CREDENTIALS', 'INVALID_TWO_FACTOR_CODE' => 401,
                 'ACCOUNT_SUSPENDED', 'NOT_AUTHORIZED' => 403,
-                'USER_NOT_FOUND', 'CATALOG_RESOURCE_NOT_FOUND' => 404,
+                'USER_NOT_FOUND', 'CATALOG_RESOURCE_NOT_FOUND',
+                'AI_PROMPT_NOT_FOUND', 'AI_CONVERSATION_NOT_FOUND' => 404,
                 'EMAIL_ALREADY_REGISTERED', 'DUPLICATE_SLUG', 'ALREADY_REVIEWED' => 409,
                 'INVALID_ARGUMENT' => 422,
+                'AI_RATE_LIMIT_EXCEEDED' => 429,
+                'AI_GENERATION_FAILED' => 502,
+                'AI_PROVIDER_UNAVAILABLE' => 503,
                 default => 400,
             };
 
