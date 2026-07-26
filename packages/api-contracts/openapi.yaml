@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.5.0
+  version: 0.6.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -44,6 +44,10 @@ tags:
     description: Health profiles, calculators, food diary, meal plans, progress and AI personalisation.
   - name: Nutrition Admin
     description: Admin management of the nutrition database (RBAC).
+  - name: Marketplace
+    description: Restaurants/vendors, menus, cart, checkout, orders, delivery and riders.
+  - name: Marketplace Admin
+    description: Admin vendor verification & moderation (RBAC).
 
 security:
   - bearerAuth: []
@@ -1543,6 +1547,436 @@ paths:
         "204": { description: Deleted. }
         "404": { $ref: "#/components/responses/Error" }
 
+  # ---- Restaurant, Vendor & Food Business Platform (Milestone 6) ----------
+  /vendors:
+    get:
+      tags: [Marketplace]
+      operationId: browseVendors
+      summary: Browse/search verified vendors
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string, enum: [restaurant, market_vendor, home_kitchen, cloud_kitchen] } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: lat, in: query, schema: { type: number } }
+        - { name: lng, in: query, schema: { type: number } }
+        - { name: radius_km, in: query, schema: { type: number } }
+        - { name: featured, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string, enum: [rating, nearest, name, recent] } }
+      responses:
+        "200":
+          description: Paginated vendor summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/VendorSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Marketplace]
+      operationId: registerVendor
+      summary: Register a vendor (owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorRequest" }
+      responses:
+        "201":
+          description: The created vendor (starts pending).
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Vendor" } } }
+  /vendors/{slug}:
+    get:
+      tags: [Marketplace]
+      operationId: getVendor
+      summary: Vendor storefront detail
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The vendor.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Vendor" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /vendors/{vendorId}/menu:
+    get:
+      tags: [Marketplace]
+      operationId: getVendorMenu
+      summary: A vendor's menu items
+      security: []
+      parameters:
+        - { name: vendorId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Menu items.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/MenuItem" } } } }
+    post:
+      tags: [Marketplace]
+      operationId: createMenuItem
+      summary: Add a menu item (owner)
+      parameters:
+        - { name: vendorId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MenuItemRequest" }
+      responses:
+        "201":
+          description: The created item.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/MenuItem" } } }
+  /vendors/{id}/reviews:
+    get:
+      tags: [Marketplace]
+      operationId: vendorReviews
+      summary: List a vendor's reviews
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Paginated reviews.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/VendorReview" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Marketplace]
+      operationId: reviewVendor
+      summary: Rate & review a vendor
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, nullable: true }
+      responses:
+        "201":
+          description: The review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VendorReview" } } }
+  /search/menu-items:
+    get:
+      tags: [Marketplace]
+      operationId: searchMenuItems
+      summary: Search available menu items
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: vendor_id, in: query, schema: { type: string, format: uuid } }
+        - { name: featured, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Paginated menu items.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/MenuItem" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /me/vendors:
+    get:
+      tags: [Marketplace]
+      operationId: myVendors
+      summary: The caller's vendors
+      responses:
+        "200":
+          description: Owned vendors.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Vendor" } } } }
+  /vendors/{id}/dashboard:
+    get:
+      tags: [Marketplace]
+      operationId: vendorDashboard
+      summary: Vendor sales dashboard (owner)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Sales summary.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SalesSummary" } } }
+  /menu-items/{itemId}/describe:
+    post:
+      tags: [Marketplace]
+      operationId: describeMenuItem
+      summary: AI-generate a menu item description (owner)
+      parameters:
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The item with a generated description.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/MenuItem" } } }
+  /cart:
+    get:
+      tags: [Marketplace]
+      operationId: getCart
+      summary: The caller's cart
+      responses:
+        "200":
+          description: The cart.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Cart" } } }
+    delete:
+      tags: [Marketplace]
+      operationId: clearCart
+      summary: Clear the cart
+      responses:
+        "204": { description: Cleared. }
+  /cart/items:
+    post:
+      tags: [Marketplace]
+      operationId: addCartItem
+      summary: Add an item to the cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartItemRequest" }
+      responses:
+        "201":
+          description: The updated cart.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Cart" } } }
+    put:
+      tags: [Marketplace]
+      operationId: updateCartItem
+      summary: Change a cart item's quantity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartItemRequest" }
+      responses:
+        "200":
+          description: The updated cart.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Cart" } } }
+  /checkout:
+    post:
+      tags: [Marketplace]
+      operationId: checkout
+      summary: Check out the cart into an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutRequest" }
+      responses:
+        "201":
+          description: The placed order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /orders:
+    get:
+      tags: [Marketplace]
+      operationId: orderHistory
+      summary: The caller's order history
+      responses:
+        "200":
+          description: Paginated order summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/OrderSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /orders/{id}:
+    get:
+      tags: [Marketplace]
+      operationId: getOrder
+      summary: Order detail & tracking
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /orders/{id}/status:
+    post:
+      tags: [Marketplace]
+      operationId: advanceOrder
+      summary: Advance order status (owning vendor)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { type: string, enum: [confirmed, preparing, ready, dispatched, delivered] } }
+      responses:
+        "200":
+          description: The updated order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+  /orders/{id}/cancel:
+    post:
+      tags: [Marketplace]
+      operationId: cancelOrder
+      summary: Cancel an order (customer, owning vendor or admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The cancelled order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+  /orders/{orderId}/delivery:
+    get:
+      tags: [Marketplace]
+      operationId: getOrderDelivery
+      summary: The delivery for an order
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The delivery.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Delivery" } } }
+  /deliveries/{id}/assign:
+    post:
+      tags: [Marketplace]
+      operationId: assignRider
+      summary: Assign a rider (owning vendor)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [rider_id], properties: { rider_id: { type: string, format: uuid } } }
+      responses:
+        "200":
+          description: The delivery.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Delivery" } } }
+  /deliveries/{id}/status:
+    post:
+      tags: [Marketplace]
+      operationId: advanceDelivery
+      summary: Progress delivery status (assigned rider)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { type: string, enum: [picked_up, en_route, delivered, failed] } }
+      responses:
+        "200":
+          description: The delivery.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Delivery" } } }
+  /deliveries/{id}/track:
+    post:
+      tags: [Marketplace]
+      operationId: trackDelivery
+      summary: Append a live-tracking point (assigned rider)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GeoPoint" }
+      responses:
+        "200":
+          description: The delivery.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Delivery" } } }
+  /riders:
+    post:
+      tags: [Marketplace]
+      operationId: onboardRider
+      summary: Onboard as a rider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, phone, vehicle_type]
+              properties:
+                name: { type: string }
+                phone: { type: string }
+                vehicle_type: { type: string, enum: [bicycle, motorbike, car, foot] }
+      responses:
+        "201":
+          description: The rider.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Rider" } } }
+  /riders/me:
+    get:
+      tags: [Marketplace]
+      operationId: getRider
+      summary: The caller's rider profile
+      responses:
+        "200":
+          description: The rider.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Rider" } } }
+  /admin/marketplace/vendors/{id}/verify:
+    post:
+      tags: [Marketplace Admin]
+      operationId: verifyVendor
+      summary: Verify a vendor
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The verified vendor.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Vendor" } } }
+
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2323,3 +2757,246 @@ components:
             provider: { type: string }
             model: { type: string }
             cached: { type: boolean }
+
+    # ---- Marketplace schemas (Milestone 6) ----
+    GeoPoint:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+
+    VendorSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        type: { type: string, enum: [restaurant, market_vendor, home_kitchen, cloud_kitchen] }
+        category: { type: string }
+        status: { type: string, enum: [pending, verified, suspended, rejected] }
+        rating_average: { type: number }
+        rating_count: { type: integer }
+        featured: { type: boolean }
+        location:
+          oneOf:
+            - { $ref: "#/components/schemas/GeoPoint" }
+            - { type: "null" }
+        primary_image: { type: string, nullable: true }
+
+    Vendor:
+      allOf:
+        - $ref: "#/components/schemas/VendorSummary"
+        - type: object
+          properties:
+            owner_user_id: { type: string, format: uuid }
+            description: { type: string, nullable: true }
+            contact:
+              type: object
+              properties: { phone: { type: string }, email: { type: string, nullable: true }, whatsapp: { type: string, nullable: true } }
+            address:
+              type: object
+              properties:
+                line: { type: string }
+                city: { type: string }
+                state: { type: string }
+                location:
+                  oneOf:
+                    - { $ref: "#/components/schemas/GeoPoint" }
+                    - { type: "null" }
+            branches: { type: array, items: { type: object } }
+            business_hours: { type: object, additionalProperties: { type: object, properties: { open: { type: string }, close: { type: string } } } }
+            delivery_zones:
+              type: array
+              items:
+                type: object
+                properties: { name: { type: string }, fee_minor: { type: integer }, radius_km: { type: number } }
+            images: { type: array, items: { type: string } }
+            created_at: { type: string, format: date-time }
+
+    VendorRequest:
+      type: object
+      required: [name, type, category, contact, address]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 160 }
+        type: { type: string, enum: [restaurant, market_vendor, home_kitchen, cloud_kitchen] }
+        category: { type: string }
+        description: { type: string, nullable: true }
+        contact:
+          type: object
+          required: [phone]
+          properties: { phone: { type: string }, email: { type: string, nullable: true }, whatsapp: { type: string, nullable: true } }
+        address:
+          type: object
+          required: [line, city, state]
+          properties:
+            line: { type: string }
+            city: { type: string }
+            state: { type: string }
+            location: { $ref: "#/components/schemas/GeoPoint" }
+
+    MenuVariant:
+      type: object
+      properties:
+        name: { type: string }
+        price_delta_minor: { type: integer }
+
+    MenuItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        description_ai_generated: { type: boolean }
+        base_price_minor: { type: integer }
+        currency: { type: string }
+        variants: { type: array, items: { $ref: "#/components/schemas/MenuVariant" } }
+        available: { type: boolean }
+        orderable: { type: boolean }
+        images: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        featured: { type: boolean }
+        promotion:
+          oneOf:
+            - { type: object, properties: { type: { type: string }, value: { type: integer } } }
+            - { type: "null" }
+        tracks_inventory: { type: boolean }
+        stock: { type: integer, nullable: true }
+        calories: { type: integer, nullable: true }
+        nutrition_item_id: { type: string, format: uuid, nullable: true }
+
+    MenuItemRequest:
+      type: object
+      required: [name, base_price_minor]
+      properties:
+        category_id: { type: string, format: uuid, nullable: true }
+        name: { type: string, minLength: 2, maxLength: 160 }
+        description: { type: string, nullable: true }
+        base_price_minor: { type: integer, minimum: 0 }
+        variants: { type: array, items: { type: object, properties: { name: { type: string }, price_delta_minor: { type: integer } } } }
+        images: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        track_inventory: { type: boolean }
+        stock: { type: integer, minimum: 0 }
+        calories: { type: integer, nullable: true }
+        nutrition_item_id: { type: string, format: uuid, nullable: true }
+
+    CartLine:
+      type: object
+      properties:
+        menu_item_id: { type: string, format: uuid }
+        name: { type: string }
+        variant_name: { type: string, nullable: true }
+        unit_price_minor: { type: integer }
+        quantity: { type: integer }
+        line_total_minor: { type: integer }
+
+    Cart:
+      type: object
+      properties:
+        vendor_id: { type: string, format: uuid, nullable: true }
+        currency: { type: string }
+        items: { type: array, items: { $ref: "#/components/schemas/CartLine" } }
+        subtotal_minor: { type: integer }
+
+    CartItemRequest:
+      type: object
+      required: [menu_item_id, quantity]
+      properties:
+        menu_item_id: { type: string, format: uuid }
+        variant_name: { type: string, nullable: true }
+        quantity: { type: integer, minimum: 1, maximum: 50 }
+
+    CheckoutRequest:
+      type: object
+      required: [fulfilment]
+      properties:
+        fulfilment: { type: string, enum: [delivery, pickup] }
+        delivery_address:
+          type: object
+          properties:
+            line: { type: string }
+            city: { type: string }
+            state: { type: string }
+            location: { $ref: "#/components/schemas/GeoPoint" }
+        scheduled_for: { type: string, format: date-time, nullable: true }
+        note: { type: string, nullable: true }
+
+    OrderSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        vendor_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, confirmed, preparing, ready, dispatched, delivered, cancelled] }
+        fulfilment: { type: string, enum: [delivery, pickup] }
+        total_minor: { type: integer }
+        currency: { type: string }
+        placed_at: { type: string, format: date-time }
+
+    Order:
+      allOf:
+        - $ref: "#/components/schemas/OrderSummary"
+        - type: object
+          properties:
+            customer_user_id: { type: string, format: uuid }
+            lines: { type: array, items: { $ref: "#/components/schemas/CartLine" } }
+            subtotal_minor: { type: integer }
+            delivery_fee_minor: { type: integer }
+            delivery_address: { type: object, nullable: true }
+            scheduled_for: { type: string, format: date-time, nullable: true }
+            note: { type: string, nullable: true }
+            status_history:
+              type: array
+              items: { type: object, properties: { status: { type: string }, at: { type: string, format: date-time } } }
+
+    Delivery:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        rider_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [unassigned, assigned, picked_up, en_route, delivered, failed] }
+        fee_minor: { type: integer }
+        zone_name: { type: string, nullable: true }
+        pickup:
+          oneOf: [ { $ref: "#/components/schemas/GeoPoint" }, { type: "null" } ]
+        dropoff:
+          oneOf: [ { $ref: "#/components/schemas/GeoPoint" }, { type: "null" } ]
+        track_points:
+          type: array
+          items: { type: object, properties: { lat: { type: number }, lng: { type: number }, at: { type: string, format: date-time } } }
+        assigned_at: { type: string, format: date-time, nullable: true }
+        delivered_at: { type: string, format: date-time, nullable: true }
+
+    Rider:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string }
+        vehicle_type: { type: string, enum: [bicycle, motorbike, car, foot] }
+        status: { type: string, enum: [available, busy, offline] }
+        location:
+          oneOf: [ { $ref: "#/components/schemas/GeoPoint" }, { type: "null" } ]
+
+    VendorReview:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    SalesSummary:
+      type: object
+      properties:
+        total_orders: { type: integer }
+        delivered_orders: { type: integer }
+        pending_orders: { type: integer }
+        revenue_minor: { type: integer }
+        currency: { type: string }

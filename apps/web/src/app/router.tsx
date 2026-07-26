@@ -18,6 +18,11 @@ import { NutritionDashboardPage } from '@features/nutrition/pages/NutritionDashb
 import { HealthProfilePage } from '@features/nutrition/pages/HealthProfilePage';
 import { MealPlannerPage } from '@features/nutrition/pages/MealPlannerPage';
 import { ProgressDashboardPage } from '@features/nutrition/pages/ProgressDashboardPage';
+import { VendorsPage } from '@features/marketplace/pages/VendorsPage';
+import { VendorStorefrontPage } from '@features/marketplace/pages/VendorStorefrontPage';
+import { CartPage } from '@features/marketplace/pages/CartPage';
+import { OrdersPage } from '@features/marketplace/pages/OrdersPage';
+import { VendorDashboardPage } from '@features/marketplace/pages/VendorDashboardPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -81,6 +86,34 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AiSettingsPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Marketplace
+  { path: '/vendors', element: <VendorsPage /> },
+  { path: '/vendors/:slug', element: <VendorStorefrontPage /> },
+  {
+    path: '/cart',
+    element: (
+      <ProtectedRoute>
+        <CartPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/orders',
+    element: (
+      <ProtectedRoute>
+        <OrdersPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/vendor-dashboard',
+    element: (
+      <ProtectedRoute>
+        <VendorDashboardPage />
       </ProtectedRoute>
     ),
   },

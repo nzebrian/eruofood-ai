@@ -328,3 +328,44 @@ body {
   color: var(--muted);
   font-weight: 400;
 }
+
+/* ---- Marketplace feature ---- */
+.menu-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: #f1f5f9;
+  text-transform: capitalize;
+}
+.badge--delivered {
+  background: #dcfce7;
+  color: #15803d;
+}
+.badge--cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.badge--pending,
+.badge--confirmed,
+.badge--preparing {
+  background: #fef9c3;
+  color: #854d0e;
+}
