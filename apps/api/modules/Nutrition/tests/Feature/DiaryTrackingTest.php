@@ -2,9 +2,44 @@
 
 declare(strict_types=1);
 
+use EruoFood\Nutrition\Infrastructure\Seeder\NutritionItemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+it('logs a food by referencing a nutrition-database item and scales its facts', function (): void {
+    $this->seed(NutritionItemSeeder::class);
+    $token = nutUserToken($this, 'itemdiary@example.com');
+
+    // Jollof Rice is seeded at 330 kcal/serving.
+    $jollofId = $this->getJson('/api/v1/nutrition/items?q=jollof')->assertOk()->json('data.0.id');
+
+    $entry = $this->withToken($token)->postJson('/api/v1/nutrition/diary', [
+        'date' => '2026-07-26',
+        'meal_type' => 'lunch',
+        'servings' => 2,
+        'nutrition_item_id' => $jollofId,
+    ])->assertCreated();
+
+    // The item's facts are resolved server-side and scaled to 2 servings (660 kcal).
+    $entry->assertJsonPath('data.item_name', 'Jollof Rice')
+        ->assertJsonPath('data.nutrition.calories', 660);
+
+    $this->withToken($token)->getJson('/api/v1/nutrition/diary?date=2026-07-26')
+        ->assertOk()
+        ->assertJsonPath('data.totals.calories', 660);
+});
+
+it('rejects logging an unknown nutrition item', function (): void {
+    $token = nutUserToken($this, 'baditem@example.com');
+
+    $this->withToken($token)->postJson('/api/v1/nutrition/diary', [
+        'date' => '2026-07-26',
+        'meal_type' => 'lunch',
+        'servings' => 1,
+        'nutrition_item_id' => '0193f8a0-1111-7abc-8def-0123456789ab',
+    ])->assertStatus(404);
+});
 
 it('logs custom foods and totals a day against targets', function (): void {
     $token = nutUserToken($this, 'diary@example.com');
