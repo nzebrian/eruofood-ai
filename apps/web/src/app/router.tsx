@@ -30,6 +30,9 @@ import { WishlistPage } from '@features/commerce/pages/WishlistPage';
 import { WalletPage } from '@features/payments/pages/WalletPage';
 import { TransactionsPage } from '@features/payments/pages/TransactionsPage';
 import { PaymentSettingsPage } from '@features/payments/pages/PaymentSettingsPage';
+import { NotificationCentrePage } from '@features/notifications/pages/NotificationCentrePage';
+import { MessagesPage } from '@features/notifications/pages/MessagesPage';
+import { NotificationSettingsPage } from '@features/notifications/pages/NotificationSettingsPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -167,6 +170,32 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <PaymentSettingsPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Notifications, Messaging & Real-Time Communication
+  {
+    path: '/notifications',
+    element: (
+      <ProtectedRoute>
+        <NotificationCentrePage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/messages',
+    element: (
+      <ProtectedRoute>
+        <MessagesPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/notification-settings',
+    element: (
+      <ProtectedRoute>
+        <NotificationSettingsPage />
       </ProtectedRoute>
     ),
   },

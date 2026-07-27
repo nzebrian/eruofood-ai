@@ -595,3 +595,137 @@ body {
   background: #fff4e5;
   color: #8a4b00;
 }
+
+/* ---- Notifications, Messaging & Real-Time --------------------------------- */
+.notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.notif-toggle {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0.5rem 0 1rem;
+}
+.notif-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--border, #eee);
+}
+.notif-item--unread {
+  background: #f2f8ff;
+}
+.notif-icon {
+  font-size: 1.4rem;
+}
+.notif-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+}
+.notif-body time {
+  font-size: 0.8rem;
+}
+.notif-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  background: #1a7f37;
+  cursor: pointer;
+  align-self: center;
+}
+.notif-prefs {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+.notif-prefs th,
+.notif-prefs td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border, #eee);
+  text-align: center;
+}
+.notif-prefs td:first-child,
+.notif-prefs th:first-child {
+  text-align: left;
+  text-transform: capitalize;
+}
+.notif-quiet {
+  margin: 1rem 0;
+}
+.chat {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1rem;
+  min-height: 400px;
+}
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-right: 1px solid var(--border, #eee);
+  padding-right: 0.5rem;
+}
+.chat-conv {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+.chat-conv--active {
+  background: #eef2f5;
+  font-weight: 600;
+}
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+}
+.chat-messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  overflow-y: auto;
+}
+.chat-bubble {
+  align-self: flex-start;
+  max-width: 70%;
+  padding: 0.5rem 0.8rem;
+  border-radius: 14px;
+  background: #eef2f5;
+}
+.chat-bubble--me {
+  align-self: flex-end;
+  background: #d7f0df;
+}
+.chat-compose {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+.chat-compose input {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border, #d7d7d7);
+  border-radius: 8px;
+}
+@media (max-width: 600px) {
+  .chat {
+    grid-template-columns: 1fr;
+  }
+}
