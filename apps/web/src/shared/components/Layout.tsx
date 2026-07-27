@@ -23,6 +23,8 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
               <Link to="/shop-cart">Grocery Cart</Link>
               <Link to="/wishlist">Wishlist</Link>
               <Link to="/orders">Orders</Link>
+              <Link to="/wallet-account">Wallet</Link>
+              <Link to="/transactions">Payments</Link>
               <Link to="/favourites">Favourites</Link>
               <Link to="/ai/recipe-generator">AI Chef</Link>
               <Link to="/ai/assistant">Assistant</Link>

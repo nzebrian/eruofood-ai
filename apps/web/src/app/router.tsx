@@ -27,6 +27,9 @@ import { ShopPage } from '@features/commerce/pages/ShopPage';
 import { ProductDetailPage } from '@features/commerce/pages/ProductDetailPage';
 import { ShoppingCartPage } from '@features/commerce/pages/ShoppingCartPage';
 import { WishlistPage } from '@features/commerce/pages/WishlistPage';
+import { WalletPage } from '@features/payments/pages/WalletPage';
+import { TransactionsPage } from '@features/payments/pages/TransactionsPage';
+import { PaymentSettingsPage } from '@features/payments/pages/PaymentSettingsPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -138,6 +141,32 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <WishlistPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Payments, Wallet & Financial Services
+  {
+    path: '/wallet-account',
+    element: (
+      <ProtectedRoute>
+        <WalletPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/transactions',
+    element: (
+      <ProtectedRoute>
+        <TransactionsPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/payment-settings',
+    element: (
+      <ProtectedRoute>
+        <PaymentSettingsPage />
       </ProtectedRoute>
     ),
   },

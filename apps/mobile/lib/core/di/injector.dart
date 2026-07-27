@@ -4,6 +4,7 @@ import '../../features/ai/ai_injection.dart';
 import '../../features/auth/auth_injection.dart';
 import '../../features/catalog/catalog_injection.dart';
 import '../../features/commerce/commerce_injection.dart';
+import '../../features/payments/payments_injection.dart';
 import '../../features/marketplace/marketplace_injection.dart';
 import '../../features/nutrition/nutrition_injection.dart';
 import '../config/app_config.dart';
@@ -35,4 +36,5 @@ Future<void> configureDependencies() async {
   registerNutritionFeature(sl);
   registerMarketplaceFeature(sl);
   registerCommerceFeature(sl);
+  registerPaymentsFeature(sl);
 }

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.7.0
+  version: 0.8.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -52,6 +52,10 @@ tags:
     description: General e-commerce & grocery — stores, products, cart, wishlist, checkout, orders, returns, promotions and the AI shopping assistant.
   - name: Commerce Admin
     description: Admin store/product moderation, inventory, promotions, coupons and returns (RBAC).
+  - name: Payments
+    description: Payments, wallets, refunds, saved methods, subscriptions and provider webhooks.
+  - name: Payments Admin
+    description: Admin transactions dashboard, refunds, settlements, payouts, financial reports and provider management (RBAC).
 
 security:
   - bearerAuth: []
@@ -2419,6 +2423,365 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceReturn" } } }
 
+  # ---- Payments, Wallet & Financial Services ------------------------------
+  /v1/payments/payments:
+    get:
+      tags: [Payments]
+      summary: The caller's payment history
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of payments.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Payment" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Payments]
+      summary: Initiate a payment
+      description: >
+        Begins collecting money for an (opaque) order. Payments is decoupled from
+        the Order module — it holds only a soft order reference and reports the
+        outcome through domain events. Idempotent on `idempotency_key`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_minor, customer_email]
+              properties:
+                amount_minor: { type: integer, minimum: 1 }
+                customer_email: { type: string, format: email }
+                order_id: { type: string, format: uuid, nullable: true }
+                method_type: { type: string, enum: [card, bank_transfer, wallet, qr, ussd] }
+                provider: { type: string, enum: [paystack, flutterwave, moniepoint, stripe, paypal, wallet, mock] }
+                idempotency_key: { type: string }
+                splits:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      payee_type: { type: string, enum: [vendor, driver, platform] }
+                      payee_id: { type: string, format: uuid }
+                      amount_minor: { type: integer }
+      responses:
+        "201":
+          description: The payment intent (with a hosted-checkout URL when a redirect is required).
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PaymentIntent" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/payments/payments/{id}:
+    get:
+      tags: [Payments]
+      summary: Payment detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The payment.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Payment" } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/payments/{id}/verify:
+    post:
+      tags: [Payments]
+      summary: Verify a payment with its provider and capture it if confirmed
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The (possibly now captured) payment.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Payment" } } }
+  /v1/payments/refunds:
+    post:
+      tags: [Payments]
+      summary: Refund a captured payment (full or partial)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_id, reason]
+              properties:
+                payment_id: { type: string, format: uuid }
+                amount_minor: { type: integer, minimum: 1, nullable: true }
+                reason: { type: string }
+      responses:
+        "201":
+          description: The refund.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Refund" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/payments/wallet:
+    get:
+      tags: [Payments]
+      summary: The caller's wallet balance
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The wallet.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Wallet" } } }
+  /v1/payments/wallet/statement:
+    get:
+      tags: [Payments]
+      summary: The wallet statement
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of wallet transactions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/WalletTransaction" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/payments/wallet/topup:
+    post:
+      tags: [Payments]
+      summary: Top up the wallet (takes a payment, credits on capture)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_minor, customer_email]
+              properties:
+                amount_minor: { type: integer, minimum: 1 }
+                customer_email: { type: string, format: email }
+                provider: { type: string, enum: [paystack, flutterwave, moniepoint, stripe, paypal, mock] }
+      responses:
+        "201":
+          description: The top-up payment intent.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PaymentIntent" } } }
+  /v1/payments/wallet/transfer:
+    post:
+      tags: [Payments]
+      summary: Transfer funds to another user's wallet
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_user_id, amount_minor]
+              properties:
+                to_user_id: { type: string, format: uuid }
+                amount_minor: { type: integer, minimum: 1 }
+                note: { type: string }
+      responses:
+        "200":
+          description: The updated wallet.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Wallet" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/payments/methods:
+    get:
+      tags: [Payments]
+      summary: The caller's saved (tokenised) payment methods
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Saved methods.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/SavedMethod" } } } }
+    post:
+      tags: [Payments]
+      summary: Save a tokenised payment method
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, token, brand, last4, expiry_month, expiry_year]
+              properties:
+                provider: { type: string, enum: [paystack, flutterwave, moniepoint, stripe, paypal] }
+                token: { type: string }
+                brand: { type: string }
+                last4: { type: string }
+                expiry_month: { type: integer }
+                expiry_year: { type: integer }
+                default: { type: boolean }
+      responses:
+        "201":
+          description: The saved method.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SavedMethod" } } }
+  /v1/payments/subscriptions:
+    get:
+      tags: [Payments]
+      summary: The caller's subscriptions
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Subscriptions.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Subscription" } } } }
+    post:
+      tags: [Payments]
+      summary: Start a recurring subscription
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan, amount_minor, interval]
+              properties:
+                plan: { type: string }
+                amount_minor: { type: integer, minimum: 1 }
+                interval: { type: string, enum: [weekly, monthly] }
+      responses:
+        "201":
+          description: The subscription.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Subscription" } } }
+  /v1/payments/webhooks/{provider}:
+    post:
+      tags: [Payments]
+      summary: Provider webhook receiver (public; signed by the provider)
+      description: >
+        Verifies the provider signature, deduplicates on the provider event id
+        (idempotency), and applies the outcome exactly-once. No bearer auth.
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [paystack, flutterwave, moniepoint, stripe, paypal, mock] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Acknowledged.
+          content:
+            application/json:
+              schema: { type: object, properties: { received: { type: boolean }, applied: { type: boolean } } }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/payments/admin/report:
+    get:
+      tags: [Payments Admin]
+      summary: Financial report / dashboard totals (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The financial report.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/FinancialReport" } } }
+  /v1/payments/admin/payments:
+    get:
+      tags: [Payments Admin]
+      summary: All payments (transactions dashboard, RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of payments.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Payment" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/payments/admin/settlements:
+    get:
+      tags: [Payments Admin]
+      summary: Settlement runs (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of settlements.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Settlement" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Payments Admin]
+      summary: Run a settlement for a payee (RBAC)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payee_type, payee_id, gross_minor, period_start, period_end]
+              properties:
+                payee_type: { type: string, enum: [vendor, restaurant, driver] }
+                payee_id: { type: string, format: uuid }
+                gross_minor: { type: integer, minimum: 1 }
+                period_start: { type: string, format: date-time }
+                period_end: { type: string, format: date-time }
+                bank:
+                  $ref: "#/components/schemas/BankAccount"
+      responses:
+        "201":
+          description: The completed settlement.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Settlement" } } }
+  /v1/payments/admin/payouts:
+    get:
+      tags: [Payments Admin]
+      summary: Payouts (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of payouts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Payout" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/payments/admin/providers:
+    get:
+      tags: [Payments Admin]
+      summary: Enabled payment providers (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The enabled providers, default first.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { providers: { type: array, items: { type: string } } } } } }
+
 
 components:
   securitySchemes:
@@ -3643,3 +4006,146 @@ components:
       properties:
         blurb: { type: string }
         products: { type: array, items: { $ref: "#/components/schemas/CommerceProductSummary" } }
+
+    # ---- Payments schemas ----
+    PaymentIntent:
+      type: object
+      properties:
+        payment_id: { type: string, format: uuid }
+        reference: { type: string }
+        status: { type: string, enum: [pending, processing, succeeded, failed, cancelled, refunded, partially_refunded] }
+        provider: { type: string }
+        authorization_url: { type: string, nullable: true }
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        order_id: { type: string, nullable: true }
+        payer_user_id: { type: string, format: uuid }
+        amount_minor: { type: integer }
+        refunded_minor: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [pending, processing, succeeded, failed, cancelled, refunded, partially_refunded] }
+        provider: { type: string }
+        method_type: { type: string }
+        provider_reference: { type: string, nullable: true }
+        splits:
+          type: array
+          items:
+            type: object
+            properties:
+              payee_type: { type: string }
+              payee_id: { type: string }
+              amount_minor: { type: integer }
+        failure_reason: { type: string, nullable: true }
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              status: { type: string }
+              at: { type: string }
+              note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    Refund:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        payment_id: { type: string, format: uuid }
+        order_id: { type: string, nullable: true }
+        amount_minor: { type: integer }
+        currency: { type: string }
+        partial: { type: boolean }
+        reason: { type: string }
+        status: { type: string, enum: [pending, completed, failed] }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+    Wallet:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        owner_type: { type: string, enum: [customer, restaurant, vendor, driver, platform] }
+        owner_id: { type: string, format: uuid }
+        balance_minor: { type: integer }
+        currency: { type: string }
+        created_at: { type: string, format: date-time }
+    WalletTransaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        wallet_id: { type: string, format: uuid }
+        type: { type: string }
+        direction: { type: string, enum: [credit, debit] }
+        amount_minor: { type: integer }
+        balance_after_minor: { type: integer }
+        reference: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    BankAccount:
+      type: object
+      properties:
+        account_name: { type: string }
+        account_number: { type: string }
+        bank_code: { type: string }
+        bank_name: { type: string, nullable: true }
+    Settlement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        payee_type: { type: string }
+        payee_id: { type: string, format: uuid }
+        gross_minor: { type: integer }
+        commission_minor: { type: integer }
+        fees_minor: { type: integer }
+        net_minor: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [pending, processing, completed, failed] }
+        payout_id: { type: string, nullable: true }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+    Payout:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        payee_type: { type: string }
+        payee_id: { type: string, format: uuid }
+        amount_minor: { type: integer }
+        currency: { type: string }
+        destination: { $ref: "#/components/schemas/BankAccount" }
+        status: { type: string, enum: [pending, processing, paid, failed] }
+        provider_reference: { type: string, nullable: true }
+        paid_at: { type: string, format: date-time, nullable: true }
+    SavedMethod:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string }
+        brand: { type: string }
+        last4: { type: string }
+        expiry_month: { type: integer }
+        expiry_year: { type: integer }
+        label: { type: string }
+        default: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        plan: { type: string }
+        amount_minor: { type: integer }
+        currency: { type: string }
+        interval: { type: string, enum: [weekly, monthly] }
+        status: { type: string, enum: [active, past_due, cancelled] }
+        next_billing_at: { type: string, format: date-time }
+    FinancialReport:
+      type: object
+      properties:
+        captured_count: { type: integer }
+        gross_minor: { type: integer }
+        commission_minor: { type: integer }
+        fees_minor: { type: integer }
+        refunded_minor: { type: integer }
+        net_minor: { type: integer }
+        currency: { type: string }
