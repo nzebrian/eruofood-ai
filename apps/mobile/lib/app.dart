@@ -10,6 +10,7 @@ import 'features/auth/presentation/pages/login_page.dart';
 import 'features/auth/presentation/pages/profile_page.dart';
 import 'features/ai/presentation/pages/ai_hub_page.dart';
 import 'features/catalog/presentation/pages/food_catalogue_page.dart';
+import 'features/commerce/presentation/pages/shop_page.dart';
 import 'features/marketplace/presentation/pages/marketplace_hub_page.dart';
 import 'features/nutrition/presentation/pages/nutrition_hub_page.dart';
 
@@ -54,6 +55,7 @@ class _HomeShellState extends State<HomeShell> {
           authenticated
               ? const MarketplaceHubPage()
               : const _AuthPrompt(message: 'Sign in to order food.'),
+          const ShopPage(),
           authenticated ? const AiHubPage() : const _AuthPrompt(message: 'Sign in to use the AI features.'),
           authenticated
               ? const NutritionHubPage()
@@ -70,6 +72,7 @@ class _HomeShellState extends State<HomeShell> {
             destinations: const <NavigationDestination>[
               NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Foods'),
               NavigationDestination(icon: Icon(Icons.storefront_outlined), label: 'Order'),
+              NavigationDestination(icon: Icon(Icons.shopping_bag_outlined), label: 'Shop'),
               NavigationDestination(icon: Icon(Icons.auto_awesome), label: 'AI'),
               NavigationDestination(icon: Icon(Icons.monitor_heart_outlined), label: 'Health'),
               NavigationDestination(icon: Icon(Icons.person_outline), label: 'Account'),

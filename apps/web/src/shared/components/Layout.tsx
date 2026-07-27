@@ -16,9 +16,12 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
           <Link to="/">Foods</Link>
           <Link to="/recipes">Recipes</Link>
           <Link to="/vendors">Vendors</Link>
+          <Link to="/shop">Shop</Link>
           {user ? (
             <>
               <Link to="/cart">Cart</Link>
+              <Link to="/shop-cart">Grocery Cart</Link>
+              <Link to="/wishlist">Wishlist</Link>
               <Link to="/orders">Orders</Link>
               <Link to="/favourites">Favourites</Link>
               <Link to="/ai/recipe-generator">AI Chef</Link>

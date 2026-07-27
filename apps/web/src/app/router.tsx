@@ -23,6 +23,10 @@ import { VendorStorefrontPage } from '@features/marketplace/pages/VendorStorefro
 import { CartPage } from '@features/marketplace/pages/CartPage';
 import { OrdersPage } from '@features/marketplace/pages/OrdersPage';
 import { VendorDashboardPage } from '@features/marketplace/pages/VendorDashboardPage';
+import { ShopPage } from '@features/commerce/pages/ShopPage';
+import { ProductDetailPage } from '@features/commerce/pages/ProductDetailPage';
+import { ShoppingCartPage } from '@features/commerce/pages/ShoppingCartPage';
+import { WishlistPage } from '@features/commerce/pages/WishlistPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -114,6 +118,26 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <VendorDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Marketplace, Grocery & Commerce (public shop; cart/wishlist need auth)
+  { path: '/shop', element: <ShopPage /> },
+  { path: '/shop/:slug', element: <ProductDetailPage /> },
+  {
+    path: '/shop-cart',
+    element: (
+      <ProtectedRoute>
+        <ShoppingCartPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/wishlist',
+    element: (
+      <ProtectedRoute>
+        <WishlistPage />
       </ProtectedRoute>
     ),
   },

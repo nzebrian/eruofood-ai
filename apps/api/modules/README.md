@@ -17,8 +17,9 @@ by touching another module's internals or tables.
 | `Ai` | AI Engine & Intelligent Recipe Generation (Milestone 4): multi-provider AI service layer, versioned prompt system, recipe generation, cooking assistant + chat history, usage & cost tracking. See its [README](Ai/README.md). |
 | `Nutrition` | Nutrition, Health & Personalisation (Milestone 5): nutrition database, health profiles, BMI/BMR/TDEE calculators, food diary, meal plans + shopping lists, progress tracking, and AI personalisation (via the Ai module's contract). See its [README](Nutrition/README.md). |
 | `Marketplace` | Restaurant, Vendor & Food Business Platform (Milestone 6): vendors/restaurants, menus, cart, checkout, orders, delivery + riders with live tracking, search, and AI menu descriptions (via the Ai module's contract). See its [README](Marketplace/README.md). |
+| `Commerce` | Marketplace, Grocery & Commerce Platform (Milestone 7): multi-vendor stores, a general + grocery product catalogue, multi-store cart & wishlist, discount/tax/shipping-aware checkout, orders with returns & invoices, inventory with warehouses/suppliers & batch-expiry tracking, promotions & coupons, and an AI shopping assistant (via the Ai module's contract). See its [README](Commerce/README.md). |
 
-> Remaining business contexts (Ordering, Payments, Delivery, …) are introduced
+> Remaining business contexts (Payments, Settlement, …) are introduced
 > in their respective roadmap phases (MASTER_PLAN.md §11).
 
 ## Standard module layout

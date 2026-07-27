@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.6.0
+  version: 0.7.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -48,6 +48,10 @@ tags:
     description: Restaurants/vendors, menus, cart, checkout, orders, delivery and riders.
   - name: Marketplace Admin
     description: Admin vendor verification & moderation (RBAC).
+  - name: Commerce
+    description: General e-commerce & grocery — stores, products, cart, wishlist, checkout, orders, returns, promotions and the AI shopping assistant.
+  - name: Commerce Admin
+    description: Admin store/product moderation, inventory, promotions, coupons and returns (RBAC).
 
 security:
   - bearerAuth: []
@@ -1976,6 +1980,445 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/Vendor" } } }
 
+  # ---- Commerce (Marketplace, Grocery & Commerce Platform) ----------------
+  /v1/commerce/products:
+    get:
+      tags: [Commerce]
+      summary: Search the public product catalogue
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string, enum: [grocery, general] } }
+        - { name: department, in: query, schema: { type: string, enum: [produce, pantry, beverages, frozen, household, other] } }
+        - { name: store_id, in: query, schema: { type: string, format: uuid } }
+        - { name: category_id, in: query, schema: { type: string, format: uuid } }
+        - { name: featured, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, price_asc, price_desc, rating, newest] } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: A page of products.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/CommerceProductSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/commerce/products/{slug}:
+    get:
+      tags: [Commerce]
+      summary: Product detail (with related items)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The product.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceProduct" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/commerce/products/barcode/{barcode}:
+    get:
+      tags: [Commerce]
+      summary: Look up a published product by barcode
+      parameters:
+        - { name: barcode, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The product.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceProduct" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/commerce/categories:
+    get:
+      tags: [Commerce]
+      summary: List product categories (incl. grocery departments)
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/CommerceCategory" } } } }
+  /v1/commerce/promotions:
+    get:
+      tags: [Commerce]
+      summary: Active promotions
+      responses:
+        "200":
+          description: Promotions.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/CommercePromotion" } } } }
+  /v1/commerce/promotions/flash-sales:
+    get:
+      tags: [Commerce]
+      summary: Active flash sales
+      responses:
+        "200":
+          description: Flash sales.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/CommercePromotion" } } } }
+  /v1/commerce/recommendations:
+    get:
+      tags: [Commerce]
+      summary: AI product recommendations
+      responses:
+        "200":
+          description: A recommendation carousel.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceRecommendation" } } }
+  /v1/commerce/stores:
+    get:
+      tags: [Commerce]
+      summary: Browse verified stores
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: A page of stores.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/CommerceStore" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Commerce]
+      summary: Register a store
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string } } }
+      responses:
+        "201":
+          description: The store.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceStore" } } }
+  /v1/commerce/cart:
+    get:
+      tags: [Commerce]
+      summary: View the cart
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The cart.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceCart" } } }
+    delete:
+      tags: [Commerce]
+      summary: Clear the cart
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Cleared. }
+  /v1/commerce/cart/items:
+    post:
+      tags: [Commerce]
+      summary: Add a product to the cart
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id, quantity]
+              properties:
+                product_id: { type: string, format: uuid }
+                variant_sku: { type: string }
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        "201":
+          description: The updated cart.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceCart" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/commerce/cart/coupon:
+    post:
+      tags: [Commerce]
+      summary: Apply (or clear) a coupon on the cart
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { code: { type: string, nullable: true } } }
+      responses:
+        "200":
+          description: The updated cart.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceCart" } } }
+  /v1/commerce/wishlist:
+    get:
+      tags: [Commerce]
+      summary: View the wishlist
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The wishlist with resolved products.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      product_ids: { type: array, items: { type: string } }
+                      products: { type: array, items: { $ref: "#/components/schemas/CommerceProductSummary" } }
+    post:
+      tags: [Commerce]
+      summary: Add a product to the wishlist
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [product_id], properties: { product_id: { type: string, format: uuid } } }
+      responses:
+        "201": { description: Added. }
+  /v1/commerce/checkout/quote:
+    get:
+      tags: [Commerce]
+      summary: Price the cart (subtotal → discount → tax → shipping → total)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: pickup, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: The price breakdown.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommercePriceBreakdown" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/commerce/checkout:
+    post:
+      tags: [Commerce]
+      summary: Place an order
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pickup: { type: boolean }
+                shipping_address: { $ref: "#/components/schemas/CommerceAddress" }
+                scheduled_for: { type: string, format: date-time }
+                note: { type: string }
+      responses:
+        "201":
+          description: The placed order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceOrder" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/commerce/orders:
+    get:
+      tags: [Commerce]
+      summary: Order history
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/CommerceOrderSummary" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/commerce/orders/{id}:
+    get:
+      tags: [Commerce]
+      summary: Order detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceOrder" } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/commerce/orders/{id}/status:
+    post:
+      tags: [Commerce]
+      summary: Advance an order's status (seller/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [paid, processing, shipped, delivered] } } }
+      responses:
+        "200":
+          description: The updated order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceOrder" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/commerce/returns:
+    post:
+      tags: [Commerce]
+      summary: Request a return for a delivered order
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [order_id, reason], properties: { order_id: { type: string, format: uuid }, reason: { type: string } } }
+      responses:
+        "201":
+          description: The return request.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceReturn" } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/commerce/shopping-lists/build:
+    post:
+      tags: [Commerce]
+      summary: Build a smart shopping list from a natural-language prompt (AI)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name, prompt], properties: { name: { type: string }, prompt: { type: string } } }
+      responses:
+        "201":
+          description: The generated list.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceShoppingList" } } }
+  /v1/commerce/admin/stores/{id}/verify:
+    post:
+      tags: [Commerce Admin]
+      summary: Verify a store (RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The verified store.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceStore" } } }
+  /v1/commerce/admin/products/{id}/approve:
+    post:
+      tags: [Commerce Admin]
+      summary: Approve a pending product (RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The published product.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceProduct" } } }
+  /v1/commerce/admin/inventory/receive:
+    post:
+      tags: [Commerce Admin]
+      summary: Receive stock, optionally as an expiry-tracked batch (RBAC)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id, quantity]
+              properties:
+                product_id: { type: string, format: uuid }
+                variant_sku: { type: string }
+                quantity: { type: integer, minimum: 1 }
+                warehouse_id: { type: string, format: uuid }
+                supplier_id: { type: string, format: uuid }
+                batch_number: { type: string }
+                expires_at: { type: string, format: date }
+                low_stock_threshold: { type: integer }
+      responses:
+        "201":
+          description: The stock record.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceInventoryItem" } } }
+  /v1/commerce/admin/inventory/low-stock:
+    get:
+      tags: [Commerce Admin]
+      summary: Low-stock alerting list (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of low-stock records.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/CommerceInventoryItem" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/commerce/admin/coupons:
+    post:
+      tags: [Commerce Admin]
+      summary: Create a coupon (RBAC)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, type, value]
+              properties:
+                code: { type: string }
+                type: { type: string, enum: [percentage, fixed, free_shipping] }
+                value: { type: integer }
+                min_spend_minor: { type: integer }
+                max_redemptions: { type: integer }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "201":
+          description: The coupon.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceCoupon" } } }
+  /v1/commerce/admin/returns/{id}/resolve:
+    post:
+      tags: [Commerce Admin]
+      summary: Approve/reject/refund a return (RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [approved, rejected, refunded] }, note: { type: string } } }
+      responses:
+        "200":
+          description: The updated return.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceReturn" } } }
+
 
 components:
   securitySchemes:
@@ -3000,3 +3443,203 @@ components:
         pending_orders: { type: integer }
         revenue_minor: { type: integer }
         currency: { type: string }
+
+    # ---- Commerce schemas ----
+    CommerceStore:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        owner_user_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        verified: { type: boolean }
+        description: { type: string, nullable: true }
+        logo: { type: string, nullable: true }
+        rating_average: { type: number }
+        rating_count: { type: integer }
+    CommerceCategory:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        kind: { type: string, enum: [grocery, general] }
+        department: { type: string, nullable: true, enum: [produce, pantry, beverages, frozen, household, other] }
+        parent_id: { type: string, nullable: true }
+        sort_order: { type: integer }
+    CommerceProductVariant:
+      type: object
+      properties:
+        sku: { type: string }
+        name: { type: string }
+        price_delta_minor: { type: integer }
+        barcode: { type: string, nullable: true }
+    CommerceProductSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        store_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        kind: { type: string, enum: [grocery, general] }
+        department: { type: string, nullable: true }
+        base_price_minor: { type: integer }
+        currency: { type: string }
+        primary_image: { type: string, nullable: true }
+        status: { type: string, enum: [draft, pending, published, rejected] }
+        featured: { type: boolean }
+        rating_average: { type: number }
+        rating_count: { type: integer }
+    CommerceProduct:
+      allOf:
+        - $ref: "#/components/schemas/CommerceProductSummary"
+        - type: object
+          properties:
+            category_id: { type: string, nullable: true }
+            description: { type: string, nullable: true }
+            description_ai_generated: { type: boolean }
+            brand: { type: string, nullable: true }
+            barcode: { type: string, nullable: true }
+            variants: { type: array, items: { $ref: "#/components/schemas/CommerceProductVariant" } }
+            images: { type: array, items: { type: string } }
+            tags: { type: array, items: { type: string } }
+            related: { type: array, items: { $ref: "#/components/schemas/CommerceProductSummary" } }
+    CommerceCartItem:
+      type: object
+      properties:
+        product_id: { type: string, format: uuid }
+        store_id: { type: string, format: uuid }
+        name: { type: string }
+        variant_sku: { type: string, nullable: true }
+        unit_price_minor: { type: integer }
+        quantity: { type: integer }
+        line_total_minor: { type: integer }
+    CommerceCart:
+      type: object
+      properties:
+        currency: { type: string }
+        coupon_code: { type: string, nullable: true }
+        items: { type: array, items: { $ref: "#/components/schemas/CommerceCartItem" } }
+        item_count: { type: integer }
+        subtotal_minor: { type: integer }
+    CommercePriceBreakdown:
+      type: object
+      properties:
+        currency: { type: string }
+        subtotal_minor: { type: integer }
+        discount_minor: { type: integer }
+        tax_minor: { type: integer }
+        shipping_minor: { type: integer }
+        total_minor: { type: integer }
+    CommerceAddress:
+      type: object
+      properties:
+        line1: { type: string }
+        line2: { type: string, nullable: true }
+        city: { type: string }
+        state: { type: string }
+        postcode: { type: string, nullable: true }
+        country: { type: string }
+    CommerceOrderSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        status: { type: string, enum: [pending, paid, processing, shipped, delivered, cancelled, returned] }
+        total_minor: { type: integer }
+        currency: { type: string }
+        pickup: { type: boolean }
+        placed_at: { type: string, format: date-time }
+    CommerceOrder:
+      allOf:
+        - $ref: "#/components/schemas/CommerceOrderSummary"
+        - type: object
+          properties:
+            customer_user_id: { type: string, format: uuid }
+            lines: { type: array, items: { $ref: "#/components/schemas/CommerceCartItem" } }
+            subtotal_minor: { type: integer }
+            discount_minor: { type: integer }
+            tax_minor: { type: integer }
+            shipping_minor: { type: integer }
+            coupon_code: { type: string, nullable: true }
+            shipping_address: { $ref: "#/components/schemas/CommerceAddress" }
+            note: { type: string, nullable: true }
+            status_history:
+              type: array
+              items: { type: object, properties: { status: { type: string }, at: { type: string } } }
+    CommerceReturn:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        customer_user_id: { type: string, format: uuid }
+        reason: { type: string }
+        refund_minor: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [requested, approved, rejected, refunded] }
+        resolution_note: { type: string, nullable: true }
+        requested_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+    CommercePromotion:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        store_id: { type: string, nullable: true }
+        name: { type: string }
+        type: { type: string, enum: [percentage, fixed] }
+        value: { type: integer }
+        product_ids: { type: array, items: { type: string } }
+        starts_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: string, format: date-time, nullable: true }
+        flash_sale: { type: boolean }
+    CommerceCoupon:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        type: { type: string, enum: [percentage, fixed, free_shipping] }
+        value: { type: integer }
+        min_spend_minor: { type: integer }
+        max_redemptions: { type: integer, nullable: true }
+        times_redeemed: { type: integer }
+        expires_at: { type: string, format: date-time, nullable: true }
+        active: { type: boolean }
+    CommerceBatch:
+      type: object
+      properties:
+        batch_number: { type: string }
+        quantity: { type: integer }
+        expires_at: { type: string, format: date-time, nullable: true }
+        received_at: { type: string, format: date-time, nullable: true }
+    CommerceInventoryItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        variant_sku: { type: string, nullable: true }
+        warehouse_id: { type: string, nullable: true }
+        supplier_id: { type: string, nullable: true }
+        quantity: { type: integer }
+        low_stock_threshold: { type: integer }
+        low_stock: { type: boolean }
+        nearest_expiry: { type: string, format: date-time, nullable: true }
+        batches: { type: array, items: { $ref: "#/components/schemas/CommerceBatch" } }
+    CommerceShoppingListLine:
+      type: object
+      properties:
+        name: { type: string }
+        quantity: { type: integer }
+        product_id: { type: string, nullable: true }
+        bought: { type: boolean }
+    CommerceShoppingList:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        name: { type: string }
+        lines: { type: array, items: { $ref: "#/components/schemas/CommerceShoppingListLine" } }
+    CommerceRecommendation:
+      type: object
+      properties:
+        blurb: { type: string }
+        products: { type: array, items: { $ref: "#/components/schemas/CommerceProductSummary" } }
