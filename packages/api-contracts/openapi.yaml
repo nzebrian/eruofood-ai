@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.13.0
+  version: 0.14.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -69,6 +69,8 @@ tags:
     description: Global & typed search, autocomplete/suggestions/trending, faceted filtering, ranked results (full-text + pgvector semantic), the recommendation engine, saved & recent searches, and admin search analytics. The one place discovery happens — no business module searches its own tables; they publish events and Search indexes documents.
   - name: Support
     description: Customer Support, Helpdesk & CRM — tickets with SLA/escalation/merge, the customer portal and agent workspace, a knowledge base, the CRM (profiles, timeline, insights, segmentation), automation rules, CSAT and admin dashboards. The one place support happens — no business module manages tickets; the CRM is built from published domain events.
+  - name: Reviews
+    description: Reviews & Ratings — polymorphic subject reviews (product/food/recipe/vendor/restaurant/rider) with 1–5 stars, verified-purchase (from order events), a moderation queue with content filtering, helpfulness voting, subject-owner responses, the authoritative per-subject rating summary, and review analytics. The one place ratings are computed — no business module stores or aggregates its own reviews; ratings flow out via the published rating-summary event.
 
 security:
   - bearerAuth: []
@@ -4283,6 +4285,242 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/AutomationRule" } } }
 
+  # ----- Reviews & Ratings (Milestone 14) -----
+  /v1/reviews/{subjectType}/{subjectId}:
+    get:
+      tags: [Reviews]
+      summary: Published reviews for a subject (public)
+      parameters:
+        - { name: subjectType, in: path, required: true, schema: { type: string, enum: [product, food, recipe, vendor, restaurant, rider] } }
+        - { name: subjectId, in: path, required: true, schema: { type: string } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [newest, oldest, helpful, rating_desc, rating_asc] } }
+        - { name: verified, in: query, required: false, schema: { type: boolean } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: A page of reviews.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedReviews" }
+  /v1/reviews/{subjectType}/{subjectId}/summary:
+    get:
+      tags: [Reviews]
+      summary: The authoritative rating summary for a subject (public)
+      parameters:
+        - { name: subjectType, in: path, required: true, schema: { type: string, enum: [product, food, recipe, vendor, restaurant, rider] } }
+        - { name: subjectId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The rating summary.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/RatingSummary" } } }
+  /v1/reviews/{id}:
+    get:
+      tags: [Reviews]
+      summary: A single review (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Reviews]
+      summary: Edit your own review
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                title: { type: string, nullable: true }
+                body: { type: string, nullable: true }
+                photos: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The updated review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/reviews:
+    post:
+      tags: [Reviews]
+      summary: Submit a review (auto-publishes under post-moderation, else held)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_type, subject_id, rating]
+              properties:
+                subject_type: { type: string, enum: [product, food, recipe, vendor, restaurant, rider] }
+                subject_id: { type: string }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                title: { type: string, nullable: true }
+                body: { type: string, nullable: true }
+                photos: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: The created review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/reviews/me:
+    get:
+      tags: [Reviews]
+      summary: The authenticated user's reviews
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of the user's reviews.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedReviews" }
+  /v1/reviews/{id}/vote:
+    post:
+      tags: [Reviews]
+      summary: Vote a review helpful/unhelpful
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [helpful], properties: { helpful: { type: boolean } } }
+      responses:
+        "200":
+          description: The updated review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+  /v1/reviews/{id}/response:
+    post:
+      tags: [Reviews]
+      summary: Subject-owner public response to a review (vendor/admin role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string } } }
+      responses:
+        "200":
+          description: The updated review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/reviews/moderation/queue:
+    get:
+      tags: [Reviews]
+      summary: The moderation queue of held reviews (moderator role)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of reviews awaiting moderation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedReviews" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/reviews/moderation/{id}/approve:
+    post:
+      tags: [Reviews]
+      summary: Approve a held review — publishes it and re-projects the rating (moderator role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The published review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/reviews/moderation/{id}/reject:
+    post:
+      tags: [Reviews]
+      summary: Reject a held review with a reason (moderator role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string } } }
+      responses:
+        "200":
+          description: The rejected review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/reviews/moderation/{id}/remove:
+    post:
+      tags: [Reviews]
+      summary: Remove a published review with a reason — re-projects the rating (moderator role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string } } }
+      responses:
+        "200":
+          description: The removed review.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Review" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/reviews/admin/analytics:
+    get:
+      tags: [Reviews]
+      summary: Review analytics — moderation funnel, distribution, verified rate (moderator role)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The analytics overview.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ReviewAnalytics" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/reviews/admin/top-rated/{subjectType}:
+    get:
+      tags: [Reviews]
+      summary: The highest-rated subjects of a type (moderator role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: subjectType, in: path, required: true, schema: { type: string, enum: [product, food, recipe, vendor, restaurant, rider] } }
+        - { name: min_count, in: query, required: false, schema: { type: integer } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Top-rated subjects.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/RatingSummary" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+
 
 components:
   securitySchemes:
@@ -6166,4 +6404,59 @@ components:
       type: object
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/SupportInteraction" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    # ----- Reviews & Ratings -----
+    ReviewOwnerResponse:
+      type: object
+      properties:
+        responder_id: { type: string }
+        body: { type: string }
+        responded_at: { type: string, format: date-time }
+    Review:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subject_type: { type: string, enum: [product, food, recipe, vendor, restaurant, rider] }
+        subject_id: { type: string }
+        author_id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        photos: { type: array, items: { type: string } }
+        verified_purchase: { type: boolean }
+        status: { type: string, enum: [pending, published, rejected, removed] }
+        helpful_yes: { type: integer }
+        helpful_no: { type: integer }
+        owner_response: { $ref: "#/components/schemas/ReviewOwnerResponse", nullable: true }
+        moderated_by: { type: string, nullable: true }
+        moderation_reason: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    RatingSummary:
+      type: object
+      properties:
+        subject_type: { type: string, enum: [product, food, recipe, vendor, restaurant, rider] }
+        subject_id: { type: string }
+        count: { type: integer }
+        average: { type: number, format: float }
+        distribution:
+          type: object
+          additionalProperties: { type: integer }
+          description: Star (1–5) => count.
+        verified_count: { type: integer }
+        updated_at: { type: string, format: date-time }
+    ReviewAnalytics:
+      type: object
+      properties:
+        status_counts: { type: object, additionalProperties: { type: integer } }
+        published: { type: integer }
+        verified: { type: integer }
+        verified_rate: { type: number, format: float }
+        distribution: { type: object, additionalProperties: { type: integer } }
+        average: { type: number, format: float }
+        by_subject_type: { type: object, additionalProperties: { type: integer } }
+    PaginatedReviews:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Review" } }
         meta: { $ref: "#/components/schemas/PageMeta" }

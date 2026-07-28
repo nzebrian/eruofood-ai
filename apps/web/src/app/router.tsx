@@ -45,6 +45,8 @@ import { SupportPortalPage } from '@features/support/pages/SupportPortalPage';
 import { AgentWorkspacePage } from '@features/support/pages/AgentWorkspacePage';
 import { KnowledgeBasePage } from '@features/support/pages/KnowledgeBasePage';
 import { CrmDashboardPage } from '@features/support/pages/CrmDashboardPage';
+import { SubjectReviewsPage } from '@features/reviews/pages/SubjectReviewsPage';
+import { ModerationQueuePage } from '@features/reviews/pages/ModerationQueuePage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -80,6 +82,17 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <CrmDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Reviews & Ratings
+  { path: '/reviews', element: <SubjectReviewsPage /> },
+  {
+    path: '/reviews/moderation',
+    element: (
+      <ProtectedRoute>
+        <ModerationQueuePage />
       </ProtectedRoute>
     ),
   },

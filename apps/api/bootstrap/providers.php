@@ -29,4 +29,5 @@ return [
     EruoFood\Admin\Infrastructure\Provider\AdminServiceProvider::class,
     EruoFood\Search\Infrastructure\Provider\SearchServiceProvider::class,
     EruoFood\Support\Infrastructure\Provider\SupportServiceProvider::class,
+    EruoFood\Reviews\Infrastructure\Provider\ReviewsServiceProvider::class,
 ];
