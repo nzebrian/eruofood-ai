@@ -13,6 +13,7 @@ import 'features/catalog/presentation/pages/food_catalogue_page.dart';
 import 'features/commerce/presentation/pages/shop_page.dart';
 import 'features/marketplace/presentation/pages/marketplace_hub_page.dart';
 import 'features/admin/presentation/pages/admin_overview_page.dart';
+import 'features/search/presentation/pages/search_page.dart';
 import 'features/analytics/presentation/pages/analytics_summary_page.dart';
 import 'features/notifications/presentation/pages/notification_centre_page.dart';
 import 'features/payments/presentation/pages/wallet_page.dart';
@@ -74,8 +75,15 @@ class _HomeShellState extends State<HomeShell> {
           appBar: _index == 0
               ? AppBar(
                   title: const Text('EruoFood AI'),
-                  actions: authenticated
-                      ? <Widget>[
+                  actions: <Widget>[
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      tooltip: 'Search',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+                      ),
+                    ),
+                    if (authenticated) ...<Widget>[
                           IconButton(
                             icon: const Icon(Icons.insights_outlined),
                             tooltip: 'Analytics',
@@ -96,8 +104,8 @@ class _HomeShellState extends State<HomeShell> {
                               MaterialPageRoute<void>(builder: (_) => const AdminOverviewPage()),
                             ),
                           ),
-                        ]
-                      : null,
+                        ],
+                  ],
                 )
               : null,
           body: IndexedStack(index: _index, children: pages),

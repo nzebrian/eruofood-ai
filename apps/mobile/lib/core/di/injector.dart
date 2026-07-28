@@ -10,6 +10,7 @@ import '../../features/notifications/notifications_injection.dart';
 import '../../features/payments/payments_injection.dart';
 import '../../features/marketplace/marketplace_injection.dart';
 import '../../features/nutrition/nutrition_injection.dart';
+import '../../features/search/search_injection.dart';
 import '../config/app_config.dart';
 import '../network/api_client.dart';
 import '../storage/token_store.dart';
@@ -43,4 +44,5 @@ Future<void> configureDependencies() async {
   registerNotificationsFeature(sl);
   registerAnalyticsFeature(sl);
   registerAdminFeature(sl);
+  registerSearchFeature(sl);
 }

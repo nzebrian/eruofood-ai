@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.11.0
+  version: 0.12.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -65,6 +65,8 @@ tags:
     description: Business-intelligence dashboards, KPIs, reports and exports (admin), plus scoped vendor/restaurant dashboards. Data is collected from domain events — never written directly.
   - name: Platform Administration
     description: Back-office RBAC accounts & permissions, impersonation, CMS, system configuration & feature flags, user administration, vendor operations, the support centre and the audit trail. Communicates with other contexts through application services and domain events.
+  - name: Search
+    description: Global & typed search, autocomplete/suggestions/trending, faceted filtering, ranked results (full-text + pgvector semantic), the recommendation engine, saved & recent searches, and admin search analytics. The one place discovery happens — no business module searches its own tables; they publish events and Search indexes documents.
 
 security:
   - bearerAuth: []
@@ -3614,6 +3616,253 @@ paths:
               schema: { $ref: "#/components/schemas/PaginatedAudit" }
         "403": { $ref: "#/components/responses/Error" }
 
+  # ----- Search, Discovery & Recommendation (Milestone 12) -----
+  /v1/search:
+    get:
+      tags: [Search]
+      summary: Global or typed search with filters, sorting and facets
+      description: >
+        Ranked results blending full-text relevance with pgvector semantic
+        similarity. Supports every filter (region, cuisine, category,
+        ingredients, price, rating, cooking time, dietary, allergens, …) and
+        sort (relevance, popularity, rating, newest, price, prep time, distance).
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: type, in: query, required: false, schema: { type: string, enum: [global, recipe, food, ingredient, restaurant, vendor, product, category] } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [relevance, popularity, rating, newest, price, prep_time, distance] } }
+        - { name: page, in: query, required: false, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, required: false, schema: { type: integer } }
+        - { name: region, in: query, required: false, schema: { type: string } }
+        - { name: cuisine, in: query, required: false, schema: { type: string } }
+        - { name: category, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: ingredients, in: query, required: false, schema: { type: string }, description: "Comma-separated; all must be present." }
+        - { name: dietary, in: query, required: false, schema: { type: string }, description: "Comma-separated dietary preferences." }
+        - { name: exclude_allergens, in: query, required: false, schema: { type: string }, description: "Comma-separated allergens to exclude." }
+        - { name: max_calories, in: query, required: false, schema: { type: integer } }
+        - { name: min_price, in: query, required: false, schema: { type: integer } }
+        - { name: max_price, in: query, required: false, schema: { type: integer } }
+        - { name: min_rating, in: query, required: false, schema: { type: number } }
+        - { name: max_cooking_time, in: query, required: false, schema: { type: integer } }
+        - { name: difficulty, in: query, required: false, schema: { type: string } }
+        - { name: lat, in: query, required: false, schema: { type: number } }
+        - { name: lng, in: query, required: false, schema: { type: number } }
+      responses:
+        "200":
+          description: Ranked search results.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SearchResults" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/search/autocomplete:
+    get:
+      tags: [Search]
+      summary: Type-ahead completions for a prefix
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+        - { name: type, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Suggestions.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { suggestions: { type: array, items: { type: string } } } } } }
+  /v1/search/trending:
+    get:
+      tags: [Search]
+      summary: Trending search terms
+      responses:
+        "200":
+          description: Trending terms.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { trending: { type: array, items: { type: string } } } } } }
+  /v1/search/recommendations:
+    get:
+      tags: [Search]
+      summary: Recommendation widgets (related/similar/trending/seasonal/restaurant)
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [related, similar, restaurant, personalised, frequently_viewed_together, seasonal, trending] } }
+        - { name: type, in: query, required: false, schema: { type: string } }
+        - { name: anchor_id, in: query, required: false, schema: { type: string }, description: "Source id for content-based (related/similar) recommendations." }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 8 } }
+      responses:
+        "200":
+          description: Recommended items.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Recommendations" } } }
+  /v1/search/click:
+    post:
+      tags: [Search]
+      summary: Record a result click (for click-through rate)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query_id, document_id]
+              properties:
+                query_id: { type: string }
+                document_id: { type: string }
+                position: { type: integer }
+                from_recommendation: { type: boolean }
+      responses:
+        "204": { description: Recorded. }
+  /v1/search/recent:
+    get:
+      tags: [Search]
+      summary: The authenticated user's recent searches
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Recent terms.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { recent: { type: array, items: { type: string } } } } } }
+  /v1/search/recommendations/personalised:
+    get:
+      tags: [Search]
+      summary: Personalised recommendations for the authenticated user
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: type, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Recommended items.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Recommendations" } } }
+  /v1/search/users:
+    get:
+      tags: [Search]
+      summary: Admin user search (admin role required)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Ranked user documents.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SearchResults" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/search/saved:
+    get:
+      tags: [Search]
+      summary: List the user's saved searches
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Saved searches.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { saved_searches: { type: array, items: { $ref: "#/components/schemas/SavedSearch" } } } } } }
+    post:
+      tags: [Search]
+      summary: Save the current search
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: type, in: query, required: false, schema: { type: string } }
+        - { name: sort, in: query, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string } } }
+      responses:
+        "201":
+          description: The saved search.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SavedSearch" } } }
+  /v1/search/saved/{id}:
+    delete:
+      tags: [Search]
+      summary: Delete a saved search
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/search/saved/{id}/run:
+    post:
+      tags: [Search]
+      summary: Re-run a saved search
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Ranked results.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SearchResults" } } }
+  /v1/search/admin/metrics:
+    get:
+      tags: [Search]
+      summary: Search KPIs (admin role required)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, default: 30 } }
+      responses:
+        "200":
+          description: Search metrics.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SearchMetrics" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/search/admin/popular:
+    get:
+      tags: [Search]
+      summary: Most popular searches (admin role required)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Popular terms.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PopularTerms" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/search/admin/failed:
+    get:
+      tags: [Search]
+      summary: Failed (zero-result) searches (admin role required)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Zero-result terms.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PopularTerms" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/search/admin/reindex:
+    post:
+      tags: [Search]
+      summary: Rebuild the index from source contexts (admin role required)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { type: { type: string, description: "Limit to one document type." } } }
+      responses:
+        "200":
+          description: Reindex count.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { reindexed: { type: integer } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+
 
 components:
   securitySchemes:
@@ -5264,3 +5513,86 @@ components:
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }
         meta: { $ref: "#/components/schemas/PageMeta" }
+
+    # ----- Search, Discovery & Recommendation (Milestone 12) -----
+    SearchDocument:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        source_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        url: { type: string, nullable: true }
+        image: { type: string, nullable: true }
+        locale: { type: string }
+        region: { type: string, nullable: true }
+        cuisine: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        rating: { type: number }
+        popularity: { type: integer }
+        price_minor: { type: integer, nullable: true }
+        prep_time_minutes: { type: integer, nullable: true }
+        difficulty: { type: string, nullable: true }
+        tags: { type: array, items: { type: string } }
+    SearchHit:
+      type: object
+      properties:
+        document: { $ref: "#/components/schemas/SearchDocument" }
+        score: { type: number }
+        lexical_score: { type: number }
+        semantic_score: { type: number }
+        distance_km: { type: number, nullable: true }
+        highlight: { type: string, nullable: true }
+    SearchResults:
+      type: object
+      properties:
+        query_id: { type: string, nullable: true }
+        total: { type: integer }
+        page: { type: integer }
+        per_page: { type: integer }
+        facets:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: { type: integer }
+        hits: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+    Recommendations:
+      type: object
+      properties:
+        kind: { type: string }
+        items: { type: array, items: { $ref: "#/components/schemas/SearchDocument" } }
+    SavedSearch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        term: { type: string }
+        type: { type: string }
+        sort: { type: string }
+        filters: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    SearchMetrics:
+      type: object
+      properties:
+        total_searches: { type: integer }
+        unique_terms: { type: integer }
+        zero_result_searches: { type: integer }
+        zero_result_rate: { type: number }
+        clicks: { type: integer }
+        click_through_rate: { type: number }
+        avg_results_per_search: { type: number }
+        recommendation_clicks: { type: integer }
+        recommendation_ctr: { type: number }
+    PopularTerm:
+      type: object
+      properties:
+        term: { type: string }
+        count: { type: integer }
+    PopularTerms:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            terms: { type: array, items: { $ref: "#/components/schemas/PopularTerm" } }

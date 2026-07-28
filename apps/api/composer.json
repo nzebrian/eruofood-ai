@@ -37,6 +37,7 @@
             "EruoFood\\Notifications\\": "modules/Notifications/src/",
             "EruoFood\\Analytics\\": "modules/Analytics/src/",
             "EruoFood\\Admin\\": "modules/Admin/src/",
+            "EruoFood\\Search\\": "modules/Search/src/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
         }
@@ -55,7 +56,8 @@
             "EruoFood\\Payments\\Tests\\": "modules/Payments/tests/",
             "EruoFood\\Notifications\\Tests\\": "modules/Notifications/tests/",
             "EruoFood\\Analytics\\Tests\\": "modules/Analytics/tests/",
-            "EruoFood\\Admin\\Tests\\": "modules/Admin/tests/"
+            "EruoFood\\Admin\\Tests\\": "modules/Admin/tests/",
+            "EruoFood\\Search\\Tests\\": "modules/Search/tests/"
         }
     },
     "scripts": {

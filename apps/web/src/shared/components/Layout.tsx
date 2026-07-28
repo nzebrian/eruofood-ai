@@ -14,6 +14,7 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
         </Link>
         <nav className="nav__links">
           <Link to="/">Foods</Link>
+          <Link to="/search">Search</Link>
           <Link to="/recipes">Recipes</Link>
           <Link to="/vendors">Vendors</Link>
           <Link to="/shop">Shop</Link>

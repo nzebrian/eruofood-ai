@@ -40,6 +40,7 @@ import { UserManagementPage } from '@features/admin/pages/UserManagementPage';
 import { ContentManagerPage } from '@features/admin/pages/ContentManagerPage';
 import { SystemConfigPage } from '@features/admin/pages/SystemConfigPage';
 import { SupportDashboardPage } from '@features/admin/pages/SupportDashboardPage';
+import { SearchPage } from '@features/search/pages/SearchPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -48,6 +49,9 @@ export const router = createBrowserRouter([
   { path: '/foods/:slug', element: <FoodDetailPage /> },
   { path: '/recipes', element: <RecipesPage /> },
   { path: '/recipes/:slug', element: <RecipeDetailPage /> },
+
+  // Search, Discovery & Recommendation (public)
+  { path: '/search', element: <SearchPage /> },
 
   // Auth
   { path: '/login', element: <LoginPage /> },
