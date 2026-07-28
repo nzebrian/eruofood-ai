@@ -33,6 +33,8 @@ import { PaymentSettingsPage } from '@features/payments/pages/PaymentSettingsPag
 import { NotificationCentrePage } from '@features/notifications/pages/NotificationCentrePage';
 import { MessagesPage } from '@features/notifications/pages/MessagesPage';
 import { NotificationSettingsPage } from '@features/notifications/pages/NotificationSettingsPage';
+import { AnalyticsDashboardPage } from '@features/analytics/pages/AnalyticsDashboardPage';
+import { ReportsPage } from '@features/analytics/pages/ReportsPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -196,6 +198,24 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <NotificationSettingsPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Analytics, Business Intelligence & Reporting (admin)
+  {
+    path: '/analytics',
+    element: (
+      <ProtectedRoute>
+        <AnalyticsDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/reports',
+    element: (
+      <ProtectedRoute>
+        <ReportsPage />
       </ProtectedRoute>
     ),
   },

@@ -31,6 +31,7 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
               <Link to="/ai/recipe-generator">AI Chef</Link>
               <Link to="/ai/assistant">Assistant</Link>
               <Link to="/nutrition">Nutrition</Link>
+              {user.roles.includes('admin') ? <Link to="/analytics">Analytics</Link> : null}
               {user.roles.includes('admin') ? <Link to="/admin/foods">Admin</Link> : null}
               <Link to="/account">Account</Link>
             </>

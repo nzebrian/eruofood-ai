@@ -20,8 +20,9 @@ by touching another module's internals or tables.
 | `Commerce` | Marketplace, Grocery & Commerce Platform (Milestone 7): multi-vendor stores, a general + grocery product catalogue, multi-store cart & wishlist, discount/tax/shipping-aware checkout, orders with returns & invoices, inventory with warehouses/suppliers & batch-expiry tracking, promotions & coupons, and an AI shopping assistant (via the Ai module's contract). See its [README](Commerce/README.md). |
 | `Payments` | Payments, Wallet & Financial Services (Milestone 8): multi-provider payments (Paystack/Flutterwave/Moniepoint/Stripe/PayPal) behind a provider-abstraction factory, a double-entry transaction ledger, wallets for every account type, refunds, commission, settlements & payouts, tokenised saved methods, subscriptions, and signature-verified idempotent webhooks. **Decoupled from Order** — integrates via a published contract in and domain events out. See its [README](Payments/README.md). |
 | `Notifications` | Notifications, Messaging & Real-Time Communication (Milestone 9): multi-channel notification engine (email/SMS/push/in-app, WhatsApp/Telegram arch-ready) with templates, per-category preferences, quiet hours, retries & scheduling; real-time chat with read receipts/typing/attachments; admin broadcasts; and WebSocket presence/live updates. **Fully event-driven** — no module sends notifications directly; it subscribes to published domain events by name. See its [README](Notifications/README.md). |
+| `Analytics` | Analytics, Business Intelligence & Reporting (Milestone 10): an event-collecting read-model — raw event log + pre-aggregated daily metric buckets — serving executive/operations/finance/vendor dashboards, KPIs with deltas, report generation, and CSV/XLSX/PDF exports + scheduled email reports. **Collects only from domain events** — no module writes into analytics. See its [README](Analytics/README.md). |
 
-> Remaining business contexts (Analytics, Search, …) are introduced
+> Remaining business contexts (Search, Support, …) are introduced
 > in their respective roadmap phases (MASTER_PLAN.md §11).
 
 ## Standard module layout

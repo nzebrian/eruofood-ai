@@ -729,3 +729,135 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Analytics, Business Intelligence & Reporting --------------------- */
+.bi-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.bi-tabs {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.bi-tab {
+  border: 1px solid var(--border, #d7d7d7);
+  background: transparent;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+.bi-tab--active {
+  background: var(--accent, #1a7f37);
+  color: #fff;
+  border-color: var(--accent, #1a7f37);
+}
+.bi-filters select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border, #d7d7d7);
+  border-radius: 8px;
+}
+.bi-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.bi-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border, #e5e5e5);
+  border-radius: 12px;
+}
+.bi-kpi__label {
+  font-size: 0.85rem;
+  color: #666;
+}
+.bi-kpi__value {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+.bi-kpi__delta {
+  font-size: 0.8rem;
+}
+.bi-kpi__delta.up {
+  color: #1a7f37;
+}
+.bi-kpi__delta.down {
+  color: #c0392b;
+}
+.bi-chart {
+  margin: 1.5rem 0;
+}
+.bi-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 160px;
+  padding-top: 1rem;
+  overflow-x: auto;
+}
+.bi-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 18px;
+  height: 100%;
+  flex: 1;
+}
+.bi-bar__fill {
+  width: 70%;
+  min-height: 2px;
+  background: var(--accent, #1a7f37);
+  border-radius: 3px 3px 0 0;
+}
+.bi-bar__label {
+  font-size: 0.6rem;
+  color: #888;
+  margin-top: 0.2rem;
+  white-space: nowrap;
+}
+.bi-breakdown ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+.bi-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border, #eee);
+  text-transform: capitalize;
+}
+.bi-export {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+.bi-link {
+  border: none;
+  background: transparent;
+  color: var(--accent, #1a7f37);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.bi-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.bi-table th,
+.bi-table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border, #eee);
+}

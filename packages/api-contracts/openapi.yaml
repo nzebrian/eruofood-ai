@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.9.0
+  version: 0.10.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -60,6 +60,8 @@ tags:
     description: In-app notification centre, preferences, chat/messaging and real-time presence.
   - name: Notifications Admin
     description: Admin broadcast/campaign manager, notification templates and delivery reports (RBAC).
+  - name: Analytics
+    description: Business-intelligence dashboards, KPIs, reports and exports (admin), plus scoped vendor/restaurant dashboards. Data is collected from domain events — never written directly.
 
 security:
   - bearerAuth: []
@@ -3138,6 +3140,180 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/DeliveryReport" } } }
 
+  # ---- Analytics, Business Intelligence & Reporting -----------------------
+  /v1/analytics/dashboards/{type}:
+    get:
+      tags: [Analytics]
+      summary: A company dashboard (RBAC)
+      description: Assembled KPIs, charts and breakdowns for executive/operations/finance/admin.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string, enum: [executive, operations, finance, admin] } }
+        - { name: days, in: query, schema: { type: integer, default: 30 } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: The dashboard.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Dashboard" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/analytics/dashboards/vendor:
+    get:
+      tags: [Analytics]
+      summary: A vendor/restaurant owner's scoped dashboard
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vendor_id, in: query, schema: { type: string, format: uuid } }
+        - { name: days, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: The scoped dashboard.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Dashboard" } } }
+  /v1/analytics/kpis:
+    get:
+      tags: [Analytics]
+      summary: The headline KPI row (RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: KPI cards.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      kpis: { type: array, items: { $ref: "#/components/schemas/Kpi" } }
+  /v1/analytics/reports/catalogue:
+    get:
+      tags: [Analytics]
+      summary: Available report keys (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The report catalogue.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { reports: { type: array, items: { type: string } } } } } }
+  /v1/analytics/reports:
+    get:
+      tags: [Analytics]
+      summary: Recently generated reports (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of reports.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/AnalyticsReport" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Analytics]
+      summary: Generate a report (RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [key], properties: { key: { type: string } } }
+      responses:
+        "201":
+          description: The generated report.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/AnalyticsReport" } } }
+  /v1/analytics/reports/{id}:
+    get:
+      tags: [Analytics]
+      summary: A generated report (RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/AnalyticsReport" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/analytics/reports/{id}/export:
+    get:
+      tags: [Analytics]
+      summary: Download a report (CSV/XLSX/PDF, RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: format, in: query, schema: { type: string, enum: [csv, xlsx, pdf], default: csv } }
+      responses:
+        "200":
+          description: The exported file.
+          content:
+            text/csv: { schema: { type: string, format: binary } }
+            application/pdf: { schema: { type: string, format: binary } }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+  /v1/analytics/scheduled-reports:
+    get:
+      tags: [Analytics]
+      summary: Scheduled email reports (RBAC)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Scheduled reports.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ScheduledReport" } } } }
+    post:
+      tags: [Analytics]
+      summary: Schedule a recurring emailed report (RBAC)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, report_key, cadence, format, recipients]
+              properties:
+                name: { type: string }
+                report_key: { type: string }
+                cadence: { type: string, enum: [daily, weekly, monthly] }
+                format: { type: string, enum: [csv, xlsx, pdf] }
+                recipients: { type: array, items: { type: string, format: email } }
+      responses:
+        "201":
+          description: The scheduled report.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ScheduledReport" } } }
+  /v1/analytics/scheduled-reports/{id}/deactivate:
+    post:
+      tags: [Analytics]
+      summary: Deactivate a scheduled report (RBAC)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The scheduled report.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ScheduledReport" } } }
+
 
 components:
   securitySchemes:
@@ -4594,3 +4770,72 @@ components:
         total: { type: integer }
         by_status: { type: object, additionalProperties: { type: integer } }
         by_channel: { type: object, additionalProperties: { type: integer } }
+
+    # ---- Analytics schemas ----
+    Kpi:
+      type: object
+      properties:
+        key: { type: string }
+        label: { type: string }
+        value: { type: integer }
+        unit: { type: string, enum: [count, money, tokens] }
+        delta_pct: { type: number, nullable: true }
+    AnalyticsDataPoint:
+      type: object
+      properties:
+        bucket: { type: string }
+        value: { type: integer }
+    AnalyticsChart:
+      type: object
+      properties:
+        metric: { type: string }
+        label: { type: string }
+        unit: { type: string }
+        points: { type: array, items: { $ref: "#/components/schemas/AnalyticsDataPoint" } }
+    Dashboard:
+      type: object
+      properties:
+        type: { type: string }
+        range:
+          type: object
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+        kpis: { type: array, items: { $ref: "#/components/schemas/Kpi" } }
+        charts: { type: array, items: { $ref: "#/components/schemas/AnalyticsChart" } }
+        breakdowns:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: { type: integer }
+    AnalyticsReport:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        title: { type: string }
+        range:
+          type: object
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+        columns: { type: array, items: { type: string } }
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        status: { type: string, enum: [pending, ready, failed] }
+        generated_at: { type: string, format: date-time }
+    ScheduledReport:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        report_key: { type: string }
+        cadence: { type: string, enum: [daily, weekly, monthly] }
+        format: { type: string, enum: [csv, xlsx, pdf] }
+        recipients: { type: array, items: { type: string } }
+        active: { type: boolean }
+        next_run_at: { type: string, format: date-time }
+        last_run_at: { type: string, format: date-time, nullable: true }

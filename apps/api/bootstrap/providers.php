@@ -25,4 +25,5 @@ return [
     EruoFood\Commerce\Infrastructure\Provider\CommerceServiceProvider::class,
     EruoFood\Payments\Infrastructure\Provider\PaymentsServiceProvider::class,
     EruoFood\Notifications\Infrastructure\Provider\NotificationsServiceProvider::class,
+    EruoFood\Analytics\Infrastructure\Provider\AnalyticsServiceProvider::class,
 ];

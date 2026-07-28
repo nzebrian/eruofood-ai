@@ -4,6 +4,7 @@ import '../../features/ai/ai_injection.dart';
 import '../../features/auth/auth_injection.dart';
 import '../../features/catalog/catalog_injection.dart';
 import '../../features/commerce/commerce_injection.dart';
+import '../../features/analytics/analytics_injection.dart';
 import '../../features/notifications/notifications_injection.dart';
 import '../../features/payments/payments_injection.dart';
 import '../../features/marketplace/marketplace_injection.dart';
@@ -39,4 +40,5 @@ Future<void> configureDependencies() async {
   registerCommerceFeature(sl);
   registerPaymentsFeature(sl);
   registerNotificationsFeature(sl);
+  registerAnalyticsFeature(sl);
 }

@@ -12,6 +12,7 @@ import 'features/ai/presentation/pages/ai_hub_page.dart';
 import 'features/catalog/presentation/pages/food_catalogue_page.dart';
 import 'features/commerce/presentation/pages/shop_page.dart';
 import 'features/marketplace/presentation/pages/marketplace_hub_page.dart';
+import 'features/analytics/presentation/pages/analytics_summary_page.dart';
 import 'features/notifications/presentation/pages/notification_centre_page.dart';
 import 'features/payments/presentation/pages/wallet_page.dart';
 import 'features/nutrition/presentation/pages/nutrition_hub_page.dart';
@@ -74,6 +75,13 @@ class _HomeShellState extends State<HomeShell> {
                   title: const Text('EruoFood AI'),
                   actions: authenticated
                       ? <Widget>[
+                          IconButton(
+                            icon: const Icon(Icons.insights_outlined),
+                            tooltip: 'Analytics',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(builder: (_) => const AnalyticsSummaryPage()),
+                            ),
+                          ),
                           IconButton(
                             icon: const Icon(Icons.notifications_outlined),
                             onPressed: () => Navigator.of(context).push(
