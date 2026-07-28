@@ -15,6 +15,7 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
         <nav className="nav__links">
           <Link to="/">Foods</Link>
           <Link to="/search">Search</Link>
+          <Link to="/help">Help</Link>
           <Link to="/recipes">Recipes</Link>
           <Link to="/vendors">Vendors</Link>
           <Link to="/shop">Shop</Link>
@@ -28,6 +29,8 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
               <Link to="/transactions">Payments</Link>
               <Link to="/notifications">Alerts</Link>
               <Link to="/messages">Messages</Link>
+              <Link to="/support">Support</Link>
+              {user.roles.includes('admin') ? <Link to="/support/agent">Agent</Link> : null}
               <Link to="/favourites">Favourites</Link>
               <Link to="/ai/recipe-generator">AI Chef</Link>
               <Link to="/ai/assistant">Assistant</Link>

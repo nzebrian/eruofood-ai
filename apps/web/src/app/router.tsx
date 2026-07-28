@@ -41,6 +41,10 @@ import { ContentManagerPage } from '@features/admin/pages/ContentManagerPage';
 import { SystemConfigPage } from '@features/admin/pages/SystemConfigPage';
 import { SupportDashboardPage } from '@features/admin/pages/SupportDashboardPage';
 import { SearchPage } from '@features/search/pages/SearchPage';
+import { SupportPortalPage } from '@features/support/pages/SupportPortalPage';
+import { AgentWorkspacePage } from '@features/support/pages/AgentWorkspacePage';
+import { KnowledgeBasePage } from '@features/support/pages/KnowledgeBasePage';
+import { CrmDashboardPage } from '@features/support/pages/CrmDashboardPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -52,6 +56,33 @@ export const router = createBrowserRouter([
 
   // Search, Discovery & Recommendation (public)
   { path: '/search', element: <SearchPage /> },
+
+  // Customer Support, Helpdesk & CRM
+  { path: '/help', element: <KnowledgeBasePage /> },
+  {
+    path: '/support',
+    element: (
+      <ProtectedRoute>
+        <SupportPortalPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/support/agent',
+    element: (
+      <ProtectedRoute>
+        <AgentWorkspacePage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/support/crm',
+    element: (
+      <ProtectedRoute>
+        <CrmDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
 
   // Auth
   { path: '/login', element: <LoginPage /> },

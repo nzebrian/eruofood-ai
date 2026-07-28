@@ -14,6 +14,7 @@ import 'features/commerce/presentation/pages/shop_page.dart';
 import 'features/marketplace/presentation/pages/marketplace_hub_page.dart';
 import 'features/admin/presentation/pages/admin_overview_page.dart';
 import 'features/search/presentation/pages/search_page.dart';
+import 'features/support/presentation/pages/support_page.dart';
 import 'features/analytics/presentation/pages/analytics_summary_page.dart';
 import 'features/notifications/presentation/pages/notification_centre_page.dart';
 import 'features/payments/presentation/pages/wallet_page.dart';
@@ -89,6 +90,13 @@ class _HomeShellState extends State<HomeShell> {
                             tooltip: 'Analytics',
                             onPressed: () => Navigator.of(context).push(
                               MaterialPageRoute<void>(builder: (_) => const AnalyticsSummaryPage()),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.support_agent_outlined),
+                            tooltip: 'Support',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(builder: (_) => const SupportPage()),
                             ),
                           ),
                           IconButton(

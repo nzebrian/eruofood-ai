@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.12.0
+  version: 0.13.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -67,6 +67,8 @@ tags:
     description: Back-office RBAC accounts & permissions, impersonation, CMS, system configuration & feature flags, user administration, vendor operations, the support centre and the audit trail. Communicates with other contexts through application services and domain events.
   - name: Search
     description: Global & typed search, autocomplete/suggestions/trending, faceted filtering, ranked results (full-text + pgvector semantic), the recommendation engine, saved & recent searches, and admin search analytics. The one place discovery happens — no business module searches its own tables; they publish events and Search indexes documents.
+  - name: Support
+    description: Customer Support, Helpdesk & CRM — tickets with SLA/escalation/merge, the customer portal and agent workspace, a knowledge base, the CRM (profiles, timeline, insights, segmentation), automation rules, CSAT and admin dashboards. The one place support happens — no business module manages tickets; the CRM is built from published domain events.
 
 security:
   - bearerAuth: []
@@ -3863,6 +3865,424 @@ paths:
               schema: { type: object, properties: { data: { type: object, properties: { reindexed: { type: integer } } } } }
         "403": { $ref: "#/components/responses/Error" }
 
+  # ----- Customer Support, Helpdesk & CRM (Milestone 13) -----
+  /v1/support/kb/articles:
+    get:
+      tags: [Support]
+      summary: Browse/search published knowledge-base articles (public)
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: category, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of articles.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedArticles" }
+  /v1/support/kb/articles/{slug}:
+    get:
+      tags: [Support]
+      summary: Read a published article (public)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The article.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportArticle" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/support/kb/articles/{slug}/vote:
+    post:
+      tags: [Support]
+      summary: Vote an article helpful/unhelpful (public)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [helpful], properties: { helpful: { type: boolean } } }
+      responses:
+        "200":
+          description: The updated article.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportArticle" } } }
+  /v1/support/tickets:
+    get:
+      tags: [Support]
+      summary: The authenticated customer's tickets
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of ticket summaries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedTicketSummaries" }
+    post:
+      tags: [Support]
+      summary: Open a support ticket
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, category, body]
+              properties:
+                subject: { type: string }
+                category: { type: string }
+                body: { type: string }
+                priority: { type: string, enum: [low, normal, high, urgent] }
+                channel: { type: string, enum: [web, email, chat, in_app, phone, whatsapp, voice] }
+                related_order_id: { type: string, format: uuid, nullable: true }
+                attachments: { type: array, items: { $ref: "#/components/schemas/SupportAttachment" } }
+      responses:
+        "201":
+          description: The created ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+  /v1/support/tickets/{id}:
+    get:
+      tags: [Support]
+      summary: View one of the customer's tickets (public messages only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/support/tickets/{id}/reply:
+    post:
+      tags: [Support]
+      summary: Customer reply (reopens a resolved ticket)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string }, attachments: { type: array, items: { $ref: "#/components/schemas/SupportAttachment" } } } }
+      responses:
+        "200":
+          description: The updated ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+  /v1/support/tickets/{id}/csat:
+    post:
+      tags: [Support]
+      summary: Rate a resolved ticket (CSAT 1–5)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [score], properties: { score: { type: integer, minimum: 1, maximum: 5 }, comment: { type: string, nullable: true } } }
+      responses:
+        "201":
+          description: Recorded.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { score: { type: integer } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/support/agent/tickets:
+    get:
+      tags: [Support]
+      summary: The agent queue (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: priority, in: query, required: false, schema: { type: string } }
+        - { name: assignee_id, in: query, required: false, schema: { type: string } }
+        - { name: unassigned, in: query, required: false, schema: { type: boolean } }
+        - { name: open, in: query, required: false, schema: { type: boolean } }
+      responses:
+        "200":
+          description: A page of ticket summaries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedTicketSummaries" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/support/agent/tickets/{id}:
+    get:
+      tags: [Support]
+      summary: Full ticket incl. internal notes (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/support/agent/tickets/{id}/reply:
+    post:
+      tags: [Support]
+      summary: Agent public reply (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string } } }
+      responses:
+        "200":
+          description: The updated ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+  /v1/support/agent/tickets/{id}/notes:
+    post:
+      tags: [Support]
+      summary: Add an internal note (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string } } }
+      responses:
+        "200":
+          description: The updated ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+  /v1/support/agent/tickets/{id}/status:
+    put:
+      tags: [Support]
+      summary: Change ticket status (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [new, open, pending, on_hold, resolved, closed] } } }
+      responses:
+        "200":
+          description: The updated ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/support/agent/tickets/{id}/escalate:
+    post:
+      tags: [Support]
+      summary: Escalate one priority level (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The updated ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+  /v1/support/agent/tickets/{id}/merge:
+    post:
+      tags: [Support]
+      summary: Merge this ticket into another (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [target_ticket_id], properties: { target_ticket_id: { type: string, format: uuid } } }
+      responses:
+        "200":
+          description: The merged (closed) source ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportTicket" } } }
+  /v1/support/agent/tickets/{id}/ai/summary:
+    get:
+      tags: [Support]
+      summary: AI summary of the ticket thread (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The summary.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { summary: { type: string } } } } }
+  /v1/support/agent/tickets/{id}/ai/suggest:
+    get:
+      tags: [Support]
+      summary: AI suggested reply (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The suggestion.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { suggestion: { type: string } } } } }
+  /v1/support/crm/customers:
+    get:
+      tags: [Support]
+      summary: Search CRM customer profiles (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: segment, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of profiles.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedProfiles" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/support/crm/customers/{userId}:
+    get:
+      tags: [Support]
+      summary: A customer's CRM profile (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The profile.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CustomerProfile" } } }
+  /v1/support/crm/customers/{userId}/timeline:
+    get:
+      tags: [Support]
+      summary: The customer's unified interaction timeline (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: A page of interactions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedInteractions" }
+  /v1/support/crm/customers/{userId}/insight:
+    post:
+      tags: [Support]
+      summary: Generate an AI customer insight (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The profile with a fresh insight.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CustomerProfile" } } }
+  /v1/support/admin/dashboard:
+    get:
+      tags: [Support]
+      summary: Support dashboard — queue, SLA and CSAT (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, default: 30 } }
+      responses:
+        "200":
+          description: Dashboard metrics.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SupportDashboard" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/support/admin/sla-report:
+    get:
+      tags: [Support]
+      summary: SLA compliance report (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: SLA report.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SlaReport" } } }
+  /v1/support/admin/agents:
+    get:
+      tags: [Support]
+      summary: Per-agent team performance (agent role)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Agent performance.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      agents:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            agent_id: { type: string }
+                            assigned: { type: integer }
+                            resolved: { type: integer }
+                            avg_first_response_minutes: { type: number }
+  /v1/support/admin/rules:
+    get:
+      tags: [Support]
+      summary: List automation rules (agent role)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Automation rules.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { rules: { type: array, items: { $ref: "#/components/schemas/AutomationRule" } } } } } }
+    post:
+      tags: [Support]
+      summary: Create an automation rule (agent role)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, trigger, actions]
+              properties:
+                name: { type: string }
+                trigger: { type: string }
+                conditions: { type: array, items: { type: object } }
+                actions: { type: array, items: { type: object } }
+                sort_order: { type: integer }
+      responses:
+        "201":
+          description: The created rule.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/AutomationRule" } } }
+
 
 components:
   securitySchemes:
@@ -5596,3 +6016,154 @@ components:
           type: object
           properties:
             terms: { type: array, items: { $ref: "#/components/schemas/PopularTerm" } }
+
+    # ----- Customer Support, Helpdesk & CRM (Milestone 13) -----
+    SupportAttachment:
+      type: object
+      properties:
+        url: { type: string }
+        filename: { type: string }
+        mime_type: { type: string }
+        size_bytes: { type: integer }
+    SupportSla:
+      type: object
+      properties:
+        state: { type: string, enum: [on_track, met, first_response_breached, resolution_breached] }
+        breached: { type: boolean }
+        first_response_due_at: { type: string, format: date-time, nullable: true }
+        resolution_due_at: { type: string, format: date-time, nullable: true }
+        first_response_breached: { type: boolean }
+        resolution_breached: { type: boolean }
+    SupportTicketMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        author_type: { type: string, enum: [customer, agent, system, bot] }
+        author_id: { type: string, nullable: true }
+        body: { type: string }
+        internal: { type: boolean }
+        attachments: { type: array, items: { $ref: "#/components/schemas/SupportAttachment" } }
+        created_at: { type: string, format: date-time }
+    SupportTicket:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ref: { type: string }
+        requester_id: { type: string, format: uuid }
+        subject: { type: string }
+        category: { type: string }
+        channel: { type: string }
+        status: { type: string, enum: [new, open, pending, on_hold, resolved, closed] }
+        priority: { type: string, enum: [low, normal, high, urgent] }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        tags: { type: array, items: { type: string } }
+        related_order_id: { type: string, format: uuid, nullable: true }
+        merged_into_id: { type: string, format: uuid, nullable: true }
+        csat_score: { type: integer, nullable: true }
+        sla: { $ref: "#/components/schemas/SupportSla" }
+        messages: { type: array, items: { $ref: "#/components/schemas/SupportTicketMessage" } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SupportTicketSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ref: { type: string }
+        subject: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        category: { type: string }
+        sla: { $ref: "#/components/schemas/SupportSla" }
+        updated_at: { type: string, format: date-time }
+    SupportArticle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        title: { type: string }
+        body: { type: string }
+        excerpt: { type: string, nullable: true }
+        category: { type: string }
+        status: { type: string, enum: [draft, published, archived] }
+        version: { type: integer }
+        tags: { type: array, items: { type: string } }
+        helpful_yes: { type: integer }
+        helpful_no: { type: integer }
+        published_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time }
+    CustomerProfile:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        display_name: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        segment: { type: string, enum: [new, active, loyal, vip] }
+        order_count: { type: integer }
+        total_spent_minor: { type: integer }
+        ticket_count: { type: integer }
+        tags: { type: array, items: { type: string } }
+        notes: { type: string, nullable: true }
+        insight: { type: string, nullable: true }
+        insight_generated_at: { type: string, format: date-time, nullable: true }
+        last_interaction_at: { type: string, format: date-time, nullable: true }
+    SupportInteraction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        summary: { type: string }
+        ref: { type: string, nullable: true }
+        source: { type: string }
+        occurred_at: { type: string, format: date-time }
+    AutomationRule:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        trigger: { type: string }
+        conditions: { type: array, items: { type: object } }
+        actions: { type: array, items: { type: object } }
+        enabled: { type: boolean }
+        sort_order: { type: integer }
+    SlaReport:
+      type: object
+      properties:
+        total: { type: integer }
+        resolved: { type: integer }
+        first_response_breached: { type: integer }
+        resolution_breached: { type: integer }
+        breach_rate: { type: number }
+        avg_first_response_minutes: { type: number }
+    SupportDashboard:
+      type: object
+      properties:
+        queue: { type: object, additionalProperties: { type: integer } }
+        sla: { $ref: "#/components/schemas/SlaReport" }
+        csat:
+          type: object
+          properties:
+            responses: { type: integer }
+            average: { type: number }
+            distribution: { type: object, additionalProperties: { type: integer } }
+            satisfaction_rate: { type: number }
+    PaginatedTicketSummaries:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/SupportTicketSummary" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    PaginatedArticles:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/SupportArticle" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    PaginatedProfiles:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/CustomerProfile" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    PaginatedInteractions:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/SupportInteraction" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
