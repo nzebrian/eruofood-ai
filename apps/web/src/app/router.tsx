@@ -35,6 +35,11 @@ import { MessagesPage } from '@features/notifications/pages/MessagesPage';
 import { NotificationSettingsPage } from '@features/notifications/pages/NotificationSettingsPage';
 import { AnalyticsDashboardPage } from '@features/analytics/pages/AnalyticsDashboardPage';
 import { ReportsPage } from '@features/analytics/pages/ReportsPage';
+import { AdminDashboardPage } from '@features/admin/pages/AdminDashboardPage';
+import { UserManagementPage } from '@features/admin/pages/UserManagementPage';
+import { ContentManagerPage } from '@features/admin/pages/ContentManagerPage';
+import { SystemConfigPage } from '@features/admin/pages/SystemConfigPage';
+import { SupportDashboardPage } from '@features/admin/pages/SupportDashboardPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -258,6 +263,48 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AdminFoodsPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Platform Administration, CMS & Operations
+  {
+    path: '/admin',
+    element: (
+      <ProtectedRoute>
+        <AdminDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin/users',
+    element: (
+      <ProtectedRoute>
+        <UserManagementPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin/content',
+    element: (
+      <ProtectedRoute>
+        <ContentManagerPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin/config',
+    element: (
+      <ProtectedRoute>
+        <SystemConfigPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin/support',
+    element: (
+      <ProtectedRoute>
+        <SupportDashboardPage />
       </ProtectedRoute>
     ),
   },

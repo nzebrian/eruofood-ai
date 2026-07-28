@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 
+import '../../features/admin/admin_injection.dart';
 import '../../features/ai/ai_injection.dart';
 import '../../features/auth/auth_injection.dart';
 import '../../features/catalog/catalog_injection.dart';
@@ -41,4 +42,5 @@ Future<void> configureDependencies() async {
   registerPaymentsFeature(sl);
   registerNotificationsFeature(sl);
   registerAnalyticsFeature(sl);
+  registerAdminFeature(sl);
 }

@@ -33,6 +33,7 @@ export function Layout({ children }: { children: ReactNode }): React.JSX.Element
               <Link to="/nutrition">Nutrition</Link>
               {user.roles.includes('admin') ? <Link to="/analytics">Analytics</Link> : null}
               {user.roles.includes('admin') ? <Link to="/admin/foods">Admin</Link> : null}
+              {user.roles.includes('admin') ? <Link to="/admin">Console</Link> : null}
               <Link to="/account">Account</Link>
             </>
           ) : (

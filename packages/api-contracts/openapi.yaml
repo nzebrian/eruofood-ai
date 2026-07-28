@@ -1,14 +1,15 @@
 openapi: 3.1.0
 info:
   title: EruoFood AI API
-  version: 0.10.0
+  version: 0.11.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
     types are generated from it so clients and server never drift
-    (MASTER_PLAN.md §6.1). Milestone 5 adds the Nutrition, Health &
-    Personalisation endpoints (profile, calculators, diary, meal plans,
-    progress and AI recommendations).
+    (MASTER_PLAN.md §6.1). Milestone 11 adds the Platform Administration, CMS &
+    Operations endpoints (RBAC accounts & permissions, impersonation, CMS
+    pages/banners/FAQ, system configuration & feature flags, user
+    administration, vendor operations, the support centre and the audit trail).
   license:
     name: Proprietary
 servers:
@@ -62,6 +63,8 @@ tags:
     description: Admin broadcast/campaign manager, notification templates and delivery reports (RBAC).
   - name: Analytics
     description: Business-intelligence dashboards, KPIs, reports and exports (admin), plus scoped vendor/restaurant dashboards. Data is collected from domain events — never written directly.
+  - name: Platform Administration
+    description: Back-office RBAC accounts & permissions, impersonation, CMS, system configuration & feature flags, user administration, vendor operations, the support centre and the audit trail. Communicates with other contexts through application services and domain events.
 
 security:
   - bearerAuth: []
@@ -3314,6 +3317,303 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/ScheduledReport" } } }
 
+  # ----- Platform Administration, CMS & Operations (Milestone 11) -----
+  /v1/admin/permissions:
+    get:
+      tags: [Platform Administration]
+      summary: The permission catalogue, groups and role map (requires rbac.manage)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Permissions, groups and roles.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminEnvelope" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/accounts:
+    get:
+      tags: [Platform Administration]
+      summary: List back-office accounts (requires rbac.manage)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Admin accounts.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { accounts: { type: array, items: { $ref: "#/components/schemas/AdminAccount" } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/accounts/{userId}/roles:
+    put:
+      tags: [Platform Administration]
+      summary: Set an account's roles (requires rbac.manage)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties: { roles: { type: array, items: { type: string } } }
+      responses:
+        "200":
+          description: The updated account.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminAccount" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/impersonations:
+    post:
+      tags: [Platform Administration]
+      summary: Start impersonating a user (requires rbac.impersonate)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_user_id, reason]
+              properties:
+                target_user_id: { type: string, format: uuid }
+                reason: { type: string }
+      responses:
+        "201":
+          description: The impersonation session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminEnvelope" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/cms/pages:
+    get:
+      tags: [Platform Administration]
+      summary: List CMS content (requires content.manage)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: type, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of content items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedCmsPages" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Platform Administration]
+      summary: Author a new draft (requires content.manage)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title, body]
+              properties:
+                type: { type: string, enum: [page, blog, news, legal, help_article] }
+                title: { type: string }
+                body: { type: string }
+                excerpt: { type: string, nullable: true }
+                slug: { type: string, nullable: true }
+                seo: { type: object }
+      responses:
+        "201":
+          description: The created draft.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CmsPage" } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/admin/cms/pages/{id}/publish:
+    post:
+      tags: [Platform Administration]
+      summary: Publish a page (requires content.manage)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The published page.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CmsPage" } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/admin/settings:
+    get:
+      tags: [Platform Administration]
+      summary: List system settings (requires config.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: group, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Settings.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { settings: { type: array, items: { $ref: "#/components/schemas/Setting" } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/settings/{key}:
+    put:
+      tags: [Platform Administration]
+      summary: Update a setting (requires config.write)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [value], properties: { value: { type: string } } }
+      responses:
+        "200":
+          description: The updated setting.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Setting" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/maintenance:
+    put:
+      tags: [Platform Administration]
+      summary: Toggle maintenance mode (requires config.write)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+                message: { type: string, nullable: true }
+      responses:
+        "200":
+          description: The maintenance state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminEnvelope" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/users:
+    get:
+      tags: [Platform Administration]
+      summary: Search platform users (requires users.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of users.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedUsers" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/users/{userId}/suspend:
+    post:
+      tags: [Platform Administration]
+      summary: Suspend a user via a domain event (requires users.moderate)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string } } }
+      responses:
+        "200":
+          description: Acknowledgement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminEnvelope" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/operations/approvals:
+    get:
+      tags: [Platform Administration]
+      summary: The vendor/restaurant approval queue (requires ops.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of approval requests.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedApprovals" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/operations/approvals/{id}/approve:
+    post:
+      tags: [Platform Administration]
+      summary: Approve a request, publishing a domain event (requires ops.approve)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { note: { type: string, nullable: true } } }
+      responses:
+        "200":
+          description: The decided request.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ApprovalRequest" } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/admin/support/tickets:
+    get:
+      tags: [Platform Administration]
+      summary: The support ticket queue (requires support.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of tickets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedTickets" }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/support/tickets/{id}/reply:
+    post:
+      tags: [Platform Administration]
+      summary: Reply to a ticket (requires support.manage)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string } } }
+      responses:
+        "200":
+          description: The updated ticket.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Ticket" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /v1/admin/audit:
+    get:
+      tags: [Platform Administration]
+      summary: The append-only audit trail (requires audit.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: category, in: query, required: false, schema: { type: string } }
+        - { name: actor_id, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of audit entries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedAudit" }
+        "403": { $ref: "#/components/responses/Error" }
+
 
 components:
   securitySchemes:
@@ -4839,3 +5139,128 @@ components:
         active: { type: boolean }
         next_run_at: { type: string, format: date-time }
         last_run_at: { type: string, format: date-time, nullable: true }
+
+    # ----- Platform Administration, CMS & Operations (Milestone 11) -----
+    AdminEnvelope:
+      type: object
+      description: Generic admin data envelope for endpoints with a bespoke shape.
+      properties:
+        data: { type: object, additionalProperties: true }
+    AdminAccount:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        roles: { type: array, items: { type: string } }
+        extra_permissions: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, suspended] }
+        is_super: { type: boolean }
+        created_at: { type: string, format: date-time }
+    CmsPage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [page, blog, news, legal, help_article] }
+        slug: { type: string }
+        title: { type: string }
+        body: { type: string }
+        excerpt: { type: string, nullable: true }
+        seo:
+          type: object
+          properties:
+            meta_title: { type: string, nullable: true }
+            meta_description: { type: string, nullable: true }
+            keywords: { type: array, items: { type: string } }
+            og_image: { type: string, nullable: true }
+        status: { type: string, enum: [draft, published, archived] }
+        author_id: { type: string, format: uuid }
+        published_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Setting:
+      type: object
+      properties:
+        key: { type: string }
+        group: { type: string }
+        value: { type: string }
+        secret: { type: boolean }
+        description: { type: string, nullable: true }
+        updated_at: { type: string, format: date-time }
+    ApprovalRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subject_type: { type: string }
+        subject_id: { type: string, format: uuid }
+        kind: { type: string, enum: [onboarding, business_verification, compliance] }
+        status: { type: string, enum: [pending, approved, rejected] }
+        note: { type: string, nullable: true }
+        submitted_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time, nullable: true }
+    TicketMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        author_id: { type: string, format: uuid }
+        body: { type: string }
+        internal: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Ticket:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        requester_id: { type: string, format: uuid }
+        subject: { type: string }
+        category: { type: string }
+        status: { type: string, enum: [open, pending, resolved, closed] }
+        priority: { type: string, enum: [low, normal, high, urgent] }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        messages: { type: array, items: { $ref: "#/components/schemas/TicketMessage" } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid, nullable: true }
+        category: { type: string }
+        action: { type: string }
+        subject_type: { type: string, nullable: true }
+        subject_id: { type: string, nullable: true }
+        context: { type: object, additionalProperties: true }
+        ip: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    AdminUserSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string }
+        status: { type: string }
+        verified: { type: boolean }
+        registered_at: { type: string, format: date-time, nullable: true }
+    PaginatedCmsPages:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/CmsPage" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    PaginatedUsers:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/AdminUserSummary" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    PaginatedApprovals:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ApprovalRequest" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    PaginatedTickets:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Ticket" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    PaginatedAudit:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
