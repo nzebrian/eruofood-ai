@@ -48,6 +48,7 @@ import { CrmDashboardPage } from '@features/support/pages/CrmDashboardPage';
 import { SubjectReviewsPage } from '@features/reviews/pages/SubjectReviewsPage';
 import { ModerationQueuePage } from '@features/reviews/pages/ModerationQueuePage';
 import { LoyaltyPage } from '@features/loyalty/pages/LoyaltyPage';
+import { DeveloperPortalPage } from '@features/developer/pages/DeveloperPortalPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -104,6 +105,16 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <LoyaltyPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Developer Platform (Public API)
+  {
+    path: '/developer',
+    element: (
+      <ProtectedRoute>
+        <DeveloperPortalPage />
       </ProtectedRoute>
     ),
   },

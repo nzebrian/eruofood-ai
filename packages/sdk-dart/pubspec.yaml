@@ -1,0 +1,7 @@
+name: eruofood_sdk
+description: EruoFood Public API — Dart SDK (foundation).
+version: 0.1.0
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+dependencies:
+  http: ^1.2.0

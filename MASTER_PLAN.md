@@ -950,6 +950,11 @@ ADRs will live in `docs/adr/`. Initial set to author on approval:
 | ADR-008 | UUIDv7 identifiers and Money-as-minor-units convention |
 | ADR-009 | Docker multi-stage images; Swarm→Kubernetes progression |
 | ADR-010 | Trunk-based development with expand/contract migrations |
+| ADR-0014 | Reviews & Ratings — one context owns every review; ratings out via events |
+| ADR-0015 | Loyalty, Rewards & Referrals — one context owns every point; earned from events |
+| ADR-0016 | Public API, SDK & Developer Platform — a controlled façade, internals never exposed |
+
+> Delivered ADRs from Milestones 1–16 live in `docs/adr/` (see `0001`–`0016`).
 
 ---
 

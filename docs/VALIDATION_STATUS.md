@@ -1,5 +1,58 @@
 # Validation Status
 
+---
+
+## Milestone 16 — Public API, SDK & Developer Platform (2026-08-02)
+
+Honest classification of what was actually run for this milestone.
+
+### ✅ Executed and Passed
+
+| Check | Tool | Result |
+|---|---|---|
+| PHP syntax — all modules | `php -l` | **1482/1482** files clean |
+| Cross-module reference resolution | ref-check script | **1482/1482** resolve; no dead refs |
+| Composer manifest | `composer validate` | valid |
+| PublicApi domain/security logic | pure-PHP sanity harness | **34 checks passed / 34** (scopes, scope-intersection never widens, key hash/verify, key usability, HMAC sign/verify + replay, webhook backoff/idempotency, envelope pagination) |
+| OpenAPI spec | `@redocly/cli lint` | **0 errors** (392 style warnings — pre-existing operationId/4xx set) |
+| OpenAPI structure | YAML + `$ref` audit | 0 duplicate schemas, 0 unresolved refs, 0 identical path templates; `apiKeyAuth` scheme defined |
+| Web type-check | `tsc --noEmit` | exit 0 |
+| Web lint | `eslint src` | exit 0 |
+| Web unit tests | `vitest run` | **51 passed / 51** (15 files, incl. new `developerApi` suite) |
+| Web production build | `vite build` | exit 0 |
+
+The sanity harness genuinely executes the security-critical logic that the Pest
+feature suite would otherwise cover (key hashing, scope enforcement, HMAC
+signing + replay window, webhook retry/backoff, idempotency).
+
+### 🟡 Static Validation Only
+
+| Check | Method | Result |
+|---|---|---|
+| PublicApi Pest unit + feature tests | `php -l` + reference resolution | Syntax-clean; symbols resolve. **Not executed** (see below). |
+| Middleware/route wiring, DI bindings | code review against Laravel conventions | Consistent with existing modules; not runtime-verified. |
+| PHP SDK (`packages/sdk-php`) | `php -l` | Clean; not executed against a live API. |
+| Dart SDK (`packages/sdk-dart`) | code review vs `package:http` API | Structurally sound; **no Dart toolchain** to compile/test. |
+| TypeScript SDK (`packages/sdk-typescript`) | reviewed; compiled via app `tsc` context | Standalone package has no its own build run here. |
+
+### ⚪ Not Validated (environment cannot execute)
+
+| Check | Why |
+|---|---|
+| **PHP Pest suites** (PublicApi unit + feature, incl. api-key auth / scope / rate-limit / webhook signature / idempotency tests) | `composer install` cannot finalize in this sandbox (authenticated GitHub package downloads fail); no `vendor/bin/pest`. Tests are written and syntax-clean but **not run**. No pass is claimed. |
+| **Dart SDK tests** | Flutter/Dart toolchain absent. |
+
+To execute in a capable environment:
+
+```bash
+cd apps/api && composer install && vendor/bin/pest        # PHP
+cd packages/sdk-dart && dart pub get && dart analyze       # Dart SDK
+```
+
+---
+
+# Validation Status (Cleanup)
+
 Date: 2026-08-02
 Scope: Technical Debt & Validation Cleanup (no new business features).
 

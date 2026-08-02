@@ -85,6 +85,15 @@ make check     # lint + static analysis + tests across apps
   framework-free.
 - **Foundation modules present today:** `Shared` (Shared Kernel primitives) and
   `Platform` (a health/status vertical slice demonstrating all four layers).
+- **Public API & Developer Platform** (Milestone 16) — a controlled external
+  surface at `/api/public/v1` (API-key auth, scopes, rate limits, quotas,
+  versioning, webhooks) with a JWT developer portal at `/api/v1/developer` and
+  foundation SDKs in `packages/sdk-{typescript,php,dart}`. Internal APIs are never
+  exposed. See [`docs/PUBLIC_API.md`](./docs/PUBLIC_API.md),
+  [`docs/DEVELOPER_PLATFORM.md`](./docs/DEVELOPER_PLATFORM.md),
+  [`docs/WEBHOOKS.md`](./docs/WEBHOOKS.md),
+  [`docs/API_SECURITY.md`](./docs/API_SECURITY.md),
+  [`docs/SDK_GUIDE.md`](./docs/SDK_GUIDE.md).
 
 See [`MASTER_PLAN.md`](./MASTER_PLAN.md) for the complete blueprint and
 [`apps/api/modules/README.md`](./apps/api/modules/README.md) for the module

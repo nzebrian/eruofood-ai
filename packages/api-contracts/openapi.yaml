@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EruoFood AI API
-  version: 0.15.0
+  version: 0.16.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -73,6 +73,10 @@ tags:
     description: Reviews & Ratings — polymorphic subject reviews (product/food/recipe/vendor/restaurant/rider) with 1–5 stars, verified-purchase (from order events), a moderation queue with content filtering, helpfulness voting, subject-owner responses, the authoritative per-subject rating summary, and review analytics. The one place ratings are computed — no business module stores or aggregates its own reviews; ratings flow out via the published rating-summary event.
   - name: Loyalty
     description: Loyalty, Rewards & Referrals — a points ledger with a running balance, membership tiers (recomputed on change), a redeemable rewards catalogue, referral codes with fraud guards, points expiry, and admin adjustments/analytics. The one place points are awarded and computed — no business module awards or stores its own points; points are earned from published order/review events, and tiers/vouchers flow out via published events.
+  - name: Public API
+    description: The controlled external-facing API at /api/public/v1 — a separate surface from the internal APIs. Authenticated by API keys (not JWT), scoped, rate-limited and quota-governed, versioned, and returned through a standard envelope. It exposes transformed resources only; no internal endpoint is proxied. Adding v2 later is additive and leaves v1 untouched.
+  - name: Developer Platform
+    description: The developer portal management API at /api/v1/developer (internal, JWT-authenticated) — developer accounts, applications (scope-grant boundary), API keys (hashed secrets, rotation, revocation, expiry), webhooks (signed, retried, idempotent) and usage. API keys are never accepted here.
 
 security:
   - bearerAuth: []
@@ -4747,6 +4751,258 @@ paths:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/LoyaltyAnalytics" } } }
         "403": { $ref: "#/components/responses/Error" }
 
+  # ===== Public API (Milestone 16) — external surface, API-key authenticated =====
+  /api/public/v1/status:
+    get:
+      tags: [Public API]
+      summary: API status and supported versions (public, no auth)
+      security: []
+      responses:
+        "200":
+          description: Service status.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicApiStatus" } } }
+  /api/public/v1/scopes:
+    get:
+      tags: [Public API]
+      summary: The catalogue of grantable scopes (public, no auth)
+      security: []
+      responses:
+        "200":
+          description: Scope catalogue.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { scopes: { type: array, items: { $ref: "#/components/schemas/ScopeInfo" } } } } } }
+  /api/public/v1/foods:
+    get:
+      tags: [Public API]
+      summary: List foods (scope foods:read)
+      description: |
+        Requires an API key with the `foods:read` scope, sent as
+        `Authorization: Bearer <key>` or `X-Api-Key`. Standard pagination
+        (`page`, `per_page`), search (`q`) and sort (`sort`). Responses carry
+        `X-RateLimit-*`, `X-Quota-*` and `X-Request-Id` headers.
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, maximum: 100 } }
+        - { name: sort, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of foods.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicFoodPage" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /api/public/v1/foods/{slug}:
+    get:
+      tags: [Public API]
+      summary: Get a food by slug (scope foods:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The food.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicFood" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/public/v1/recipes:
+    get:
+      tags: [Public API]
+      summary: List recipes (scope recipes:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of recipes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicRecipePage" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/recipes/{slug}:
+    get:
+      tags: [Public API]
+      summary: Get a recipe by slug (scope recipes:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The recipe.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicRecipe" } } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  # ===== Developer Platform (internal, JWT) =====
+  /v1/developer/register:
+    post:
+      tags: [Developer Platform]
+      summary: Register (or return) the developer account for the authenticated user
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name, email], properties: { name: { type: string }, email: { type: string, format: email } } }
+      responses:
+        "201":
+          description: The developer account.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/DeveloperAccount" } } }
+  /v1/developer/applications:
+    get:
+      tags: [Developer Platform]
+      summary: List the developer's applications
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: A page of applications.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeveloperApplicationPage" }
+    post:
+      tags: [Developer Platform]
+      summary: Create an application (scope-grant boundary)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                scopes: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: The created application.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/DeveloperApplication" } } }
+  /v1/developer/applications/{applicationId}/keys:
+    get:
+      tags: [Developer Platform]
+      summary: List an application's API keys (prefixes only — never the secret)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: applicationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The keys.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { keys: { type: array, items: { $ref: "#/components/schemas/DevApiKey" } } } } } }
+    post:
+      tags: [Developer Platform]
+      summary: Issue an API key — the plaintext is returned exactly once
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: applicationId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                scopes: { type: array, items: { type: string } }
+                ttl_days: { type: integer, nullable: true }
+      responses:
+        "201":
+          description: The issued key (includes one-time plaintext).
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/IssuedApiKey" } } }
+  /v1/developer/keys/{keyId}/rotate:
+    post:
+      tags: [Developer Platform]
+      summary: Rotate a key — revokes the old and issues a new one (one-time plaintext)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: keyId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "201":
+          description: The new key.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/IssuedApiKey" } } }
+  /v1/developer/keys/{keyId}:
+    delete:
+      tags: [Developer Platform]
+      summary: Revoke a key
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: keyId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Revoked.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { revoked: { type: boolean } } } } }
+  /v1/developer/applications/{applicationId}/webhooks:
+    get:
+      tags: [Developer Platform]
+      summary: List an application's webhooks
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: applicationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The webhooks.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { webhooks: { type: array, items: { $ref: "#/components/schemas/DevWebhook" } } } } } }
+    post:
+      tags: [Developer Platform]
+      summary: Create a webhook — the signing secret is returned once
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: applicationId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url: { type: string, format: uri }
+                events: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: The created webhook (includes the signing secret once).
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/DevWebhook" } } }
+  /v1/developer/applications/{applicationId}/usage:
+    get:
+      tags: [Developer Platform]
+      summary: API usage + quota for an application
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: applicationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Usage.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/DevUsage" } } }
+
 
 components:
   securitySchemes:
@@ -4754,6 +5010,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      description: "Public API key sent as `Authorization: Bearer <key>` (or the `X-Api-Key` header)."
 
   responses:
     Error:
@@ -6805,3 +7065,139 @@ components:
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/Redemption" } }
         meta: { $ref: "#/components/schemas/PageMeta" }
+    # ===== Public API & Developer Platform (Milestone 16) =====
+    PublicApiStatus:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        version: { type: string, example: v1 }
+        versions: { type: array, items: { type: string } }
+        deprecated: { type: array, items: { type: string } }
+    ScopeInfo:
+      type: object
+      properties:
+        scope: { type: string, example: "foods:read" }
+        description: { type: string }
+    PublicPaginationMeta:
+      type: object
+      properties:
+        pagination:
+          type: object
+          properties:
+            page: { type: integer }
+            per_page: { type: integer }
+            total: { type: integer }
+            last_page: { type: integer }
+            has_more: { type: boolean }
+        version: { type: string, example: v1 }
+    PublicFood:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        region: { type: string, nullable: true }
+        image_url: { type: string, nullable: true }
+        tags: { type: array, items: { type: string } }
+        updated_at: { type: string, format: date-time, nullable: true }
+    PublicRecipe:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        title: { type: string }
+        summary: { type: string, nullable: true }
+        prep_minutes: { type: integer, nullable: true }
+        cook_minutes: { type: integer, nullable: true }
+        difficulty: { type: string, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    PublicFoodPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PublicFood" } }
+        meta: { $ref: "#/components/schemas/PublicPaginationMeta" }
+    PublicRecipePage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PublicRecipe" } }
+        meta: { $ref: "#/components/schemas/PublicPaginationMeta" }
+    DeveloperAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        created_at: { type: string, format: date-time }
+    DeveloperApplication:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        scopes: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, suspended] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    DeveloperApplicationPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/DeveloperApplication" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    DevApiKey:
+      type: object
+      description: The safe representation of a key — prefix only, never the secret or hash.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        prefix: { type: string, example: "efk_live_ab12cd34" }
+        scopes: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, revoked] }
+        expires_at: { type: string, format: date-time, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time, nullable: true }
+    IssuedApiKey:
+      allOf:
+        - $ref: "#/components/schemas/DevApiKey"
+        - type: object
+          properties:
+            key: { type: string, description: "The one-time plaintext key — shown only on issue/rotate." }
+            notice: { type: string }
+    DevWebhook:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        events: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, disabled] }
+        secret: { type: string, description: "Signing secret — returned only on create/rotate." }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    DevWebhookDelivery:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string }
+        event: { type: string }
+        status: { type: string, enum: [pending, delivered, retrying, failed] }
+        attempts: { type: integer }
+        last_response_code: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        delivered_at: { type: string, format: date-time, nullable: true }
+    DevUsage:
+      type: object
+      properties:
+        application_id: { type: string, format: uuid }
+        quota:
+          type: object
+          properties:
+            daily_used: { type: integer }
+            daily_limit: { type: integer }
+            monthly_used: { type: integer }
+            monthly_limit: { type: integer }
+        rate_limit:
+          type: object
+          properties:
+            per_minute: { type: integer }
+            burst: { type: integer }
