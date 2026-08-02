@@ -30,4 +30,5 @@ return [
     EruoFood\Search\Infrastructure\Provider\SearchServiceProvider::class,
     EruoFood\Support\Infrastructure\Provider\SupportServiceProvider::class,
     EruoFood\Reviews\Infrastructure\Provider\ReviewsServiceProvider::class,
+    EruoFood\Loyalty\Infrastructure\Provider\LoyaltyServiceProvider::class,
 ];

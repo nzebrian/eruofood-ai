@@ -10,6 +10,7 @@ import '../../features/notifications/notifications_injection.dart';
 import '../../features/payments/payments_injection.dart';
 import '../../features/marketplace/marketplace_injection.dart';
 import '../../features/nutrition/nutrition_injection.dart';
+import '../../features/loyalty/loyalty_injection.dart';
 import '../../features/reviews/reviews_injection.dart';
 import '../../features/search/search_injection.dart';
 import '../../features/support/support_injection.dart';
@@ -49,4 +50,5 @@ Future<void> configureDependencies() async {
   registerSearchFeature(sl);
   registerSupportFeature(sl);
   registerReviewsFeature(sl);
+  registerLoyaltyFeature(sl);
 }

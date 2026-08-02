@@ -47,6 +47,7 @@ import { KnowledgeBasePage } from '@features/support/pages/KnowledgeBasePage';
 import { CrmDashboardPage } from '@features/support/pages/CrmDashboardPage';
 import { SubjectReviewsPage } from '@features/reviews/pages/SubjectReviewsPage';
 import { ModerationQueuePage } from '@features/reviews/pages/ModerationQueuePage';
+import { LoyaltyPage } from '@features/loyalty/pages/LoyaltyPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
@@ -93,6 +94,16 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <ModerationQueuePage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Loyalty, Rewards & Referrals
+  {
+    path: '/rewards',
+    element: (
+      <ProtectedRoute>
+        <LoyaltyPage />
       </ProtectedRoute>
     ),
   },

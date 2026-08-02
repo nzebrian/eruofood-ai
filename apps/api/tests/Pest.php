@@ -32,4 +32,5 @@ uses(TestCase::class)->in(
     __DIR__.'/../modules/Search/tests/Feature',
     __DIR__.'/../modules/Support/tests/Feature',
     __DIR__.'/../modules/Reviews/tests/Feature',
+    __DIR__.'/../modules/Loyalty/tests/Feature',
 );
