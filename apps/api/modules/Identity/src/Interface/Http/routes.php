@@ -55,8 +55,10 @@ Route::prefix('v1')->group(function (): void {
             Route::delete('sessions/{sessionId}', [SessionController::class, 'destroy']);
         });
 
-        // ---- Admin (RBAC) ----
-        Route::prefix('admin')->middleware('role:admin')->group(function (): void {
+        // ---- Admin (RBAC role assignment) ----
+        // Namespaced under admin/rbac so it does not collide with the Admin
+        // module's user-administration routes at v1/admin/users (Milestone 11).
+        Route::prefix('admin/rbac')->middleware('role:admin')->group(function (): void {
             Route::get('users', [UserAdminController::class, 'index']);
             Route::post('users/{userId}/roles', [UserAdminController::class, 'assignRole']);
             Route::delete('users/{userId}/roles', [UserAdminController::class, 'revokeRole']);
