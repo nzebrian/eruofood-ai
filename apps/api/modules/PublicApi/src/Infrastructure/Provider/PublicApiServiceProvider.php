@@ -10,6 +10,7 @@ use EruoFood\PublicApi\Application\Port\QuotaStore;
 use EruoFood\PublicApi\Application\Port\RateLimiter;
 use EruoFood\PublicApi\Application\Port\SecretHasher;
 use EruoFood\PublicApi\Application\Port\WebhookDispatcher;
+use EruoFood\PublicApi\Application\Port\WebhookUrlGuard;
 use EruoFood\PublicApi\Application\Service\ApiKeyService;
 use EruoFood\PublicApi\Application\Service\ApplicationService;
 use EruoFood\PublicApi\Application\Service\DeveloperService;
@@ -34,10 +35,11 @@ use EruoFood\PublicApi\Infrastructure\RateLimit\CacheRateLimiter;
 use EruoFood\PublicApi\Infrastructure\Read\CatalogReadAdapter;
 use EruoFood\PublicApi\Infrastructure\Security\Sha256SecretHasher;
 use EruoFood\PublicApi\Infrastructure\Webhook\HttpWebhookDispatcher;
+use EruoFood\PublicApi\Infrastructure\Webhook\NetworkWebhookUrlGuard;
 use EruoFood\PublicApi\Interface\Http\Middleware\ApiQuota;
 use EruoFood\PublicApi\Interface\Http\Middleware\ApiRateLimit;
 use EruoFood\PublicApi\Interface\Http\Middleware\ApiRequestContext;
-use EruoFood\PublicApi\Interface\Http\Middleware\AuthenticateApiKey;
+use EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi;
 use EruoFood\PublicApi\Interface\Http\Middleware\EnforceScope;
 use EruoFood\Shared\Domain\EventBus;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -64,9 +66,39 @@ final class PublicApiServiceProvider extends ServiceProvider
         $this->app->bind(ApiKeyRepository::class, EloquentApiKeyRepository::class);
         $this->app->bind(WebhookRepository::class, EloquentWebhookRepository::class);
 
+        // OAuth2 persistence.
+        $this->app->bind(\EruoFood\PublicApi\Domain\OAuth\OAuthClientRepository::class, \EruoFood\PublicApi\Infrastructure\Persistence\Eloquent\EloquentOAuthClientRepository::class);
+        $this->app->bind(\EruoFood\PublicApi\Domain\OAuth\AccessTokenRepository::class, \EruoFood\PublicApi\Infrastructure\Persistence\Eloquent\EloquentAccessTokenRepository::class);
+        $this->app->bind(\EruoFood\PublicApi\Domain\OAuth\RefreshTokenRepository::class, \EruoFood\PublicApi\Infrastructure\Persistence\Eloquent\EloquentRefreshTokenRepository::class);
+        $this->app->bind(\EruoFood\PublicApi\Domain\OAuth\AuthorizationCodeRepository::class, \EruoFood\PublicApi\Infrastructure\Persistence\Eloquent\EloquentAuthorizationCodeRepository::class);
+
         $this->app->bind(SecretHasher::class, Sha256SecretHasher::class);
-        $this->app->bind(WebhookDispatcher::class, HttpWebhookDispatcher::class);
         $this->app->singleton(WebhookSigner::class);
+
+        // SSRF/egress guard for webhook destinations (registration + send time).
+        $this->app->singleton(WebhookUrlGuard::class, function ($app): WebhookUrlGuard {
+            /** @var array<string, mixed> $sec */
+            $sec = (array) $app['config']->get('publicapi.webhooks.security', []);
+
+            return new NetworkWebhookUrlGuard(
+                allowedSchemes: array_map('strtolower', (array) ($sec['allowed_schemes'] ?? ['https'])),
+                enforceHttps: (bool) ($sec['enforce_https'] ?? true),
+                allowedPorts: array_map('intval', (array) ($sec['allowed_ports'] ?? [443, 80])),
+                blockPrivateNetworks: (bool) ($sec['block_private_networks'] ?? true),
+                allowedHosts: (array) ($sec['allowed_hosts'] ?? []),
+            );
+        });
+
+        $this->app->bind(WebhookDispatcher::class, function ($app): WebhookDispatcher {
+            /** @var array<string, mixed> $sec */
+            $sec = (array) $app['config']->get('publicapi.webhooks.security', []);
+
+            return new HttpWebhookDispatcher(
+                $app->make(WebhookUrlGuard::class),
+                (int) ($sec['connect_timeout_seconds'] ?? 5),
+                (int) ($sec['max_response_bytes'] ?? 65536),
+            );
+        });
 
         $storeName = (string) $config->get('publicapi.counter_store', 'array');
         $this->app->singleton(RateLimiter::class, fn ($app): RateLimiter => new CacheRateLimiter($app['cache']->store($storeName)));
@@ -77,6 +109,18 @@ final class PublicApiServiceProvider extends ServiceProvider
             $app->make(FoodRepository::class),
             $app->make(RecipeRepository::class),
         ));
+
+        // Orders — delegate to the Commerce Order domain (never bypassed).
+        $this->app->bind(\EruoFood\PublicApi\Domain\Order\OrderPort::class, fn ($app): \EruoFood\PublicApi\Domain\Order\OrderPort => new \EruoFood\PublicApi\Infrastructure\Order\CommerceOrderAdapter(
+            $app->make(\EruoFood\Commerce\Application\Service\OrderService::class),
+            $app->make(\EruoFood\Commerce\Application\Service\CheckoutService::class),
+        ));
+
+        // Read façades over the other contexts (restaurants, products, nutrition, search).
+        $this->app->bind(\EruoFood\PublicApi\Domain\Read\RestaurantReadPort::class, \EruoFood\PublicApi\Infrastructure\Read\MarketplaceReadAdapter::class);
+        $this->app->bind(\EruoFood\PublicApi\Domain\Read\CommerceReadPort::class, \EruoFood\PublicApi\Infrastructure\Read\CommerceReadAdapter::class);
+        $this->app->bind(\EruoFood\PublicApi\Domain\Read\NutritionReadPort::class, \EruoFood\PublicApi\Infrastructure\Read\NutritionReadAdapter::class);
+        $this->app->bind(\EruoFood\PublicApi\Domain\Read\SearchReadPort::class, \EruoFood\PublicApi\Infrastructure\Read\SearchReadAdapter::class);
 
         $this->app->singleton(ScopeRegistry::class, fn ($app): ScopeRegistry => new ScopeRegistry(
             (array) $app['config']->get('publicapi.scopes', []),
@@ -96,6 +140,23 @@ final class PublicApiServiceProvider extends ServiceProvider
             (int) $app['config']->get('publicapi.key.default_ttl_days', 0),
         ));
 
+        // OAuth2 authorization server + the authentication resolver chain. The
+        // chain resolves either an API key or an OAuth2 bearer token to the same
+        // authenticated context, so the gateway is agnostic to the mechanism.
+        $this->app->singleton(\EruoFood\PublicApi\Application\Service\OAuthService::class, fn ($app): \EruoFood\PublicApi\Application\Service\OAuthService => new \EruoFood\PublicApi\Application\Service\OAuthService(
+            $app->make(\EruoFood\PublicApi\Domain\OAuth\OAuthClientRepository::class),
+            $app->make(\EruoFood\PublicApi\Domain\OAuth\AccessTokenRepository::class),
+            $app->make(\EruoFood\PublicApi\Domain\OAuth\RefreshTokenRepository::class),
+            $app->make(\EruoFood\PublicApi\Domain\OAuth\AuthorizationCodeRepository::class),
+            $app->make(SecretHasher::class),
+            (array) $app['config']->get('publicapi.oauth', []),
+        ));
+
+        $this->app->singleton(\EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi::class, fn ($app): \EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi => new \EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi([
+            $app->make(\EruoFood\PublicApi\Application\Auth\ApiKeyPrincipalResolver::class),
+            $app->make(\EruoFood\PublicApi\Application\Auth\OAuthPrincipalResolver::class),
+        ]));
+
         $this->app->singleton(RateLimitService::class, fn ($app): RateLimitService => new RateLimitService(
             $app->make(RateLimiter::class),
             (int) $app['config']->get('publicapi.rate_limit.per_minute', 120),
@@ -114,6 +175,7 @@ final class PublicApiServiceProvider extends ServiceProvider
             $app->make(WebhookDispatcher::class),
             $app->make(WebhookSigner::class),
             $app->make(EventBus::class),
+            $app->make(WebhookUrlGuard::class),
             (array) $app['config']->get('publicapi.webhooks', []),
         ));
 
@@ -131,7 +193,7 @@ final class PublicApiServiceProvider extends ServiceProvider
     {
         /** @var Router $router */
         $router = $this->app->make('router');
-        $router->aliasMiddleware('publicapi.auth', AuthenticateApiKey::class);
+        $router->aliasMiddleware('publicapi.auth', AuthenticatePublicApi::class);
         $router->aliasMiddleware('publicapi.scope', EnforceScope::class);
         $router->aliasMiddleware('publicapi.ratelimit', ApiRateLimit::class);
         $router->aliasMiddleware('publicapi.quota', ApiQuota::class);

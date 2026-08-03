@@ -73,6 +73,19 @@ return [
         'max_per_page' => 100,
     ],
 
+    // OAuth2 authorization server. Layered on the same scope model as API keys:
+    // every issued token carries a scope set (and, for user-delegated grants, a
+    // subject user id) so scope enforcement and BOLA are identical to the key
+    // path. Tokens and codes are stored only as hashes. TTLs are in seconds.
+    'oauth' => [
+        'access_ttl' => (int) env('PUBLIC_API_OAUTH_ACCESS_TTL', 3600),          // 1 hour
+        'refresh_ttl' => (int) env('PUBLIC_API_OAUTH_REFRESH_TTL', 2_592_000),   // 30 days
+        'code_ttl' => (int) env('PUBLIC_API_OAUTH_CODE_TTL', 300),               // 5 minutes
+        'access_prefix' => 'efoat_',   // opaque access token
+        'refresh_prefix' => 'efort_',  // opaque refresh token
+        'code_prefix' => 'efoac_',     // opaque authorization code
+    ],
+
     // Webhook delivery policy.
     'webhooks' => [
         'signature_header' => 'X-EruoFood-Signature',
@@ -83,6 +96,26 @@ return [
         // Exponential backoff base (seconds); attempt n waits base * 2^(n-1).
         'backoff_base_seconds' => (int) env('PUBLIC_API_WEBHOOK_BACKOFF', 30),
         'timeout_seconds' => (int) env('PUBLIC_API_WEBHOOK_TIMEOUT', 10),
+
+        // SSRF / egress policy for webhook destinations. The URL guard enforces
+        // this both when an endpoint is registered and again immediately before
+        // every delivery (DNS-rebinding protection). See WEBHOOKS.md for the
+        // infrastructure egress controls this must be paired with in production.
+        'security' => [
+            // HTTP is tolerated only outside production to ease local testing.
+            'allowed_schemes' => array_values(array_filter(explode(',', (string) env(
+                'PUBLIC_API_WEBHOOK_SCHEMES',
+                env('APP_ENV', 'production') === 'production' ? 'https' : 'https,http',
+            )))),
+            'enforce_https' => (bool) env('PUBLIC_API_WEBHOOK_ENFORCE_HTTPS', env('APP_ENV', 'production') === 'production'),
+            'allowed_ports' => array_map('intval', array_values(array_filter(explode(',', (string) env('PUBLIC_API_WEBHOOK_PORTS', '443,80'))))),
+            'block_private_networks' => (bool) env('PUBLIC_API_WEBHOOK_BLOCK_PRIVATE', true),
+            // Optional explicit host allowlist (comma-separated); empty = allow any public host.
+            'allowed_hosts' => array_values(array_filter(explode(',', (string) env('PUBLIC_API_WEBHOOK_ALLOWED_HOSTS', '')))),
+            'connect_timeout_seconds' => (int) env('PUBLIC_API_WEBHOOK_CONNECT_TIMEOUT', 5),
+            'max_response_bytes' => (int) env('PUBLIC_API_WEBHOOK_MAX_RESPONSE_BYTES', 65536),
+        ],
+
         // Internal domain events that may be subscribed to, mapped to the public
         // event name delivered to webhooks. Keyed by internal event name.
         'events' => [

@@ -77,26 +77,90 @@ final class Client
     }
 
     /**
-     * @param array<string, scalar> $query
+     * POST a resource; returns the unwrapped `data`.
+     *
+     * @param array<string, mixed> $body
      *
      * @return array<string, mixed>
      */
-    private function request(string $path, array $query): array
+    public function post(string $path, array $body = []): array
+    {
+        /** @var array{data?: array<string, mixed>} $result */
+        $result = $this->request($path, [], 'POST', $body);
+
+        return $result['data'] ?? [];
+    }
+
+    // --- Convenience resource methods (thin wrappers) ---
+
+    /** @param array<string, scalar> $query @return array{data: list<mixed>, meta: array<string, mixed>} */
+    public function restaurants(array $query = []): array { return $this->getPage('/restaurants', $query); }
+
+    /** @return array<string, mixed> */
+    public function restaurant(string $slug): array { return $this->get('/restaurants/'.rawurlencode($slug)); }
+
+    /** @return array<string, mixed> */
+    public function restaurantMenu(string $id): array { return $this->get('/restaurants/'.rawurlencode($id).'/menu'); }
+
+    /** @param array<string, scalar> $query @return array{data: list<mixed>, meta: array<string, mixed>} */
+    public function products(array $query = []): array { return $this->getPage('/products', $query); }
+
+    /** @return array<string, mixed> */
+    public function product(string $slug): array { return $this->get('/products/'.rawurlencode($slug)); }
+
+    /** @return array<string, mixed> */
+    public function productCategories(): array { return $this->get('/product-categories'); }
+
+    /** @param array<string, scalar> $query @return array{data: list<mixed>, meta: array<string, mixed>} */
+    public function nutritionItems(array $query = []): array { return $this->getPage('/nutrition', $query); }
+
+    /** @return array<string, mixed> */
+    public function nutritionItem(string $id): array { return $this->get('/nutrition/'.rawurlencode($id)); }
+
+    /** @param array<string, scalar> $query @return array<string, mixed> */
+    public function search(array $query = []): array { return $this->get('/search', $query); }
+
+    /** @return array{data: list<mixed>, meta: array<string, mixed>} */
+    public function orders(array $query = []): array { return $this->getPage('/orders', $query); }
+
+    /** @return array<string, mixed> */
+    public function order(string $id): array { return $this->get('/orders/'.rawurlencode($id)); }
+
+    /** @param array<string, mixed> $body @return array<string, mixed> */
+    public function createOrder(array $body = []): array { return $this->post('/orders', $body); }
+
+    /** @return array<string, mixed> */
+    public function cancelOrder(string $id): array { return $this->post('/orders/'.rawurlencode($id).'/cancel'); }
+
+    /**
+     * @param array<string, scalar> $query
+     * @param array<string, mixed>  $jsonBody
+     *
+     * @return array<string, mixed>
+     */
+    private function request(string $path, array $query, string $method = 'GET', array $jsonBody = []): array
     {
         $url = $this->baseUrl.$path;
         if ($query !== []) {
             $url .= '?'.http_build_query($query);
         }
 
+        $headers = [
+            'Authorization: Bearer '.$this->apiKey,
+            'Accept: application/json',
+        ];
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
+        $options = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => $this->timeoutSeconds,
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer '.$this->apiKey,
-                'Accept: application/json',
-            ],
-        ]);
+        ];
+        if ($method === 'POST') {
+            $options[CURLOPT_POST] = true;
+            $options[CURLOPT_POSTFIELDS] = json_encode($jsonBody, JSON_UNESCAPED_SLASHES) ?: '{}';
+            $headers[] = 'Content-Type: application/json';
+        }
+        $options[CURLOPT_HTTPHEADER] = $headers;
+        curl_setopt_array($ch, $options);
         $raw = curl_exec($ch);
         if ($raw === false) {
             $error = curl_error($ch);

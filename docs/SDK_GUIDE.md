@@ -90,3 +90,58 @@ auto-retry, or OAuth flows. They cover the milestone's requirement — client,
 auth, config, error handling, pagination — and are structured so those can be
 layered on later without breaking the surface. Generated typed models can be
 produced from [`packages/api-contracts/openapi.yaml`](../packages/api-contracts/openapi.yaml).
+
+---
+
+## Milestone 17 — new resource methods
+
+All three SDKs gained thin wrappers for the new resources plus a `POST` path.
+
+### TypeScript
+
+```ts
+import { EruoFoodClient, oauthToken } from '@eruofood/sdk';
+
+const client = new EruoFoodClient({ apiKey: 'efk_live_...' });
+
+await client.restaurants({ q: 'jollof' });
+await client.product('basmati-rice-5kg');
+await client.nutritionItem('nutr_123');
+await client.search({ q: 'egusi', type: 'recipe' });
+
+// Orders (customer-scoped key)
+await client.orders();
+const order = await client.createOrder({ pickup: true, note: 'No onions' });
+await client.cancelOrder(order.id);
+
+// OAuth2 client-credentials → use the token as the apiKey
+const { access_token } = await oauthToken({
+  grant_type: 'client_credentials',
+  client_id: 'client_...',
+  client_secret: 's3cr3t',
+  scope: 'foods:read',
+});
+```
+
+### PHP
+
+```php
+$client = new EruoFood\Sdk\Client('efk_live_...');
+$client->restaurants(['q' => 'jollof']);
+$client->product('basmati-rice-5kg');
+$order = $client->createOrder(['pickup' => true]);
+$client->cancelOrder($order['id']);
+```
+
+### Dart
+
+```dart
+final client = EruoFoodClient(apiKey: 'efk_live_...');
+await client.restaurants({'q': 'jollof'});
+await client.nutritionItem('nutr_123');
+final order = await client.createOrder({'pickup': true});
+await client.cancelOrder(order['id'] as String);
+```
+
+The SDK **architecture is unchanged** — new endpoints are thin wrappers over the
+same request core, so no new SDK concepts were introduced.

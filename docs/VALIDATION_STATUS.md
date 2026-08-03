@@ -134,3 +134,52 @@ cd apps/api && composer install && vendor/bin/pest
 # Flutter (needs the Flutter SDK)
 cd apps/mobile && flutter pub get && flutter test
 ```
+
+---
+
+# Milestone 17 — Public API Completion & GA Hardening
+
+Validation classification (honest): **Executed & Passed** / **Static Validation
+Only** / **Not Validated**. No test is claimed as passed unless it was actually
+run in this environment.
+
+## Executed & Passed (run in this environment)
+
+| Check | Command | Result |
+|---|---|---|
+| SSRF guard logic | `php scratchpad/ssrf_guard_sanity.php` | **25/25 passed** — blocks loopback/private/link-local/CGNAT/IPv6-ULA/mapped, credentials, bad scheme/port; allows public dsts. |
+| BOLA/IDOR order authorization | `php scratchpad/bola_sanity.php` | **6/6 passed** — authenticated subject only reaches the Order domain; app-level credentials refused. |
+| OAuth2 grant logic | `php scratchpad/oauth_sanity.php` | **18/18 passed** — PKCE verify, single-use codes, refresh rotation + revocation, client-credentials (no subject/no refresh), scope containment, introspection. |
+| Public API read/order sanity | `php scratchpad/publicapi_sanity.php` | **34/34 passed** (M16 harness, still green). |
+| PHP syntax (all new files) | `php -l` on every new/edited file | **No syntax errors.** |
+| Cross-reference resolution | `check_refs2.py modules/PublicApi` | **OK — all EruoFood references resolve across 151 files.** |
+| OpenAPI contract | `redocly lint openapi.yaml` | **Valid — 0 errors** (411 pre-existing style warnings). |
+| TypeScript SDK | `tsc --noEmit --strict src/index.ts` | **Clean (exit 0).** |
+| PHP SDK | `php -l sdk-php/src/Client.php` | **No syntax errors.** |
+
+The Pest tests `WebhookSecurityTest` and `OAuthServiceTest` mirror the executed
+standalone harnesses (same assertions, in-memory repositories) but were not run
+through Pest here — see below.
+
+## Static Validation Only (not executed as a suite)
+
+- **Pest test suites** (`WebhookSecurityTest`, `OAuthServiceTest`, and the M16
+  suites): `php -l` clean, logic proven by the standalone harnesses, but the
+  Pest runner was not executed — `composer install` cannot finalize in this
+  sandbox (GitHub auth failures on dist downloads; `vendor/` remains a stub).
+- **BOLA/IDOR order authorization**: enforced by construction (subject user is
+  derived only from the credential; the Commerce `OrderService` re-checks
+  ownership) and covered by written tests; the full HTTP feature path needs the
+  framework to run.
+- **Dart SDK**: new methods added and eyeball-verified; the Dart toolchain is
+  absent, so `dart analyze`/`dart test` were not run.
+
+## Not Validated (require a runtime environment)
+
+- **Redis** production behaviour: rate limiting, quotas, idempotency and
+  distributed counters were **not** validated against a real Redis. No
+  concurrency/load/soak/failure-recovery run was performed.
+- **Performance**: p50/p95/p99 latency, throughput and error rate were **not
+  measured**. Marked *Not Validated* — a load-test environment was unavailable.
+
+These are recorded as GA blockers in `PUBLIC_API_GA_CHECKLIST.md`.

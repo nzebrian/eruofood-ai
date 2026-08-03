@@ -85,3 +85,63 @@ exposed; update your verifier to the new secret.
 `config/publicapi.php` → `webhooks`: header names, `replay_tolerance_seconds`,
 `max_attempts`, `backoff_base_seconds`, `timeout_seconds`, and the internal→public
 `events` map.
+
+---
+
+## Webhook security hardening (Milestone 17)
+
+Outbound webhooks are a classic SSRF vector: a developer registers a URL and the
+platform makes a server-side request to it. The following defences apply at both
+**registration** and **every delivery**.
+
+### In-application SSRF guard (`NetworkWebhookUrlGuard`)
+
+- **Scheme policy** — only `https` in production (`http` tolerated outside prod
+  for local testing), configurable via `PUBLIC_API_WEBHOOK_SCHEMES` /
+  `PUBLIC_API_WEBHOOK_ENFORCE_HTTPS`.
+- **Port policy** — restricted to an allowlist (default `443,80`).
+- **No credentials** — URLs containing `user:pass@` are refused.
+- **Destination validation** — the host is resolved (A + AAAA) and **every**
+  resolved address must be publicly routable. Blocked ranges: loopback
+  (`127/8`, `::1`), private (`10/8`, `172.16/12`, `192.168/16`), link-local
+  (`169.254/16` — including the cloud metadata endpoint `169.254.169.254` —
+  and `fe80::/10`), CGNAT (`100.64/10`), "this host" (`0.0.0.0/8`), IPv6 ULA
+  (`fc00::/7`), IPv4-mapped IPv6, and IETF/benchmarking ranges.
+- **DNS-rebinding (TOCTOU) protection** — the guard re-resolves and re-validates
+  immediately before **each** delivery, not only at registration, so a host
+  re-pointed at an internal address after registration is still refused.
+- **Optional host allowlist** — set `PUBLIC_API_WEBHOOK_ALLOWED_HOSTS` to pin
+  deliveries to specific partner domains.
+
+### Egress hardening at delivery (`HttpWebhookDispatcher`)
+
+- **No redirects** — `withoutRedirecting()`; a 30x cannot bounce the request to
+  an internal host.
+- **Timeouts** — bounded connect timeout and request timeout.
+- **Response size cap** — `CURLOPT_MAXFILESIZE` limits the body read back.
+- **Re-validation** — the URL guard runs again before the request is sent.
+
+### Existing protections (Milestone 16, still in force)
+
+- **HMAC signing** of every payload (`X-EruoFood-Signature`) with a per-endpoint
+  secret; **timestamp** header + replay tolerance window; **delivery id** header.
+- **Safe retry** with exponential backoff up to an attempt ceiling; idempotent
+  per `(webhook, event)`.
+- **Secret rotation** endpoint.
+
+### ⚠️ Infrastructure egress controls (required for GA)
+
+Application-level DNS validation **cannot by itself** defeat a resolver that
+returns a different address at connection time, nor a compromised downstream.
+Production **must** pair the in-app guard with network-level egress controls:
+
+- Route outbound webhook traffic through an **egress proxy / NAT gateway** whose
+  firewall policy denies the same private/reserved ranges (belt-and-braces with
+  the app guard).
+- Deny the container/task network access to the **cloud metadata endpoint**
+  (`169.254.169.254`) at the infrastructure layer.
+- Restrict outbound egress to `:443` (and `:80` if used) only.
+- Consider a dedicated, low-privilege egress path for webhook workers.
+
+These are tracked as a GA blocker in `PUBLIC_API_GA_CHECKLIST.md` because they
+are enforced outside the application and cannot be validated in this repo.

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EruoFood AI API
-  version: 0.16.0
+  version: 0.17.0
   description: >
     Contract-first REST API for EruoFood AI. This specification is the single
     source of truth for the API surface; TypeScript (web) and Dart (mobile)
@@ -4843,6 +4843,354 @@ paths:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicRecipe" } } }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/public/v1/restaurants:
+    get:
+      tags: [Public API]
+      summary: List restaurants (scope restaurants:read)
+      description: Only verified, tradeable vendors are exposed. Standard pagination and `q` search; `filter[featured]=true` to list featured venues.
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of restaurants.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicRestaurantPage" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/restaurants/{slug}:
+    get:
+      tags: [Public API]
+      summary: Get a restaurant by slug (scope restaurants:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The restaurant.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicRestaurant" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/public/v1/restaurants/{id}/menu:
+    get:
+      tags: [Public API]
+      summary: Get a restaurant's menu (scope restaurants:read)
+      description: The available menu items of the restaurant, addressed by its resource id.
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The menu items.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      restaurant_id: { type: string }
+                      items: { type: array, items: { $ref: "#/components/schemas/PublicMenuItem" } }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/public/v1/products:
+    get:
+      tags: [Public API]
+      summary: List products (scope products:read)
+      description: Only the published catalogue is exposed. `filter[category]` and `filter[featured]=true` supported.
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of products.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicProductPage" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/product-categories:
+    get:
+      tags: [Public API]
+      summary: List product categories (scope products:read)
+      security: [{ apiKeyAuth: [] }]
+      responses:
+        "200":
+          description: The product categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      categories: { type: array, items: { $ref: "#/components/schemas/PublicProductCategory" } }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/products/{slug}:
+    get:
+      tags: [Public API]
+      summary: Get a product by slug (scope products:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The product.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicProduct" } } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/public/v1/nutrition:
+    get:
+      tags: [Public API]
+      summary: List nutrition items (scope nutrition:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of nutrition items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicNutritionPage" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/nutrition/{id}:
+    get:
+      tags: [Public API]
+      summary: Get a nutrition item by id (scope nutrition:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The nutrition item.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicNutritionItem" } } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/public/v1/search:
+    get:
+      tags: [Public API]
+      summary: Search (scope search:read)
+      description: Runs over public content only. Supports `q`, `type`, `sort`, `filter[...]` and pagination.
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: type, in: query, required: false, schema: { type: string, enum: [global, recipe, food, ingredient, restaurant, vendor, product, category] } }
+        - { name: sort, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Search results.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicSearchResults" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/search/suggestions:
+    get:
+      tags: [Public API]
+      summary: Search suggestions / autocomplete (scope search:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: type, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Suggestions.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { suggestions: { type: array, items: { type: string } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/search/filters:
+    get:
+      tags: [Public API]
+      summary: The catalogue of supported search filters (scope search:read)
+      security: [{ apiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Supported filters.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { filters: { type: array, items: { $ref: "#/components/schemas/PublicSearchFilter" } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/public/v1/orders:
+    get:
+      tags: [Public API]
+      summary: List the caller's orders (scope orders:read)
+      description: >
+        Returns only orders belonging to the API credential's subject user
+        (object-level authorization / BOLA). An application-level credential
+        with no subject user is refused with 403.
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of the caller's orders.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicOrderPage" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Public API]
+      summary: Create an order for the caller (scope orders:write)
+      description: Placed through the Order domain's checkout — the domain is never bypassed. The customer is always the credential's subject user.
+      security: [{ apiKeyAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pickup: { type: boolean }
+                note: { type: string, nullable: true }
+                scheduled_for: { type: string, format: date-time, nullable: true }
+                shipping_address: { type: object, nullable: true }
+      responses:
+        "201":
+          description: The created order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicOrder" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/orders/{id}:
+    get:
+      tags: [Public API]
+      summary: Retrieve one of the caller's orders (scope orders:read)
+      description: The Order domain re-checks ownership; a caller can never read another user's order (BOLA-safe).
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicOrder" } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/public/v1/orders/{id}/status:
+    get:
+      tags: [Public API]
+      summary: Retrieve an order's status (scope orders:read)
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The order status.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicOrderStatus" } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/public/v1/orders/{id}/cancel:
+    post:
+      tags: [Public API]
+      summary: Cancel one of the caller's orders (scope orders:write)
+      description: Cancellation is permitted only where the Order domain's rules allow it; ownership is enforced downstream.
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The cancelled order.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PublicOrder" } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/public/v1/oauth/token:
+    post:
+      tags: [Public API]
+      summary: OAuth2 token endpoint
+      description: >
+        Issues access (and, for the appropriate grants, refresh) tokens for the
+        `authorization_code` (with PKCE), `client_credentials` and
+        `refresh_token` grants. The client authenticates with HTTP Basic or body
+        parameters. The resulting access token is presented as
+        `Authorization: Bearer <token>` on subsequent public-API calls and
+        carries the same scopes/BOLA semantics as an API key.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/OAuthTokenRequest" }
+          application/json:
+            schema: { $ref: "#/components/schemas/OAuthTokenRequest" }
+      responses:
+        "200":
+          description: The issued token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthTokenResponse" }
+        "400":
+          description: OAuth error (invalid_request/invalid_grant/invalid_scope/unsupported_grant_type).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: Client authentication failed (invalid_client).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+
+  # ===== OAuth2 consent (internal, JWT resource owner) =====
+  /v1/oauth/authorize:
+    post:
+      tags: [Developer Platform]
+      summary: Approve an authorization request and mint a code (Authorization Code + PKCE)
+      description: >
+        The consent step, performed by the logged-in resource owner. The subject
+        user is taken from the JWT session, never from a parameter. Returns a
+        single-use authorization code the client exchanges (with its PKCE
+        verifier) at the token endpoint.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, redirect_uri, code_challenge, code_challenge_method]
+              properties:
+                client_id: { type: string }
+                redirect_uri: { type: string, format: uri }
+                scope: { type: string, nullable: true }
+                code_challenge: { type: string }
+                code_challenge_method: { type: string, enum: [S256, plain] }
+                state: { type: string, nullable: true }
+      responses:
+        "201":
+          description: The authorization code.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string }
+                  redirect_uri: { type: string }
+                  state: { type: string, nullable: true }
+        "400":
+          description: OAuth error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+
   # ===== Developer Platform (internal, JWT) =====
   /v1/developer/register:
     post:
@@ -5014,6 +5362,34 @@ components:
       type: http
       scheme: bearer
       description: "Public API key sent as `Authorization: Bearer <key>` (or the `X-Api-Key` header)."
+    oauth2:
+      type: oauth2
+      description: >
+        OAuth2 access token for the public API, layered on the same scope model
+        as API keys. Presented as `Authorization: Bearer <access_token>`.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://api.eruofood.ai/v1/oauth/authorize
+          tokenUrl: https://api.eruofood.ai/api/public/v1/oauth/token
+          refreshUrl: https://api.eruofood.ai/api/public/v1/oauth/token
+          scopes:
+            "foods:read": Read the public food catalogue.
+            "recipes:read": Read published recipes.
+            "restaurants:read": Read restaurant/vendor profiles.
+            "products:read": Read the grocery/product catalogue.
+            "nutrition:read": Read nutrition information.
+            "search:read": Query the public search index.
+            "orders:read": Read the caller's orders.
+            "orders:write": Create, update and cancel the caller's orders.
+        clientCredentials:
+          tokenUrl: https://api.eruofood.ai/api/public/v1/oauth/token
+          scopes:
+            "foods:read": Read the public food catalogue.
+            "recipes:read": Read published recipes.
+            "restaurants:read": Read restaurant/vendor profiles.
+            "products:read": Read the grocery/product catalogue.
+            "nutrition:read": Read nutrition information.
+            "search:read": Query the public search index.
 
   responses:
     Error:
@@ -5675,10 +6051,7 @@ components:
         date: { type: string, format: date }
         entries: { type: array, items: { $ref: "#/components/schemas/DiaryEntry" } }
         totals: { $ref: "#/components/schemas/NutritionFacts" }
-        targets:
-          oneOf:
-            - { $ref: "#/components/schemas/NutritionAssessment" }
-            - { type: "null" }
+        targets: { $ref: "#/components/schemas/NutritionAssessment" }
         remaining_calories: { type: integer, nullable: true }
 
     MealAnalysis:
@@ -5809,10 +6182,7 @@ components:
         rating_average: { type: number }
         rating_count: { type: integer }
         featured: { type: boolean }
-        location:
-          oneOf:
-            - { $ref: "#/components/schemas/GeoPoint" }
-            - { type: "null" }
+        location: { $ref: "#/components/schemas/GeoPoint" }
         primary_image: { type: string, nullable: true }
 
     Vendor:
@@ -5831,10 +6201,7 @@ components:
                 line: { type: string }
                 city: { type: string }
                 state: { type: string }
-                location:
-                  oneOf:
-                    - { $ref: "#/components/schemas/GeoPoint" }
-                    - { type: "null" }
+                location: { $ref: "#/components/schemas/GeoPoint" }
             branches: { type: array, items: { type: object } }
             business_hours: { type: object, additionalProperties: { type: object, properties: { open: { type: string }, close: { type: string } } } }
             delivery_zones:
@@ -5890,9 +6257,9 @@ components:
         tags: { type: array, items: { type: string } }
         featured: { type: boolean }
         promotion:
-          oneOf:
-            - { type: object, properties: { type: { type: string }, value: { type: integer } } }
-            - { type: "null" }
+          type: object
+          nullable: true
+          properties: { type: { type: string }, value: { type: integer } }
         tracks_inventory: { type: boolean }
         stock: { type: integer, nullable: true }
         calories: { type: integer, nullable: true }
@@ -5992,10 +6359,8 @@ components:
         status: { type: string, enum: [unassigned, assigned, picked_up, en_route, delivered, failed] }
         fee_minor: { type: integer }
         zone_name: { type: string, nullable: true }
-        pickup:
-          oneOf: [ { $ref: "#/components/schemas/GeoPoint" }, { type: "null" } ]
-        dropoff:
-          oneOf: [ { $ref: "#/components/schemas/GeoPoint" }, { type: "null" } ]
+        pickup: { $ref: "#/components/schemas/GeoPoint" }
+        dropoff: { $ref: "#/components/schemas/GeoPoint" }
         track_points:
           type: array
           items: { type: object, properties: { lat: { type: number }, lng: { type: number }, at: { type: string, format: date-time } } }
@@ -6010,8 +6375,7 @@ components:
         phone: { type: string }
         vehicle_type: { type: string, enum: [bicycle, motorbike, car, foot] }
         status: { type: string, enum: [available, busy, offline] }
-        location:
-          oneOf: [ { $ref: "#/components/schemas/GeoPoint" }, { type: "null" } ]
+        location: { $ref: "#/components/schemas/GeoPoint" }
 
     VendorReview:
       type: object
@@ -7122,6 +7486,143 @@ components:
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/PublicRecipe" } }
         meta: { $ref: "#/components/schemas/PublicPaginationMeta" }
+    PublicRestaurant:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        type: { type: string, example: restaurant }
+        category: { type: string }
+        description: { type: string, nullable: true }
+        featured: { type: boolean }
+        images: { type: array, items: { type: string } }
+    PublicRestaurantPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PublicRestaurant" } }
+        meta: { $ref: "#/components/schemas/PublicPaginationMeta" }
+    PublicMenuItem:
+      type: object
+      properties:
+        id: { type: string }
+        restaurant_id: { type: string }
+        category_id: { type: string, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        price_minor: { type: integer }
+        currency: { type: string, example: NGN }
+        available: { type: boolean }
+        tags: { type: array, items: { type: string } }
+    PublicProduct:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [grocery, general] }
+        department: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        price_minor: { type: integer }
+        currency: { type: string, example: NGN }
+        category_id: { type: string, nullable: true }
+        images: { type: array, items: { type: string } }
+    PublicProductPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PublicProduct" } }
+        meta: { $ref: "#/components/schemas/PublicPaginationMeta" }
+    PublicProductCategory:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [grocery, general] }
+        parent_id: { type: string, nullable: true }
+        sort_order: { type: integer }
+    PublicNutritionItem:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        category: { type: string }
+        food_id: { type: string, nullable: true }
+        facts:
+          type: object
+          properties:
+            serving_size: { type: object }
+            panel: { type: object }
+    PublicNutritionPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PublicNutritionItem" } }
+        meta: { $ref: "#/components/schemas/PublicPaginationMeta" }
+    PublicSearchFilter:
+      type: object
+      properties:
+        key: { type: string }
+        type: { type: string }
+        description: { type: string }
+        values: { type: array, items: { type: string } }
+    PublicSearchResults:
+      type: object
+      properties:
+        query_id: { type: string, nullable: true }
+        total: { type: integer }
+        page: { type: integer }
+        per_page: { type: integer }
+        facets: { type: object }
+        hits: { type: array, items: { type: object } }
+    PublicOrder:
+      type: object
+      properties:
+        id: { type: string }
+        reference: { type: string }
+        status: { type: string }
+        total_minor: { type: integer }
+        currency: { type: string, example: NGN }
+        pickup: { type: boolean }
+        note: { type: string, nullable: true }
+        lines: { type: array, items: { type: object } }
+        placed_at: { type: string, format: date-time, nullable: true }
+    PublicOrderPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PublicOrder" } }
+        meta: { $ref: "#/components/schemas/PublicPaginationMeta" }
+    PublicOrderStatus:
+      type: object
+      properties:
+        id: { type: string }
+        reference: { type: string }
+        status: { type: string }
+    OAuthTokenRequest:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type: { type: string, enum: [authorization_code, client_credentials, refresh_token] }
+        client_id: { type: string }
+        client_secret: { type: string, nullable: true }
+        code: { type: string, nullable: true }
+        redirect_uri: { type: string, nullable: true }
+        code_verifier: { type: string, nullable: true }
+        refresh_token: { type: string, nullable: true }
+        scope: { type: string, nullable: true }
+    OAuthTokenResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, example: 3600 }
+        scope: { type: string }
+        refresh_token: { type: string, nullable: true }
+    OAuthError:
+      type: object
+      properties:
+        error: { type: string, example: invalid_grant }
+        error_description: { type: string }
     DeveloperAccount:
       type: object
       properties:

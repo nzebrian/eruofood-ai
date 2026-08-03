@@ -29,6 +29,7 @@ final class ApiKey
         private ?DateTimeImmutable $lastUsedAt,
         private readonly DateTimeImmutable $createdAt,
         private ?DateTimeImmutable $revokedAt,
+        private readonly ?string $subjectUserId = null,
     ) {
     }
 
@@ -41,8 +42,9 @@ final class ApiKey
         ScopeSet $scopes,
         ?DateTimeImmutable $expiresAt,
         DateTimeImmutable $now,
+        ?string $subjectUserId = null,
     ): self {
-        return new self($id, $applicationId, $name, $prefix, $hashedSecret, $scopes, ApiKeyStatus::Active, $expiresAt, null, $now, null);
+        return new self($id, $applicationId, $name, $prefix, $hashedSecret, $scopes, ApiKeyStatus::Active, $expiresAt, null, $now, null, $subjectUserId);
     }
 
     public static function reconstitute(
@@ -57,8 +59,19 @@ final class ApiKey
         ?DateTimeImmutable $lastUsedAt,
         DateTimeImmutable $createdAt,
         ?DateTimeImmutable $revokedAt,
+        ?string $subjectUserId = null,
     ): self {
-        return new self($id, $applicationId, $name, $prefix, $hashedSecret, $scopes, $status, $expiresAt, $lastUsedAt, $createdAt, $revokedAt);
+        return new self($id, $applicationId, $name, $prefix, $hashedSecret, $scopes, $status, $expiresAt, $lastUsedAt, $createdAt, $revokedAt, $subjectUserId);
+    }
+
+    /**
+     * The customer this key acts on behalf of, if it is a customer-scoped key.
+     * Null for application-level keys (which cannot access customer-owned
+     * resources such as orders). This is the BOLA principal subject.
+     */
+    public function subjectUserId(): ?string
+    {
+        return $this->subjectUserId;
     }
 
     public function revoke(DateTimeImmutable $now): void

@@ -50,14 +50,52 @@ class EruoFoodClient {
     }
   }
 
-  Future<Map<String, dynamic>> _request(String path, Map<String, dynamic>? query) async {
+  /// POST a resource; returns the unwrapped `data`.
+  Future<Map<String, dynamic>> post(String path, [Map<String, dynamic>? body]) async {
+    final result = await _request(path, null, method: 'POST', jsonBody: body);
+    return (result['data'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+  }
+
+  // --- Convenience resource methods (thin wrappers) ---
+  Future<Page<Map<String, dynamic>>> restaurants([Map<String, dynamic>? query]) => getPage('/restaurants', query);
+  Future<Map<String, dynamic>> restaurant(String slug) => get('/restaurants/${Uri.encodeComponent(slug)}');
+  Future<Map<String, dynamic>> restaurantMenu(String id) => get('/restaurants/${Uri.encodeComponent(id)}/menu');
+
+  Future<Page<Map<String, dynamic>>> products([Map<String, dynamic>? query]) => getPage('/products', query);
+  Future<Map<String, dynamic>> product(String slug) => get('/products/${Uri.encodeComponent(slug)}');
+  Future<Map<String, dynamic>> productCategories() => get('/product-categories');
+
+  Future<Page<Map<String, dynamic>>> nutritionItems([Map<String, dynamic>? query]) => getPage('/nutrition', query);
+  Future<Map<String, dynamic>> nutritionItem(String id) => get('/nutrition/${Uri.encodeComponent(id)}');
+
+  Future<Map<String, dynamic>> search([Map<String, dynamic>? query]) => get('/search', query);
+
+  // Orders — customer-scoped, BOLA-enforced.
+  Future<Page<Map<String, dynamic>>> orders([Map<String, dynamic>? query]) => getPage('/orders', query);
+  Future<Map<String, dynamic>> order(String id) => get('/orders/${Uri.encodeComponent(id)}');
+  Future<Map<String, dynamic>> createOrder([Map<String, dynamic>? body]) => post('/orders', body);
+  Future<Map<String, dynamic>> cancelOrder(String id) => post('/orders/${Uri.encodeComponent(id)}/cancel');
+
+  Future<Map<String, dynamic>> _request(
+    String path,
+    Map<String, dynamic>? query, {
+    String method = 'GET',
+    Map<String, dynamic>? jsonBody,
+  }) async {
     final uri = Uri.parse('$baseUrl$path').replace(
       queryParameters: query?.map((k, v) => MapEntry(k, '$v')),
     );
-    final res = await _http.get(uri, headers: {
+    final headers = {
       'Authorization': 'Bearer $apiKey',
       'Accept': 'application/json',
-    }).timeout(timeout);
+    };
+    final http.Response res;
+    if (method == 'POST') {
+      headers['Content-Type'] = 'application/json';
+      res = await _http.post(uri, headers: headers, body: jsonEncode(jsonBody ?? <String, dynamic>{})).timeout(timeout);
+    } else {
+      res = await _http.get(uri, headers: headers).timeout(timeout);
+    }
 
     final body = res.body.isNotEmpty ? jsonDecode(res.body) as Map<String, dynamic> : <String, dynamic>{};
     if (res.statusCode < 200 || res.statusCode >= 300) {

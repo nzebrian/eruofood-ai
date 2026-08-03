@@ -53,3 +53,29 @@ followed by an OWASP API Security Top 10 (2023) review.
   sign), displayed once at create/rotate.
 - **Provider/JWT secrets:** environment variables (see `.env.example`), never
   committed.
+
+---
+
+## OWASP API Security Top 10 (2023) review — Milestone 17
+
+| # | Risk | Posture in EruoFood Public API |
+|---|---|---|
+| API1 | **Broken Object Level Authorization (BOLA)** | The authenticated **subject user** is the *only* source of the customer id passed downstream — never a client-supplied parameter. Customer-scoped API keys and user-delegated OAuth tokens carry `subject_user_id`; application-level credentials (no subject) are refused for order resources. The Commerce `OrderService` re-checks ownership (defence in depth), throwing → `403`. Covered by design + tests. |
+| API2 | **Broken Authentication** | Two mechanisms, one model: API keys (hashed, never stored plaintext, constant-time verify) and OAuth2 (Auth Code+PKCE, Client Credentials, Refresh with rotation; tokens/codes stored only as hashes). Both resolve through a `PrincipalResolver` chain to one `AuthenticatedContext`. Token endpoint is rate-limited. |
+| API3 | **Broken Object Property Level Authorization** | Responses are built by explicit **transformers** (allow-lists of fields) from the module's own DTOs — internal entities are never serialised directly, so no mass-assignment or over-exposure. Writes use `$request->validate([...])` allow-lists. |
+| API4 | **Unrestricted Resource Consumption** | Per-client rate limiting (burst-aware, `X-RateLimit-*`), daily/monthly quotas (`X-Quota-*`), pagination capped at `max_per_page`, bounded webhook timeouts/response size. (Redis-backed behaviour is a GA validation item.) |
+| API5 | **Broken Function Level Authorization** | Every data route requires a specific granted scope (`publicapi.scope:<scope>`); scopes are the intersection of application grant ∩ credential request and never widen. Developer/portal endpoints are JWT-only and never accept API keys. |
+| API6 | **Unrestricted Access to Sensitive Business Flows** | Order creation goes through the Order domain's checkout (never a bypass); cancellation is allowed only where domain rules permit. Rate limits + quotas blunt automated abuse. |
+| API7 | **Server-Side Request Forgery (SSRF)** | Webhook destinations are validated (scheme/port/credentials + private/reserved/loopback/link-local/CGNAT/IPv6-ULA blocking), re-validated at send time (DNS-rebinding), with redirects disabled and size/time caps. Infra egress controls documented as a GA requirement. See `WEBHOOKS.md`. |
+| API8 | **Security Misconfiguration** | HTTPS enforced in prod; strict CORS allow-list; standard error envelope (no stack traces); `Cache-Control: no-store` on token responses; secrets via env. |
+| API9 | **Improper Inventory Management** | The public surface is versioned (`/api/public/v1`), a single OpenAPI contract documents every endpoint + security scheme, and the developer portal is separate from the data surface. Internal endpoints are never proxied. |
+| API10 | **Unsafe Consumption of APIs** | The only outbound calls are webhooks, hardened as above; source-context reads go through in-process ports, not untrusted network calls. |
+
+### Object-level authorization (BOLA/IDOR) design note
+
+The gateway attaches `publicapi_subject_user_id` from the credential. `OrderApiService`
+calls `Principal::requireSubjectUser()` — which throws `403` for an
+application-level credential — and passes that id (never a request value) to the
+Order domain. A caller therefore cannot enumerate or act on another user's
+orders even by guessing ids: the id in the URL selects a resource, but ownership
+is decided by the authenticated subject, and the domain rejects a mismatch.

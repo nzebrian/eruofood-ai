@@ -75,6 +75,12 @@ export class EruoFoodClient {
     }
   }
 
+  /** POST a resource; returns the unwrapped `data`. */
+  async post<T>(path: string, body?: unknown): Promise<T> {
+    const res = await this.request(path, undefined, 'POST', body);
+    return (res as { data: T }).data;
+  }
+
   // --- Convenience resource methods (thin wrappers) ---
   foods(query?: Record<string, string | number | undefined>) {
     return this.getPage('/foods', query);
@@ -89,7 +95,70 @@ export class EruoFoodClient {
     return this.get(`/recipes/${encodeURIComponent(slug)}`);
   }
 
-  private async request(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<unknown> {
+  // Restaurants + menus (scope restaurants:read)
+  restaurants(query?: Record<string, string | number | undefined>) {
+    return this.getPage('/restaurants', query);
+  }
+  restaurant(slug: string) {
+    return this.get(`/restaurants/${encodeURIComponent(slug)}`);
+  }
+  restaurantMenu(id: string) {
+    return this.get(`/restaurants/${encodeURIComponent(id)}/menu`);
+  }
+
+  // Products + categories (scope products:read)
+  products(query?: Record<string, string | number | undefined>) {
+    return this.getPage('/products', query);
+  }
+  product(slug: string) {
+    return this.get(`/products/${encodeURIComponent(slug)}`);
+  }
+  productCategories() {
+    return this.get('/product-categories');
+  }
+
+  // Nutrition (scope nutrition:read)
+  nutritionItems(query?: Record<string, string | number | undefined>) {
+    return this.getPage('/nutrition', query);
+  }
+  nutritionItem(id: string) {
+    return this.get(`/nutrition/${encodeURIComponent(id)}`);
+  }
+
+  // Search (scope search:read)
+  search(query: Record<string, string | number | undefined>) {
+    return this.get('/search', query);
+  }
+  searchSuggestions(q: string, type?: string) {
+    return this.get('/search/suggestions', { q, type });
+  }
+  searchFilters() {
+    return this.get('/search/filters');
+  }
+
+  // Orders — customer-scoped, BOLA-enforced (scope orders:read / orders:write)
+  orders(query?: Record<string, string | number | undefined>) {
+    return this.getPage('/orders', query);
+  }
+  order(id: string) {
+    return this.get(`/orders/${encodeURIComponent(id)}`);
+  }
+  orderStatus(id: string) {
+    return this.get(`/orders/${encodeURIComponent(id)}/status`);
+  }
+  createOrder(body: { pickup?: boolean; note?: string | null; scheduled_for?: string | null; shipping_address?: unknown }) {
+    return this.post('/orders', body);
+  }
+  cancelOrder(id: string) {
+    return this.post(`/orders/${encodeURIComponent(id)}/cancel`);
+  }
+
+  private async request(
+    path: string,
+    query?: Record<string, string | number | boolean | undefined>,
+    method: 'GET' | 'POST' = 'GET',
+    body?: unknown,
+  ): Promise<unknown> {
     const url = new URL(this.baseUrl + path);
     for (const [k, v] of Object.entries(query ?? {})) {
       if (v !== undefined) url.searchParams.set(k, String(v));
@@ -98,9 +167,15 @@ export class EruoFoodClient {
     const controller = new AbortController();
     const timeout = this.config.timeoutMs ? setTimeout(() => controller.abort(), this.config.timeoutMs) : undefined;
     try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${this.config.apiKey}`,
+        Accept: 'application/json',
+      };
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
       const res = await this.fetchImpl(url.toString(), {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${this.config.apiKey}`, Accept: 'application/json' },
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
       const text = await res.text();
@@ -114,4 +189,35 @@ export class EruoFoodClient {
       if (timeout) clearTimeout(timeout);
     }
   }
+}
+
+/**
+ * Exchange OAuth2 client credentials for an access token. A standalone helper
+ * (not on the client) because it authenticates the client, not an end user; the
+ * returned `access_token` can be passed as the `apiKey` to {@link EruoFoodClient}.
+ */
+export interface OAuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+  refresh_token?: string;
+}
+
+export async function oauthToken(
+  params: Record<string, string>,
+  opts: { baseUrl?: string; fetch?: typeof fetch } = {},
+): Promise<OAuthTokenResponse> {
+  const base = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
+  const fetchImpl = opts.fetch ?? globalThis.fetch;
+  const res = await fetchImpl(`${base}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: new URLSearchParams(params).toString(),
+  });
+  const json = (await res.json()) as OAuthTokenResponse & { error?: string; error_description?: string };
+  if (!res.ok) {
+    throw new EruoFoodApiError(res.status, json.error ?? 'oauth_error', json.error_description ?? res.statusText);
+  }
+  return json;
 }

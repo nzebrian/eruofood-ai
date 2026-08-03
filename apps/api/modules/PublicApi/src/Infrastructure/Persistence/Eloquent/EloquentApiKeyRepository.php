@@ -55,6 +55,7 @@ final class EloquentApiKeyRepository implements ApiKeyRepository
         $m->last_used_at = $key->lastUsedAt();
         $m->created_at = $key->createdAt();
         $m->revoked_at = $key->revokedAt();
+        $m->subject_user_id = $key->subjectUserId();
         $m->save();
     }
 
@@ -72,6 +73,7 @@ final class EloquentApiKeyRepository implements ApiKeyRepository
             $m->last_used_at !== null ? DateTimeImmutable::createFromInterface($m->last_used_at) : null,
             DateTimeImmutable::createFromInterface($m->created_at),
             $m->revoked_at !== null ? DateTimeImmutable::createFromInterface($m->revoked_at) : null,
+            $m->subject_user_id,
         );
     }
 }

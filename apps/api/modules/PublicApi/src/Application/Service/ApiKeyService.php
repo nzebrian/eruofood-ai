@@ -44,7 +44,7 @@ final readonly class ApiKeyService
     /**
      * @param list<string> $requestedScopes
      */
-    public function issue(string $applicationId, string $developerId, string $name, array $requestedScopes, ?int $ttlDays = null): IssuedApiKey
+    public function issue(string $applicationId, string $developerId, string $name, array $requestedScopes, ?int $ttlDays = null, ?string $subjectUserId = null): IssuedApiKey
     {
         $application = $this->applications->findById($applicationId) ?? throw PublicApiNotFound::of('application', $applicationId);
         $application->isOwnedBy($developerId);
@@ -67,6 +67,7 @@ final readonly class ApiKeyService
             $scopes,
             $expiresAt,
             $now,
+            $subjectUserId !== null && $subjectUserId !== '' ? $subjectUserId : null,
         );
         $this->keys->save($key);
         $this->events->publish(new ApiKeyIssued($key->id(), $applicationId));
@@ -83,7 +84,7 @@ final readonly class ApiKeyService
         $key->revoke(new DateTimeImmutable());
         $this->keys->save($key);
 
-        return $this->issue($key->applicationId(), $developerId, $key->name(), $key->scopes()->toArray());
+        return $this->issue($key->applicationId(), $developerId, $key->name(), $key->scopes()->toArray(), null, $key->subjectUserId());
     }
 
     public function revoke(string $keyId, string $developerId): void

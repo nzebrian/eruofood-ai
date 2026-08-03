@@ -6,6 +6,7 @@ namespace EruoFood\PublicApi\Application\Service;
 
 use DateTimeImmutable;
 use EruoFood\PublicApi\Application\Port\WebhookDispatcher;
+use EruoFood\PublicApi\Application\Port\WebhookUrlGuard;
 use EruoFood\PublicApi\Domain\Event\WebhookDelivered;
 use EruoFood\PublicApi\Domain\Event\WebhookFailed;
 use EruoFood\PublicApi\Domain\Exception\PublicApiNotFound;
@@ -31,6 +32,7 @@ final readonly class WebhookService
         private WebhookDispatcher $dispatcher,
         private WebhookSigner $signer,
         private EventBus $events,
+        private WebhookUrlGuard $urlGuard,
         private array $config,
     ) {
     }
@@ -40,6 +42,9 @@ final readonly class WebhookService
      */
     public function subscribe(string $applicationId, string $url, array $events): Webhook
     {
+        // Refuse SSRF-unsafe destinations before the endpoint is ever stored.
+        $this->urlGuard->assertAllowed($url);
+
         $webhook = Webhook::create(
             $this->webhooks->nextIdentity(),
             $applicationId,
@@ -58,6 +63,7 @@ final readonly class WebhookService
      */
     public function update(string $id, string $applicationId, string $url, array $events): Webhook
     {
+        $this->urlGuard->assertAllowed($url);
         $webhook = $this->owned($id, $applicationId);
         $webhook->update($url, $events, new DateTimeImmutable());
         $this->webhooks->save($webhook);

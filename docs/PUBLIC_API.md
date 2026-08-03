@@ -136,3 +136,45 @@ curl -H "Authorization: Bearer $EF_API_KEY" \
 
 See [SDK_GUIDE.md](SDK_GUIDE.md) for the TypeScript, PHP and Dart SDKs, and
 [WEBHOOKS.md](WEBHOOKS.md) for event delivery.
+
+---
+
+## Milestone 17 additions
+
+### New read resources
+
+All require an API key (or OAuth2 access token) with the matching scope.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /restaurants` · `GET /restaurants/{slug}` · `GET /restaurants/{id}/menu` | `restaurants:read` | Verified vendors + available menu items (via Marketplace read port). |
+| `GET /products` · `GET /products/{slug}` · `GET /product-categories` | `products:read` | Published catalogue only (via Commerce read port). |
+| `GET /nutrition` · `GET /nutrition/{id}` | `nutrition:read` | Nutrition items with serving size + panel (via Nutrition read port). |
+| `GET /search` · `GET /search/suggestions` · `GET /search/filters` | `search:read` | Public content only; admin-only scopes refused (via Search pipeline). |
+
+`filter[...]`, `q`, `sort`, `page`, `per_page` follow the standard conventions.
+
+### Orders (customer-scoped, BOLA-enforced)
+
+| Endpoint | Scope |
+|---|---|
+| `GET /orders` · `GET /orders/{id}` · `GET /orders/{id}/status` | `orders:read` |
+| `POST /orders` · `POST /orders/{id}/cancel` | `orders:write` |
+
+Orders are always scoped to the **credential's subject user** — a caller can only
+ever see or change its own customer's orders. An application-level credential (no
+subject user) is refused with `403`. Order creation goes through the Order
+domain's checkout; the domain is never bypassed and re-checks ownership.
+
+### OAuth2
+
+The public API accepts OAuth2 access tokens (as `Authorization: Bearer <token>`)
+in addition to API keys — same scopes, same object-level authorization.
+
+- `POST /api/public/v1/oauth/token` — token endpoint for `authorization_code`
+  (with PKCE), `client_credentials` and `refresh_token`.
+- `POST /v1/oauth/authorize` — JWT-authenticated consent step; the logged-in
+  resource owner mints a single-use authorization code.
+
+See `API_SECURITY.md` for the auth model and `docs/PUBLIC_API_GA_CHECKLIST.md`
+for GA status.

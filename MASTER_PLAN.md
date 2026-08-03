@@ -953,8 +953,34 @@ ADRs will live in `docs/adr/`. Initial set to author on approval:
 | ADR-0014 | Reviews & Ratings — one context owns every review; ratings out via events |
 | ADR-0015 | Loyalty, Rewards & Referrals — one context owns every point; earned from events |
 | ADR-0016 | Public API, SDK & Developer Platform — a controlled façade, internals never exposed |
+| ADR-0017 | Public API GA hardening — read-port resources, BOLA-safe orders, OAuth2 on the scope model, webhook SSRF defence |
 
 > Delivered ADRs from Milestones 1–16 live in `docs/adr/` (see `0001`–`0016`).
+
+### Milestone 17 — Public API Completion & GA Hardening
+
+Extends the `EruoFood\PublicApi` façade (no architectural rebuild):
+
+- **Read resources completed** through the read-port pattern — restaurants +
+  menus (Marketplace), products + categories (Commerce), nutrition (Nutrition),
+  search + suggestions + filters (Search). Strict bounded-context isolation: the
+  Public API never touches another domain's persistence, only its published
+  ports.
+- **Orders** public API (`orders:read`/`orders:write`) delegating to the Order
+  domain (checkout, cancel) — never bypassed.
+- **Object-level authorization (BOLA/IDOR)**: the subject user comes only from
+  the credential; the Order domain re-checks ownership. Application-level
+  credentials cannot reach customer data.
+- **OAuth2 readiness** (Authorization Code + PKCE, Client Credentials, Refresh
+  with rotation) layered on the *same* scope model as API keys, via a
+  `PrincipalResolver` chain — API-key auth is untouched.
+- **Webhook SSRF hardening** — destination validation, private/reserved-range
+  blocking, DNS-rebinding re-checks, redirect blocking, HTTPS-in-prod, timeouts
+  and size caps; infra egress controls documented.
+- Contract (`openapi.yaml` → 0 redocly errors), all three SDKs, and the docs
+  (`PUBLIC_API`, `API_SECURITY` incl. OWASP API Top-10, `WEBHOOKS`, `SDK_GUIDE`,
+  `VALIDATION_STATUS`, `PUBLIC_API_GA_CHECKLIST`) updated. Redis/perf validation
+  and the full Pest run remain GA blockers (see the checklist).
 
 ---
 
