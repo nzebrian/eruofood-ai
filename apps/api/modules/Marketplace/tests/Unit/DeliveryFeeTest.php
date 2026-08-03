@@ -15,9 +15,16 @@ use EruoFood\Shared\Domain\ValueObject\Slug;
 function vendorAt(GeoLocation $geo): Vendor
 {
     return Vendor::register(
-        'v1', 'owner', 'Test Vendor', Slug::fromTitle('Test Vendor'), VendorType::Restaurant, 'african',
-        new ContactInfo('+2348000000000'), new Address('1 St', 'Lagos', 'Lagos', $geo),
-        new DateTimeImmutable(), autoVerify: true,
+        'v1',
+        'owner',
+        'Test Vendor',
+        Slug::fromTitle('Test Vendor'),
+        VendorType::Restaurant,
+        'african',
+        new ContactInfo('+2348000000000'),
+        new Address('1 St', 'Lagos', 'Lagos', $geo),
+        new DateTimeImmutable(),
+        autoVerify: true,
     );
 }
 

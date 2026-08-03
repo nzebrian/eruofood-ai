@@ -7,8 +7,8 @@ namespace EruoFood\PublicApi\Interface\Http\Controller\Public;
 use EruoFood\PublicApi\Application\Service\OrderApiService;
 use EruoFood\PublicApi\Application\Transformer\OrderTransformer;
 use EruoFood\PublicApi\Domain\Order\OrderDraft;
-use EruoFood\PublicApi\Interface\Http\Concerns\RespondsWithEnvelope;
 use EruoFood\PublicApi\Interface\Http\Concerns\ResolvesPrincipal;
+use EruoFood\PublicApi\Interface\Http\Concerns\RespondsWithEnvelope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 

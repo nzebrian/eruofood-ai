@@ -21,7 +21,7 @@ final readonly class EventTranslator
 {
     /**
      * @param array<string, array{subject_type: string, subject_field: string, user_field: string}> $eligibilityMap
-     *        external event name => how to read (subject type, subject-id field, buyer-id field)
+     *                                                                                                              external event name => how to read (subject type, subject-id field, buyer-id field)
      */
     public function __construct(
         private PurchaseEligibilityRepository $eligibility,

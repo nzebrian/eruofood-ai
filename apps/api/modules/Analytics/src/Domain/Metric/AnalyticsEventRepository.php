@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace EruoFood\Analytics\Domain\Metric;
 
+use DateTimeImmutable;
+
 /** Append-only persistence port for the raw {@see AnalyticsEvent} collection. */
 interface AnalyticsEventRepository
 {
@@ -11,5 +13,5 @@ interface AnalyticsEventRepository
 
     public function append(AnalyticsEvent $event): void;
 
-    public function countSince(\DateTimeImmutable $since): int;
+    public function countSince(DateTimeImmutable $since): int;
 }

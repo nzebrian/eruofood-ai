@@ -18,8 +18,15 @@ function pngn(int $minor): Money
 function newPayment(array $splits = []): Payment
 {
     return Payment::initiate(
-        'pay1', 'PMT-REF', 'order-1', 'user-1', pngn(1000000),
-        PaymentProvider::Mock, PaymentMethodType::Card, 'idem-1', $splits,
+        'pay1',
+        'PMT-REF',
+        'order-1',
+        'user-1',
+        pngn(1000000),
+        PaymentProvider::Mock,
+        PaymentMethodType::Card,
+        'idem-1',
+        $splits,
         new DateTimeImmutable('2026-07-27T10:00:00Z'),
     );
 }

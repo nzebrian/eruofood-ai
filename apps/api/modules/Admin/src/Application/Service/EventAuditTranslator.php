@@ -18,7 +18,7 @@ use EruoFood\Shared\Domain\DomainEvent;
 final readonly class EventAuditTranslator
 {
     /**
-     * @param array<string, string> $eventMap  external event name => audit action
+     * @param array<string, string> $eventMap external event name => audit action
      */
     public function __construct(
         private AuditService $audit,

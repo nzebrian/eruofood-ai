@@ -30,9 +30,14 @@ it('detects first-response and resolution breaches', function (): void {
 });
 
 it('matches automation rules by trigger and conditions', function (): void {
-    $rule = AutomationRule::create('r', 'Flag urgent', 'ticket_opened',
+    $rule = AutomationRule::create(
+        'r',
+        'Flag urgent',
+        'ticket_opened',
         [['field' => 'priority', 'op' => 'eq', 'value' => 'urgent']],
-        [['type' => 'add_tag', 'value' => 'urgent-review']], 0);
+        [['type' => 'add_tag', 'value' => 'urgent-review']],
+        0,
+    );
 
     expect($rule->matches('ticket_opened', ['priority' => 'urgent']))->toBeTrue()
         ->and($rule->matches('ticket_opened', ['priority' => 'normal']))->toBeFalse()

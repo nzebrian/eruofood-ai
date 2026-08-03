@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace EruoFood\Analytics\Domain\Enum;
 
+use DateTimeImmutable;
+
 /** How often a scheduled report runs. */
 enum ReportCadence: string
 {
@@ -11,7 +13,7 @@ enum ReportCadence: string
     case Weekly = 'weekly';
     case Monthly = 'monthly';
 
-    public function advance(\DateTimeImmutable $from): \DateTimeImmutable
+    public function advance(DateTimeImmutable $from): DateTimeImmutable
     {
         return match ($this) {
             self::Daily => $from->modify('+1 day'),

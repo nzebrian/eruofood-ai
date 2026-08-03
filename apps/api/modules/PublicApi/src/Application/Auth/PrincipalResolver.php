@@ -14,7 +14,7 @@ namespace EruoFood\PublicApi\Application\Auth;
 interface PrincipalResolver
 {
     /**
-     * @param string $scheme    the transport the credential arrived on: 'bearer' or 'api_key_header'
+     * @param string $scheme the transport the credential arrived on: 'bearer' or 'api_key_header'
      * @param string $credential the raw presented secret
      */
     public function resolve(string $scheme, string $credential): ?AuthenticatedContext;

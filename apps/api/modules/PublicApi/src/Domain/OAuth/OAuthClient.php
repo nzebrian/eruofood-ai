@@ -24,7 +24,7 @@ final class OAuthClient
 {
     /**
      * @param list<OAuthGrant> $grants
-     * @param list<string>     $redirectUris
+     * @param list<string> $redirectUris
      */
     private function __construct(
         private readonly string $id,
@@ -42,7 +42,7 @@ final class OAuthClient
 
     /**
      * @param list<OAuthGrant> $grants
-     * @param list<string>     $redirectUris
+     * @param list<string> $redirectUris
      */
     public static function register(
         string $id,
@@ -57,14 +57,22 @@ final class OAuthClient
         DateTimeImmutable $now,
     ): self {
         return new self(
-            $id, $applicationId, $developerId, $name, $hashedSecret, $confidential,
-            array_values($grants), array_values($redirectUris), $allowedScopes, $now,
+            $id,
+            $applicationId,
+            $developerId,
+            $name,
+            $hashedSecret,
+            $confidential,
+            array_values($grants),
+            array_values($redirectUris),
+            $allowedScopes,
+            $now,
         );
     }
 
     /**
      * @param list<OAuthGrant> $grants
-     * @param list<string>     $redirectUris
+     * @param list<string> $redirectUris
      */
     public static function reconstitute(
         string $id,
@@ -79,8 +87,16 @@ final class OAuthClient
         DateTimeImmutable $createdAt,
     ): self {
         return new self(
-            $id, $applicationId, $developerId, $name, $hashedSecret, $confidential,
-            array_values($grants), array_values($redirectUris), $allowedScopes, $createdAt,
+            $id,
+            $applicationId,
+            $developerId,
+            $name,
+            $hashedSecret,
+            $confidential,
+            array_values($grants),
+            array_values($redirectUris),
+            $allowedScopes,
+            $createdAt,
         );
     }
 

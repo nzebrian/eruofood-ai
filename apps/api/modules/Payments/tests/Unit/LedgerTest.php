@@ -11,7 +11,7 @@ use EruoFood\Shared\Domain\ValueObject\Money;
 
 function seqIds(): IdentityGenerator
 {
-    return new class implements IdentityGenerator {
+    return new class () implements IdentityGenerator {
         private int $n = 0;
 
         public function next(): string

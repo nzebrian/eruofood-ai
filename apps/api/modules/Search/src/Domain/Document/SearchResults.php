@@ -12,7 +12,7 @@ final readonly class SearchResults
 {
     /**
      * @param list<SearchHit> $hits
-     * @param array<string, array<string, int>> $facets  facet name => (value => count)
+     * @param array<string, array<string, int>> $facets facet name => (value => count)
      */
     public function __construct(
         public array $hits,

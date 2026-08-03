@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use EruoFood\Identity\Infrastructure\Persistence\Eloquent\Model\UserModel;
 use EruoFood\Payments\Domain\Event\PaymentSucceeded;
 use EruoFood\Shared\Domain\EventBus;
-use EruoFood\Identity\Infrastructure\Persistence\Eloquent\Model\UserModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 

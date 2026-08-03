@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace EruoFood\Notifications\Application\Service;
 
 use DateTimeImmutable;
-use EruoFood\Notifications\Domain\Enum\NotificationChannel;
 use EruoFood\Notifications\Domain\Enum\NotificationCategory;
+use EruoFood\Notifications\Domain\Enum\NotificationChannel;
 use EruoFood\Notifications\Domain\Enum\Priority;
 use EruoFood\Notifications\Domain\Exception\NotificationsNotAuthorized;
 use EruoFood\Notifications\Domain\Exception\NotificationsNotFound;

@@ -6,8 +6,8 @@ namespace EruoFood\PublicApi\Interface\Http\Middleware;
 
 use Closure;
 use EruoFood\PublicApi\Application\Service\RateLimitService;
-use EruoFood\Shared\Domain\EventBus;
 use EruoFood\PublicApi\Domain\Event\RateLimitExceeded;
+use EruoFood\Shared\Domain\EventBus;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;

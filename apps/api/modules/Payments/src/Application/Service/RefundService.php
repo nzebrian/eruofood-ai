@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace EruoFood\Payments\Application\Service;
 
 use DateTimeImmutable;
+use EruoFood\Payments\Application\Port\PaymentGatewayFactory;
+use EruoFood\Payments\Application\Port\PaymentNotifier;
 use EruoFood\Payments\Domain\Enum\PaymentProvider;
 use EruoFood\Payments\Domain\Event\RefundCompleted;
 use EruoFood\Payments\Domain\Exception\PaymentsInvalidState;
 use EruoFood\Payments\Domain\Exception\PaymentsNotAuthorized;
 use EruoFood\Payments\Domain\Exception\PaymentsNotFound;
-use EruoFood\Payments\Application\Port\PaymentGatewayFactory;
-use EruoFood\Payments\Application\Port\PaymentNotifier;
 use EruoFood\Payments\Domain\Payment\PaymentRepository;
 use EruoFood\Payments\Domain\Payment\Refund;
 use EruoFood\Payments\Domain\Payment\RefundRepository;
@@ -79,8 +79,12 @@ final readonly class RefundService
             $this->refunds->save($refund);
             $this->notifier->refundCompleted($refund);
             $this->events->publish(new RefundCompleted(
-                $refund->id(), $payment->id(), $payment->orderId(),
-                $amount->minorUnits, $amount->currency, ! $fully || $partial,
+                $refund->id(),
+                $payment->id(),
+                $payment->orderId(),
+                $amount->minorUnits,
+                $amount->currency,
+                ! $fully || $partial,
             ));
         } else {
             $refund->fail($now);

@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace EruoFood\Payments\Application\Service;
 
 use DateTimeImmutable;
+use EruoFood\Payments\Application\Port\PaymentNotifier;
 use EruoFood\Payments\Domain\Enum\TransactionType;
 use EruoFood\Payments\Domain\Enum\WalletOwnerType;
 use EruoFood\Payments\Domain\Exception\PaymentsInvalidState;
 use EruoFood\Payments\Domain\Exception\PaymentsNotAuthorized;
 use EruoFood\Payments\Domain\Exception\PaymentsNotFound;
-use EruoFood\Payments\Application\Port\PaymentNotifier;
 use EruoFood\Payments\Domain\Wallet\Wallet;
 use EruoFood\Payments\Domain\Wallet\WalletRepository;
 use EruoFood\Shared\Domain\EventBus;

@@ -53,8 +53,15 @@ final class Promotion
         bool $flashSale = false,
     ): self {
         return new self(
-            $id, $storeId, $name, $type, $value, array_values(array_unique($productIds)),
-            $startsAt, $endsAt, $flashSale,
+            $id,
+            $storeId,
+            $name,
+            $type,
+            $value,
+            array_values(array_unique($productIds)),
+            $startsAt,
+            $endsAt,
+            $flashSale,
         );
     }
 
@@ -73,8 +80,15 @@ final class Promotion
         bool $flashSale,
     ): self {
         return new self(
-            $id, $storeId, $name, $type, $value, array_values($productIds),
-            $startsAt, $endsAt, $flashSale,
+            $id,
+            $storeId,
+            $name,
+            $type,
+            $value,
+            array_values($productIds),
+            $startsAt,
+            $endsAt,
+            $flashSale,
         );
     }
 

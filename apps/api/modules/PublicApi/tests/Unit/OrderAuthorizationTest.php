@@ -19,7 +19,7 @@ use EruoFood\Shared\Domain\Paginated;
  */
 function recordingOrderPort(): OrderPort
 {
-    return new class implements OrderPort {
+    return new class () implements OrderPort {
         public array $seenUserIds = [];
 
         public function listForCustomer(string $userId, int $page, int $perPage): Paginated

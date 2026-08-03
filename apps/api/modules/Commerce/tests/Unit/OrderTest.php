@@ -31,9 +31,19 @@ function cLines(): array
 function cPlaceOrder(bool $pickup = false): Order
 {
     return Order::place(
-        'o1', 'EF-AB12-CD34', 'u1', cLines(),
-        cngn(1420000), cngn(100000), cngn(99000), cngn(150000),
-        'WELCOME10', $pickup, $pickup ? null : cShipAddress(), null, null,
+        'o1',
+        'EF-AB12-CD34',
+        'u1',
+        cLines(),
+        cngn(1420000),
+        cngn(100000),
+        cngn(99000),
+        cngn(150000),
+        'WELCOME10',
+        $pickup,
+        $pickup ? null : cShipAddress(),
+        null,
+        null,
         new DateTimeImmutable('2026-07-27T10:00:00Z'),
     );
 }
@@ -56,8 +66,20 @@ it('records an order-placed event on checkout', function (): void {
 
 it('requires a shipping address unless pickup', function (): void {
     expect(fn () => Order::place(
-        'o2', 'EF-X', 'u1', cLines(), cngn(1420000), cngn(0), cngn(0), cngn(0),
-        null, false, null, null, null, new DateTimeImmutable(),
+        'o2',
+        'EF-X',
+        'u1',
+        cLines(),
+        cngn(1420000),
+        cngn(0),
+        cngn(0),
+        cngn(0),
+        null,
+        false,
+        null,
+        null,
+        null,
+        new DateTimeImmutable(),
     ))->toThrow(CommerceInvalidState::class);
 
     $pickup = cPlaceOrder(pickup: true);
@@ -78,7 +100,19 @@ it('walks the full status lifecycle and blocks illegal moves', function (): void
 
 it('cannot place an empty order', function (): void {
     expect(fn () => Order::place(
-        'o3', 'EF-Y', 'u1', [], cngn(0), cngn(0), cngn(0), cngn(0),
-        null, true, null, null, null, new DateTimeImmutable(),
+        'o3',
+        'EF-Y',
+        'u1',
+        [],
+        cngn(0),
+        cngn(0),
+        cngn(0),
+        cngn(0),
+        null,
+        true,
+        null,
+        null,
+        null,
+        new DateTimeImmutable(),
     ))->toThrow(CommerceInvalidState::class);
 });

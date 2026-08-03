@@ -11,7 +11,6 @@ use EruoFood\Support\Domain\Automation\AutomationRuleRepository;
 use EruoFood\Support\Domain\Enum\TicketPriority;
 use EruoFood\Support\Domain\Knowledge\Article;
 use EruoFood\Support\Domain\Knowledge\ArticleRepository;
-use EruoFood\Support\Domain\Knowledge\ArticleStatus;
 use EruoFood\Support\Domain\Sla\SlaPolicy;
 use EruoFood\Support\Domain\Sla\SlaPolicyRepository;
 use Illuminate\Database\Seeder;

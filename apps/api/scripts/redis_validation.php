@@ -21,8 +21,6 @@ require __DIR__.'/../vendor/autoload.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-use EruoFood\PublicApi\Application\Port\QuotaStore;
-use EruoFood\PublicApi\Application\Port\RateLimiter;
 use EruoFood\PublicApi\Infrastructure\RateLimit\CacheQuotaStore;
 use EruoFood\PublicApi\Infrastructure\RateLimit\CacheRateLimiter;
 use Illuminate\Support\Facades\Cache;

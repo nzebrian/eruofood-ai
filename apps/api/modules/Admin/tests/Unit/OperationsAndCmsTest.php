@@ -40,7 +40,12 @@ it('walks a CMS page draft → published → archived and guards re-publish', fu
 
 it('bounds banner visibility by its active window', function (): void {
     $banner = Banner::create(
-        'b-1', 'Sale', 'https://img', null, 'home', 0,
+        'b-1',
+        'Sale',
+        'https://img',
+        null,
+        'home',
+        0,
         new DateTimeImmutable('2026-07-01T00:00:00Z'),
         new DateTimeImmutable('2026-07-31T00:00:00Z'),
         new DateTimeImmutable(),

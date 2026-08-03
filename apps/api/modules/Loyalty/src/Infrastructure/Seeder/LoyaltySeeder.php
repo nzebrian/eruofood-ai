@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Loyalty\Infrastructure\Seeder;
 
+use DateTimeImmutable;
 use EruoFood\Loyalty\Domain\Reward\RewardRepository;
 use EruoFood\Loyalty\Infrastructure\Persistence\Eloquent\Model\RewardModel;
 use Illuminate\Database\Seeder;
@@ -38,7 +39,7 @@ final class LoyaltySeeder extends Seeder
                 (int) $item['benefit_value'],
                 (int) $item['points_cost'],
                 $item['stock'],
-                new \DateTimeImmutable(),
+                new DateTimeImmutable(),
             ));
         }
     }

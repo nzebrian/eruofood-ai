@@ -52,8 +52,19 @@ final class Delivery
         DateTimeImmutable $now,
     ): self {
         return new self(
-            $id, $orderId, $vendorId, null, DeliveryStatus::Unassigned, $fee, $zoneName,
-            $pickup, $dropoff, [], null, null, $now,
+            $id,
+            $orderId,
+            $vendorId,
+            null,
+            DeliveryStatus::Unassigned,
+            $fee,
+            $zoneName,
+            $pickup,
+            $dropoff,
+            [],
+            null,
+            null,
+            $now,
         );
     }
 
@@ -76,8 +87,19 @@ final class Delivery
         DateTimeImmutable $createdAt,
     ): self {
         return new self(
-            $id, $orderId, $vendorId, $riderId, $status, $fee, $zoneName, $pickup,
-            $dropoff, array_values($trackPoints), $assignedAt, $deliveredAt, $createdAt,
+            $id,
+            $orderId,
+            $vendorId,
+            $riderId,
+            $status,
+            $fee,
+            $zoneName,
+            $pickup,
+            $dropoff,
+            array_values($trackPoints),
+            $assignedAt,
+            $deliveredAt,
+            $createdAt,
         );
     }
 

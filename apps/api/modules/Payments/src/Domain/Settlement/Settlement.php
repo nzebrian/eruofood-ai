@@ -53,8 +53,19 @@ final class Settlement extends AggregateRoot
         }
 
         return new self(
-            $id, $payeeType, $payeeId, $gross, $commission, $fees, $net,
-            SettlementStatus::Pending, null, $periodStart, $periodEnd, $now, null,
+            $id,
+            $payeeType,
+            $payeeId,
+            $gross,
+            $commission,
+            $fees,
+            $net,
+            SettlementStatus::Pending,
+            null,
+            $periodStart,
+            $periodEnd,
+            $now,
+            null,
         );
     }
 
@@ -74,8 +85,19 @@ final class Settlement extends AggregateRoot
         ?DateTimeImmutable $completedAt,
     ): self {
         return new self(
-            $id, $payeeType, $payeeId, $gross, $commission, $fees, $net, $status,
-            $payoutId, $periodStart, $periodEnd, $createdAt, $completedAt,
+            $id,
+            $payeeType,
+            $payeeId,
+            $gross,
+            $commission,
+            $fees,
+            $net,
+            $status,
+            $payoutId,
+            $periodStart,
+            $periodEnd,
+            $createdAt,
+            $completedAt,
         );
     }
 
@@ -90,7 +112,11 @@ final class Settlement extends AggregateRoot
         $this->payoutId = $payoutId;
         $this->completedAt = $at;
         $this->recordThat(new SettlementCompleted(
-            $this->id, $this->payeeType, $this->payeeId, $this->net->minorUnits, $this->net->currency,
+            $this->id,
+            $this->payeeType,
+            $this->payeeId,
+            $this->net->minorUnits,
+            $this->net->currency,
         ));
     }
 

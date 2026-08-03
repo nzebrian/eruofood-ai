@@ -33,8 +33,16 @@ function sampleLines(): array
 function placeOrder(FulfilmentType $f = FulfilmentType::Delivery): Order
 {
     return Order::place(
-        'o1', 'EF-ABC123', 'u1', 'v1', sampleLines(), ngn(50000), $f,
-        $f === FulfilmentType::Delivery ? sampleAddress() : null, null, null,
+        'o1',
+        'EF-ABC123',
+        'u1',
+        'v1',
+        sampleLines(),
+        ngn(50000),
+        $f,
+        $f === FulfilmentType::Delivery ? sampleAddress() : null,
+        null,
+        null,
         new DateTimeImmutable('2026-07-27T10:00:00Z'),
     );
 }

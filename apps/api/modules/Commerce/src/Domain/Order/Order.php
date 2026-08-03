@@ -79,10 +79,23 @@ final class Order extends AggregateRoot
         }
 
         $order = new self(
-            $id, $reference, $customerUserId, array_values($lines), $subtotal, $discount,
-            $tax, $shipping, $total, $couponCode, $pickup, $shippingAddress, $scheduledFor,
-            $note, OrderStatus::Pending,
-            [['status' => OrderStatus::Pending->value, 'at' => $now->format(DATE_ATOM)]], $now,
+            $id,
+            $reference,
+            $customerUserId,
+            array_values($lines),
+            $subtotal,
+            $discount,
+            $tax,
+            $shipping,
+            $total,
+            $couponCode,
+            $pickup,
+            $shippingAddress,
+            $scheduledFor,
+            $note,
+            OrderStatus::Pending,
+            [['status' => OrderStatus::Pending->value, 'at' => $now->format(DATE_ATOM)]],
+            $now,
         );
         $order->recordThat(new OrderPlaced($id, $customerUserId, $total->minorUnits));
 
@@ -113,9 +126,23 @@ final class Order extends AggregateRoot
         DateTimeImmutable $placedAt,
     ): self {
         return new self(
-            $id, $reference, $customerUserId, array_values($lines), $subtotal, $discount,
-            $tax, $shipping, $total, $couponCode, $pickup, $shippingAddress, $scheduledFor,
-            $note, $status, array_values($statusHistory), $placedAt,
+            $id,
+            $reference,
+            $customerUserId,
+            array_values($lines),
+            $subtotal,
+            $discount,
+            $tax,
+            $shipping,
+            $total,
+            $couponCode,
+            $pickup,
+            $shippingAddress,
+            $scheduledFor,
+            $note,
+            $status,
+            array_values($statusHistory),
+            $placedAt,
         );
     }
 

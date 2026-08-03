@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace EruoFood\Payments\Domain\Subscription;
 
+use DateTimeImmutable;
+
 /** Persistence port for {@see Subscription}. */
 interface SubscriptionRepository
 {
@@ -15,7 +17,7 @@ interface SubscriptionRepository
     public function forUser(string $userId): array;
 
     /** @return list<Subscription> subscriptions due to bill on or before $now */
-    public function due(\DateTimeImmutable $now): array;
+    public function due(DateTimeImmutable $now): array;
 
     public function save(Subscription $subscription): void;
 }

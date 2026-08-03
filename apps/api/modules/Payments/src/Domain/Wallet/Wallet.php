@@ -70,8 +70,11 @@ final class Wallet extends AggregateRoot
         $this->balance = $this->balance->add($amount);
         $this->append($txnId, $type, TransactionDirection::Credit, $amount, $reference, $description, $at);
         $this->recordThat(new WalletCredited(
-            $this->id, $this->ownerType->value, $this->ownerId,
-            $amount->minorUnits, $this->balance->minorUnits,
+            $this->id,
+            $this->ownerType->value,
+            $this->ownerId,
+            $amount->minorUnits,
+            $this->balance->minorUnits,
         ));
     }
 
@@ -85,7 +88,10 @@ final class Wallet extends AggregateRoot
         $this->append($txnId, $type, TransactionDirection::Debit, $amount, $reference, $description, $at);
         if ($this->balance->minorUnits <= $this->lowBalanceThreshold) {
             $this->recordThat(new WalletLowBalance(
-                $this->id, $this->ownerType->value, $this->ownerId, $this->balance->minorUnits,
+                $this->id,
+                $this->ownerType->value,
+                $this->ownerId,
+                $this->balance->minorUnits,
             ));
         }
     }
@@ -107,7 +113,15 @@ final class Wallet extends AggregateRoot
     private function append(string $txnId, TransactionType $type, TransactionDirection $direction, Money $amount, ?string $reference, ?string $description, DateTimeImmutable $at): void
     {
         $this->newTransactions[] = new WalletTransaction(
-            $txnId, $this->id, $type, $direction, $amount, $this->balance, $reference, $description, $at,
+            $txnId,
+            $this->id,
+            $type,
+            $direction,
+            $amount,
+            $this->balance,
+            $reference,
+            $description,
+            $at,
         );
     }
 

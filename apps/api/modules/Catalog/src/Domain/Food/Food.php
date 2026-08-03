@@ -59,8 +59,19 @@ final class Food extends AggregateRoot
         array $tags = [],
     ): self {
         return new self(
-            $id, $name, $slug, $description, $categoryId, $region,
-            $states, $localNames, $nutrition, [], null, $tags, ContentStatus::Draft,
+            $id,
+            $name,
+            $slug,
+            $description,
+            $categoryId,
+            $region,
+            $states,
+            $localNames,
+            $nutrition,
+            [],
+            null,
+            $tags,
+            ContentStatus::Draft,
         );
     }
 
@@ -86,8 +97,19 @@ final class Food extends AggregateRoot
         ContentStatus $status,
     ): self {
         return new self(
-            $id, $name, $slug, $description, $categoryId, $region, $states,
-            $localNames, $nutrition, $images, $videoUrl, $tags, $status,
+            $id,
+            $name,
+            $slug,
+            $description,
+            $categoryId,
+            $region,
+            $states,
+            $localNames,
+            $nutrition,
+            $images,
+            $videoUrl,
+            $tags,
+            $status,
         );
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Support\Domain\Ticket;
 
+use DateTimeImmutable;
 use EruoFood\Shared\Domain\Paginated;
 
 /** Persistence port for the {@see Ticket} aggregate. */
@@ -31,7 +32,7 @@ interface TicketRepository
      *
      * @return list<Ticket>
      */
-    public function breachingResolution(\DateTimeImmutable $now, int $limit): array;
+    public function breachingResolution(DateTimeImmutable $now, int $limit): array;
 
     public function save(Ticket $ticket): void;
 }

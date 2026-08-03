@@ -123,3 +123,24 @@ staging deployment:
 - [ ] Confirm HTTPS enforced; CORS allow-list correct; no stack traces in errors.
 - [ ] Confirm `Cache-Control: no-store` on token responses.
 - [ ] Confirm internal/developer-portal endpoints reject API keys (JWT only).
+
+---
+
+# Milestone 19 update
+
+- **Application security controls re-verified (EXECUTED — PASSED):** full Pest
+  suite 336/336 on SQLite and PostgreSQL, OAuth2 DB-backed 18/18, SSRF guard
+  25/25, secret-hashing tests green.
+- **Dependency / secret scanning (`security.yml`, Gitleaks + npm/composer audit):**
+  STATIC VALIDATION ONLY — authored in CI, not executed on GitHub this session.
+- **Infrastructure webhook egress:** now specified in full, deployment-ready form
+  in `docs/INFRA_EGRESS_POLICY.md` (Kubernetes `NetworkPolicy`, forward-proxy/
+  firewall ruleset, AWS/GCP/Azure IMDS + egress specifics), with an explicit
+  application-vs-infrastructure control split. Application layer EXECUTED —
+  PASSED; infrastructure layer NOT VALIDATED (deployment-time, provider-dependent).
+- **External penetration test:** a formal scoped plan now exists at
+  `docs/PENETRATION_TEST_PLAN.md`. An actual external pentest was **NOT PERFORMED**
+  and is a pre-production external requirement — it was not simulated.
+- **Static analysis note:** PHPStan level 8 reports 1885 pre-existing errors
+  (model annotations/generics), not security defects. Tracked in
+  `TECHNICAL_DEBT.md`; see `docs/GA_DECISION.md`.

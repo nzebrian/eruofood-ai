@@ -10,7 +10,9 @@ use EruoFood\Analytics\Infrastructure\Export\NativeReportExporter;
 function sampleReport(): Report
 {
     return Report::ready(
-        'r1', 'revenue', 'Revenue report',
+        'r1',
+        'revenue',
+        'Revenue report',
         new DateRange(new DateTimeImmutable('2026-09-01'), new DateTimeImmutable('2026-09-02')),
         ['Date', 'Revenue (minor)'],
         [['2026-09-01', 100000], ['2026-09-02', 250000]],

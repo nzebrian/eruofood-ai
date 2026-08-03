@@ -6,8 +6,8 @@ namespace EruoFood\Reviews\Application\Service;
 
 use DateTimeImmutable;
 use EruoFood\Reviews\Application\Port\ContentModerator;
-use EruoFood\Reviews\Domain\Enum\ReviewStatus;
 use EruoFood\Reviews\Domain\Eligibility\PurchaseEligibilityRepository;
+use EruoFood\Reviews\Domain\Enum\ReviewStatus;
 use EruoFood\Reviews\Domain\Event\ReviewFlagged;
 use EruoFood\Reviews\Domain\Event\ReviewPublished;
 use EruoFood\Reviews\Domain\Exception\ReviewsConflict;

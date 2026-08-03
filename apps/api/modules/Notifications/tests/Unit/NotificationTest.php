@@ -13,9 +13,16 @@ use EruoFood\Notifications\Domain\ValueObject\RenderedContent;
 function newNotification(NotificationChannel $channel = NotificationChannel::InApp): Notification
 {
     return Notification::create(
-        'n1', 'user-1', NotificationCategory::Order, $channel, 'order_placed',
-        ['order_id' => 'o1'], new RenderedContent('Order received', 'Thanks'),
-        Priority::Normal, null, new DateTimeImmutable('2026-08-01T10:00:00Z'),
+        'n1',
+        'user-1',
+        NotificationCategory::Order,
+        $channel,
+        'order_placed',
+        ['order_id' => 'o1'],
+        new RenderedContent('Order received', 'Thanks'),
+        Priority::Normal,
+        null,
+        new DateTimeImmutable('2026-08-01T10:00:00Z'),
     );
 }
 
@@ -58,9 +65,16 @@ it('is read-once', function (): void {
 
 it('respects a scheduled time for due-ness', function (): void {
     $future = Notification::create(
-        'n2', 'u1', NotificationCategory::Promotional, NotificationChannel::Push, 'broadcast', [],
-        new RenderedContent('s', 'b'), Priority::Normal,
-        new DateTimeImmutable('2026-08-02T10:00:00Z'), new DateTimeImmutable('2026-08-01T10:00:00Z'),
+        'n2',
+        'u1',
+        NotificationCategory::Promotional,
+        NotificationChannel::Push,
+        'broadcast',
+        [],
+        new RenderedContent('s', 'b'),
+        Priority::Normal,
+        new DateTimeImmutable('2026-08-02T10:00:00Z'),
+        new DateTimeImmutable('2026-08-01T10:00:00Z'),
     );
     expect($future->isDue(new DateTimeImmutable('2026-08-01T12:00:00Z')))->toBeFalse()
         ->and($future->isDue(new DateTimeImmutable('2026-08-02T11:00:00Z')))->toBeTrue();

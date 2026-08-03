@@ -41,8 +41,19 @@ final class Store
         bool $autoVerify = false,
     ): self {
         return new self(
-            $id, $ownerUserId, $name, $slug, $autoVerify, null, null, null,
-            null, null, 0.0, 0, $now,
+            $id,
+            $ownerUserId,
+            $name,
+            $slug,
+            $autoVerify,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0.0,
+            0,
+            $now,
         );
     }
 
@@ -62,8 +73,19 @@ final class Store
         DateTimeImmutable $createdAt,
     ): self {
         return new self(
-            $id, $ownerUserId, $name, $slug, $verified, $description, $logo,
-            $address, $supportEmail, $supportPhone, $ratingAverage, $ratingCount, $createdAt,
+            $id,
+            $ownerUserId,
+            $name,
+            $slug,
+            $verified,
+            $description,
+            $logo,
+            $address,
+            $supportEmail,
+            $supportPhone,
+            $ratingAverage,
+            $ratingCount,
+            $createdAt,
         );
     }
 

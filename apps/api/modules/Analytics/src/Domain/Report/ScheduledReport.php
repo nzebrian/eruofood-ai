@@ -45,8 +45,16 @@ final class ScheduledReport
         DateTimeImmutable $now,
     ): self {
         return new self(
-            $id, $name, $reportKey, $cadence, $format, array_values($recipients),
-            true, $cadence->advance($now), null, $now,
+            $id,
+            $name,
+            $reportKey,
+            $cadence,
+            $format,
+            array_values($recipients),
+            true,
+            $cadence->advance($now),
+            null,
+            $now,
         );
     }
 
@@ -66,8 +74,16 @@ final class ScheduledReport
         DateTimeImmutable $createdAt,
     ): self {
         return new self(
-            $id, $name, $reportKey, $cadence, $format, array_values($recipients),
-            $active, $nextRunAt, $lastRunAt, $createdAt,
+            $id,
+            $name,
+            $reportKey,
+            $cadence,
+            $format,
+            array_values($recipients),
+            $active,
+            $nextRunAt,
+            $lastRunAt,
+            $createdAt,
         );
     }
 

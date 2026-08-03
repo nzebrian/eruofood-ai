@@ -110,3 +110,22 @@ Remaining before full-platform production GO: performance baseline, the 3
 genuine feature-logic test failures (Notifications channel preference, Analytics
 revenue KPI, Search unpublish removal), full Docker stack boot, Flutter
 analyze/test, and the infra egress + external pen-test.
+
+---
+
+## Milestone 19 update — final validation
+
+| Prior blocker | Status now |
+|---|---|
+| Run the full Pest suite green | **EXECUTED — PASSED, 336/336** on SQLite **and** PostgreSQL 16 (all 7 M18 failures fixed). |
+| Redis rate limit / quota / idempotency vs real Redis | **EXECUTED — PASSED** (9/9, still green). |
+| DB-backed OAuth2 security | **EXECUTED — PASSED** (18/18, still green). |
+| Webhook egress at the network layer | Deployment-ready spec in `docs/INFRA_EGRESS_POLICY.md`; infra enforcement **NOT VALIDATED** (provider-dependent). App-layer SSRF guard EXECUTED — PASSED (25/25). |
+| Load test + p50/p95/p99 baseline | Functional latency floor **measured** (`scripts/perf_probe.php`); production baseline **NOT VALIDATED** — needs k6 on scaled staging. |
+| External pen-test of OAuth2 | Formal plan authored (`docs/PENETRATION_TEST_PLAN.md`); external pentest **NOT PERFORMED** (pre-production external requirement). |
+| Coding standards (Pint) | **EXECUTED — PASSED** after `lint:fix`. |
+| Static analysis (PHPStan L8) | **EXECUTED — FAILED** — 1885 pre-existing errors (model annotations/generics), a named GA factor; see `TECHNICAL_DEBT.md`. |
+
+**Public API surface:** functionally GA-ready and green end-to-end. Full-platform
+GA is **NO-GO** pending the items in `docs/GA_DECISION.md` (PHPStan gate,
+production perf baseline, Docker boot, Flutter, infra egress, external pentest).

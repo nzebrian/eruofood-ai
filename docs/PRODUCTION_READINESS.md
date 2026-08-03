@@ -94,3 +94,55 @@ full-platform production GO:
 5. Run `flutter analyze` + `flutter test` in an environment with the Flutter SDK.
 6. Apply the infrastructure egress controls in `WEBHOOKS.md` and run the external
    penetration-test checklist in `SECURITY_AUDIT.md`.
+
+---
+
+# Milestone 19 update — GA Blocker Remediation & Final Production Validation
+
+All executable checks were **re-run this milestone**. Verdicts as above.
+
+## What changed since M18
+
+| M18 state | M19 state | Evidence |
+|---|---|---|
+| Pest 328/335 (7 failing) on SQLite | **336/336 PASSED** on SQLite **and** PostgreSQL 16 | `vendor/bin/pest` both engines |
+| Pint never executed | **PASS** after `lint:fix` (was red repo-wide) | `composer run lint` |
+| PHPStan never executed | **EXECUTED — FAILED, 1885 errors (level 8)** — pre-existing debt | `composer run analyse` |
+| Performance NOT VALIDATED | Functional **latency floor measured** (p50 26.5 / p95 31.9 / p99 35.1 ms); production baseline still NOT VALIDATED | `scripts/perf_probe.php` |
+| Web suite (M16 figures) | Re-run: `tsc` clean, **vitest 51/51**, `vite build` clean | this session |
+
+## The 7 remaining failures — resolved
+All fixed and verified green on both database engines. Two were JSON-serialisation
+artefacts (whole-number float → JSON int), not DB defects — the exact values are
+still asserted. Three were genuine logic defects (Notifications channel
+preference, Analytics revenue-KPI date-window, Search cache invalidation on
+unpublish), each fixed at the domain/application layer with regression coverage.
+One was nondeterministic audit ordering, fixed with a UUID tiebreaker. Details in
+`VALIDATION_STATUS.md`.
+
+## New GA finding: static-analysis gate is red
+
+Running `composer run analyse` for the first time surfaced **1885 PHPStan level-8
+errors** — pre-existing across all modules, dominated by missing Eloquent
+`@property`/`@method` annotations, **not** runtime defects (the runtime suite is
+336/336). This is recorded as **EXECUTED — FAILED**, added to `TECHNICAL_DEBT.md`,
+and is a named factor in the GO/NO-GO. It was **not** suppressed with a baseline.
+
+## Updated GO / NO-GO — see `docs/GA_DECISION.md` for the formal decision
+
+**Verdict: NO-GO for full-platform production GA.** The core is strong — Public
+API, API-key + OAuth2 auth, BOLA, webhook SSRF (app layer), Redis rate
+limiting/quotas/counters, and the PostgreSQL schema are all EXECUTED — PASSED, and
+the entire runtime test suite is green on both engines. Remaining blockers before
+a GO, none of which are core-functionality defects:
+
+1. **PHPStan level-8 gate red** (1885 pre-existing errors) — remediate the model
+   annotations/generics, or make an explicit, signed-off decision to lower the
+   gate level / scope it. Do not baseline-hide it silently.
+2. **Production performance baseline** — run `load/public-api.k6.js` on scaled
+   staging; record p50/p95/p99, RPS, error rate.
+3. **Full Docker stack boot** from a clean env in staging (registry reachable).
+4. **Flutter** `pub get` / `analyze` / `test` on a real toolchain.
+5. **Infrastructure egress enforcement** applied per `docs/INFRA_EGRESS_POLICY.md`.
+6. **External penetration test** per `docs/PENETRATION_TEST_PLAN.md` (independent
+   team; zero open High/Critical to exit).

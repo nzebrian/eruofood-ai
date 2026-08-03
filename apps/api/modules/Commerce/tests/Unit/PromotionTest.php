@@ -8,8 +8,15 @@ use EruoFood\Shared\Domain\ValueObject\Money;
 
 it('applies only within its active window', function (): void {
     $promo = Promotion::create(
-        'pr1', null, 'August Sale', PromotionType::Percentage, 20, ['p1'],
-        new DateTimeImmutable('2026-08-01'), new DateTimeImmutable('2026-08-31'), false,
+        'pr1',
+        null,
+        'August Sale',
+        PromotionType::Percentage,
+        20,
+        ['p1'],
+        new DateTimeImmutable('2026-08-01'),
+        new DateTimeImmutable('2026-08-31'),
+        false,
     );
     expect($promo->isActiveAt(new DateTimeImmutable('2026-08-15')))->toBeTrue()
         ->and($promo->isActiveAt(new DateTimeImmutable('2026-09-15')))->toBeFalse()

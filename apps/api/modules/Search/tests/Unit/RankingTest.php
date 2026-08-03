@@ -13,7 +13,16 @@ use EruoFood\Search\Domain\ValueObject\Embedding;
 function doc(string $id, DocumentFacets $facets): SearchDocument
 {
     return SearchDocument::create(
-        SearchType::Food, $id, 'Title '.$id, 'desc', [], null, null, 'en', $facets, null,
+        SearchType::Food,
+        $id,
+        'Title '.$id,
+        'desc',
+        [],
+        null,
+        null,
+        'en',
+        $facets,
+        null,
         new DateTimeImmutable('2026-07-'.substr($id, -2)),
     );
 }

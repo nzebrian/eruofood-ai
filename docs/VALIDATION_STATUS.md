@@ -230,3 +230,75 @@ FAILED / STATIC VALIDATION ONLY / NOT VALIDATED. Environment details are in
 - **Infrastructure webhook egress** controls and an **external penetration
   test**: require production infra / an external team. Checklist in
   `SECURITY_AUDIT.md`.
+
+---
+
+# Milestone 19 — GA Blocker Remediation & Final Production Validation
+
+Every executable check below was **re-run in this session** (not carried over from
+a prior milestone). Verdicts: **EXECUTED — PASSED / EXECUTED — FAILED / STATIC
+VALIDATION ONLY / NOT VALIDATED**. Environment matches `PRODUCTION_READINESS.md`
+(PHP 8.4.19, Laravel 12.64, PostgreSQL 16.13, Redis 7.0.15, Node 22.22.2).
+
+## EXECUTED — PASSED
+
+| Check | Command | Result |
+|---|---|---|
+| Full Pest suite (SQLite `:memory:`, canonical) | `vendor/bin/pest` | **336 passed / 0 failed** (1313 assertions, 24.4s) — the 7 M18 failures are all fixed |
+| Full Pest suite (PostgreSQL 16) | `DB_CONNECTION=pgsql vendor/bin/pest` | **336 passed / 0 failed** — fixture UUIDs corrected; green on the production engine |
+| Coding standards (Pint) | `composer run lint` (`pint --test`) | **PASS** — codebase conformed via `lint:fix`; was red repo-wide before this milestone |
+| Web type-check | `tsc --noEmit` | Exit 0 |
+| Web unit tests | `vitest run` | **51 passed / 51** (15 files) |
+| Web production build | `vite build` | Exit 0 (122 modules, built clean) |
+| Redis primitives | `php scripts/redis_validation.php` | **9/9** (still green; rate limit, quota, cache, recovery, 2000/2000 concurrent increments) |
+| OAuth2 DB-backed security | `php scripts/oauth_db_validation.php` | **18/18** (still green) |
+| SSRF guard harness | standalone php | **25/25** (still green) |
+| Functional latency floor + Redis RTT | `php scripts/perf_probe.php` | Warm p50 **26.5ms** / p95 **31.9ms** / p99 **35.1ms**, Redis **~0.043 ms/op**, 0 server errors (single-process floor — see `PERFORMANCE_REPORT.md`) |
+
+### The 7 M18 feature-test failures — all resolved
+| Category | Failure | Resolution |
+|---|---|---|
+| (A) Numeric | Nutrition `MealPlanFlow` `estimated_cost`, Reviews `ReviewsApi` `average` | Root cause is **JSON serialisation**, not a DB difference: a whole-number float serialises to a JSON integer and decodes to PHP `int` — identical on SQLite **and** PostgreSQL. The exact value is still asserted via a float bridge; no production change and no weakening. Confirmed by the PostgreSQL run also passing. |
+| (B) Ordering | Admin `AdminFlow` audit order | Deterministic tiebreak: `orderByDesc('created_at')->orderByDesc('id')` on the time-ordered UUID. No timing/sleep. |
+| (C) Logic | Notifications channel preference | Genuine defect fixed in `NotificationPreference::allows()` — in-app was force-on and overrode an explicit per-category channel set. Regression test updated to assert the corrected semantics. |
+| (D) Logic | Analytics revenue KPI (×2) | Genuine defect: `whereBetween('bucket_date', [from, to])` with date-only bounds excluded same-day buckets under SQLite's string date compare; widened to full datetimes (PostgreSQL-correct). Monetary precision verified. |
+| (E) Logic | Search unpublish removal | Genuine defect: the read-through search cache was not invalidated on reindex/removal. `SearchIndexManager` now flushes `SearchCache` after every index mutation; provider wiring updated. Regression covered. |
+
+## EXECUTED — FAILED
+
+| Check | Command | Result |
+|---|---|---|
+| Static analysis (PHPStan level 8 + Larastan) | `composer run analyse` | **FAILED — 1885 errors** across `app/` + `modules/` |
+
+**Honest finding.** This gate was *authored into CI in M18 but never actually
+executed until now*. Running it reveals **pre-existing, codebase-wide** debt — not
+introduced by Milestone 19. The dominant categories are Eloquent magic-access at
+level 8's strictness: `property.notFound` (947), `method.notFound` (357),
+`argument.type` (278), `arrayValues.list` (124). These are overwhelmingly
+**missing `@property`/`@method` model annotations and generic array typing**, not
+runtime defects — the full runtime suite passes 336/336 on both engines.
+
+Resolving 1885 level-8 errors means annotating every Eloquent model and tightening
+generics across all 15 modules. That is a substantial, **feature-independent**
+effort that a "GA blocker remediation" milestone must **not** attempt as an
+unscoped redesign, and it must **not** be papered over with a `phpstan-baseline`
+to fake a green gate. It is therefore reported honestly as **EXECUTED — FAILED**,
+recorded in `TECHNICAL_DEBT.md`, and carried as a named factor in the GA decision.
+
+## STATIC VALIDATION ONLY
+
+| Check | Method | Result |
+|---|---|---|
+| OpenAPI contract (`redocly lint`) | structural parse (openapi 3.x header, ~273 paths, schemas resolve) | Spec parses cleanly; **redocly CLI could not be installed here** (npm registry fetch of `@redocly/cli` is network-blocked in-session). Executed clean in M17/M18 and runs in CI. |
+| Docker full-stack boot | `docker compose config` | All 9 services (postgres, redis, api, worker, scheduler, nginx, web, minio, mailpit) merge & validate; healthchecks defined. **Image pulls return 403** from the Docker CDN (egress policy), so a clean-env boot could not be executed here. Procedure in `PRODUCTION_READINESS.md`. |
+
+## NOT VALIDATED
+
+| Check | Why |
+|---|---|
+| **Flutter** `pub get` / `analyze` / `test` | Flutter and Dart toolchains are **absent** (`which flutter dart` → nothing; no snap/apt package available in-session). Project structure (`apps/mobile/pubspec.yaml`, `lib/`, `test/` with 3 Dart test files) is statically present, but per the milestone rule Flutter is **not** marked validated because the commands did not execute. |
+| **Production performance baseline** (multi-worker p50/p95/p99, sustained RPS, saturation error rate, DB/queue throughput under load) | Requires the k6 profiles in `load/public-api.k6.js` against a horizontally-scaled staging deployment; a single container cannot host it. Functional latency floor **was** measured — see `PERFORMANCE_REPORT.md`. |
+| **Load / stress / spike / soak** | Same as above; no k6 binary and no scaled target in-session. |
+| **Infrastructure egress enforcement** (NetworkPolicy / firewall / IMDS) | Depends on the final cloud provider and live network fabric. Deployment-ready specs in `docs/INFRA_EGRESS_POLICY.md`; application-layer SSRF guard is EXECUTED — PASSED. |
+| **External penetration test** | Must be performed by an independent team against staging — a pre-production external requirement. Plan in `docs/PENETRATION_TEST_PLAN.md`. Not simulated. |
+| **CI pipeline on GitHub** | Workflows authored; the Lint·Analyse·Test job will now pass Lint & Test but **fail Analyse** (see EXECUTED — FAILED) until the PHPStan debt is addressed or the gate is explicitly de-scoped. |

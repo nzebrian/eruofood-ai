@@ -124,3 +124,64 @@ collisions.
 - PSR-4 autoload prefix/path uniqueness: clean.
 - Orphaned config files: none (all 15 module configs are referenced).
 - Duplicate OpenAPI schemas / identical path templates / unresolved `$ref`s: none.
+
+---
+
+## Milestone 19 — newly measured technical debt
+
+### TD-M19-1 — PHPStan level-8 static-analysis gate is red (1885 errors)
+
+**Discovered:** `composer run analyse` (PHPStan 2 + Larastan, `level: 8`,
+`checkModelProperties: true`) was authored into CI in M18 but executed for the
+first time in M19. It reports **1885 errors** across `app/` and all 15 `modules/`.
+
+**Nature (not runtime defects):** the full runtime Pest suite passes **336/336** on
+SQLite and PostgreSQL, so these are static-typing gaps, not behavioural bugs.
+Dominant categories:
+
+| Count | Identifier | Meaning |
+|---|---|---|
+| 947 | `property.notFound` | Eloquent models lack `@property` docblocks (magic attributes) |
+| 357 | `method.notFound` | Eloquent/builder magic methods not annotated |
+| 278 | `argument.type` | Loose array/mixed passed where a narrower type is declared |
+| 124 | `arrayValues.list` | `array` used where a `list<>`/shape is expected |
+| 56 | `return.type` | Return type narrower/wider than annotation |
+| others | assorted | generics, nullable offsets |
+
+**Why not fixed in M19:** remediation means adding `@property`/`@method`
+annotations to every Eloquent model and tightening array generics across all
+modules — a large, feature-independent typing pass. A non-feature "GA blocker
+remediation" milestone must not undertake that as an unscoped change, and the
+honesty mandate forbids hiding it behind a `phpstan-baseline.neon` to fake a green
+gate. It is reported as **EXECUTED — FAILED** and carried into the GA decision.
+
+**Remediation options (for a dedicated milestone), in order of preference:**
+1. Generate accurate model annotations (`@property`) — idegenerator or hand — and
+   fix the residual `argument.type`/`list` issues per module; keep level 8.
+2. If timeline-constrained, adopt a **reviewed** `phpstan-baseline.neon` that
+   freezes the 1885 known errors so **new** code is still gated at level 8 — an
+   explicit, signed-off decision, documented here, not a silent suppression.
+3. Lower the gate to a level the codebase currently meets and ratchet upward.
+
+Recommendation: option 1 (or 2 as an interim) before full-platform GA.
+
+### TD-M19-2 — Codebase-wide Pint drift (resolved)
+
+`composer run lint` (`pint --test`, psr12 preset) was red across ~200 files
+(migrations missing `new class()` parens, import ordering, argument spacing).
+**Resolved** this milestone via `lint:fix`; the gate is now green and the full
+test suite remains **336/336** after the reformat. No behavioural change.
+
+### TD-M19-3 — Environment-limited validations (carried)
+
+Not defects; blocked by the build sandbox. Each has a ready runbook:
+- **Docker clean-env boot** — image pulls 403 from the Docker CDN in-session;
+  `docker compose config` validates all 9 services. Run in staging.
+- **Flutter analyze/test** — toolchain absent; structure statically present.
+- **k6 production performance baseline** — no k6 binary / scaled target.
+- **redocly OpenAPI lint** — CLI install network-blocked in-session; spec parses;
+  runs in CI and passed in M17/M18.
+- **External penetration test** — external requirement; plan in
+  `docs/PENETRATION_TEST_PLAN.md`.
+- **Infrastructure egress enforcement** — provider-dependent; spec in
+  `docs/INFRA_EGRESS_POLICY.md`.

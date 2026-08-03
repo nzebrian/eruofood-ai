@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace EruoFood\PublicApi\Domain\Webhook;
 
+use DateTimeImmutable;
+
 /** Persistence port for {@see Webhook} endpoints and their {@see WebhookDelivery} log. */
 interface WebhookRepository
 {
@@ -38,7 +40,7 @@ interface WebhookRepository
     /**
      * @return list<WebhookDelivery>
      */
-    public function dueDeliveries(\DateTimeImmutable $now, int $limit): array;
+    public function dueDeliveries(DateTimeImmutable $now, int $limit): array;
 
     /**
      * @return list<WebhookDelivery>

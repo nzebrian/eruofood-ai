@@ -92,8 +92,17 @@ final class User extends AggregateRoot
         TwoFactorSettings $twoFactor,
     ): self {
         return new self(
-            $id, $name, $email, $password, $phone, $status,
-            $emailVerifiedAt, $avatarPath, $roles, $preferences, $twoFactor,
+            $id,
+            $name,
+            $email,
+            $password,
+            $phone,
+            $status,
+            $emailVerifiedAt,
+            $avatarPath,
+            $roles,
+            $preferences,
+            $twoFactor,
         );
     }
 

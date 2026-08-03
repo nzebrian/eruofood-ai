@@ -43,8 +43,16 @@ final class AuthorizationCode
         DateTimeImmutable $expiresAt,
     ): self {
         return new self(
-            $id, $hashedCode, $clientId, $subjectUserId, $redirectUri, $scopes,
-            $codeChallenge, $codeChallengeMethod, $expiresAt, null,
+            $id,
+            $hashedCode,
+            $clientId,
+            $subjectUserId,
+            $redirectUri,
+            $scopes,
+            $codeChallenge,
+            $codeChallengeMethod,
+            $expiresAt,
+            null,
         );
     }
 
@@ -61,8 +69,16 @@ final class AuthorizationCode
         ?DateTimeImmutable $consumedAt,
     ): self {
         return new self(
-            $id, $hashedCode, $clientId, $subjectUserId, $redirectUri, $scopes,
-            $codeChallenge, $codeChallengeMethod, $expiresAt, $consumedAt,
+            $id,
+            $hashedCode,
+            $clientId,
+            $subjectUserId,
+            $redirectUri,
+            $scopes,
+            $codeChallenge,
+            $codeChallengeMethod,
+            $expiresAt,
+            $consumedAt,
         );
     }
 

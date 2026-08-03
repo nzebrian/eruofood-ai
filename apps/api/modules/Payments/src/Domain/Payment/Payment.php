@@ -73,9 +73,19 @@ final class Payment extends AggregateRoot
         self::assertSplitsWithin($splits, $amount);
 
         return new self(
-            $id, $reference, $orderId, $payerUserId, $amount, new Money(0, $amount->currency),
-            PaymentStatus::Pending, $provider, $methodType, null, $idempotencyKey,
-            array_values($splits), null,
+            $id,
+            $reference,
+            $orderId,
+            $payerUserId,
+            $amount,
+            new Money(0, $amount->currency),
+            PaymentStatus::Pending,
+            $provider,
+            $methodType,
+            null,
+            $idempotencyKey,
+            array_values($splits),
+            null,
             [['status' => PaymentStatus::Pending->value, 'at' => $now->format(DATE_ATOM), 'note' => null]],
             $now,
         );
@@ -103,9 +113,21 @@ final class Payment extends AggregateRoot
         DateTimeImmutable $createdAt,
     ): self {
         return new self(
-            $id, $reference, $orderId, $payerUserId, $amount, $refundedAmount, $status,
-            $provider, $methodType, $providerReference, $idempotencyKey, array_values($splits),
-            $failureReason, array_values($timeline), $createdAt,
+            $id,
+            $reference,
+            $orderId,
+            $payerUserId,
+            $amount,
+            $refundedAmount,
+            $status,
+            $provider,
+            $methodType,
+            $providerReference,
+            $idempotencyKey,
+            array_values($splits),
+            $failureReason,
+            array_values($timeline),
+            $createdAt,
         );
     }
 
@@ -126,8 +148,12 @@ final class Payment extends AggregateRoot
             $this->providerReference = $reference;
         }
         $this->recordThat(new PaymentSucceeded(
-            $this->id, $this->orderId, $this->payerUserId,
-            $this->amount->minorUnits, $this->amount->currency, $this->provider->value,
+            $this->id,
+            $this->orderId,
+            $this->payerUserId,
+            $this->amount->minorUnits,
+            $this->amount->currency,
+            $this->provider->value,
         ));
     }
 

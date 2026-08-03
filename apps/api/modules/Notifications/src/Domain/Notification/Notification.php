@@ -61,8 +61,18 @@ final class Notification extends AggregateRoot
         DateTimeImmutable $now,
     ): self {
         return new self(
-            $id, $userId, $category, $channel, $templateKey, $data, $content, $priority,
-            NotificationStatus::Pending, 0, $scheduledFor, null,
+            $id,
+            $userId,
+            $category,
+            $channel,
+            $templateKey,
+            $data,
+            $content,
+            $priority,
+            NotificationStatus::Pending,
+            0,
+            $scheduledFor,
+            null,
             [['status' => NotificationStatus::Pending->value, 'at' => $now->format(DATE_ATOM), 'detail' => null]],
             $now,
         );
@@ -89,8 +99,20 @@ final class Notification extends AggregateRoot
         DateTimeImmutable $createdAt,
     ): self {
         return new self(
-            $id, $userId, $category, $channel, $templateKey, $data, $content, $priority,
-            $status, $attempts, $scheduledFor, $readAt, array_values($timeline), $createdAt,
+            $id,
+            $userId,
+            $category,
+            $channel,
+            $templateKey,
+            $data,
+            $content,
+            $priority,
+            $status,
+            $attempts,
+            $scheduledFor,
+            $readAt,
+            array_values($timeline),
+            $createdAt,
         );
     }
 

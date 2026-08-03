@@ -11,8 +11,7 @@ use Illuminate\Support\Facades\Schema;
  * their secret material (never the plaintext), indexed by that hash for O(1)
  * lookup. Scopes are stored as JSON — the same scope currency as API keys.
  */
-return new class extends Migration
-{
+return new class () extends Migration {
     public function up(): void
     {
         Schema::create('oauth_clients', function (Blueprint $table): void {

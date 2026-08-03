@@ -6,8 +6,8 @@ namespace EruoFood\Analytics\Infrastructure\Provider;
 
 use EruoFood\Analytics\Application\Port\ReportDelivery;
 use EruoFood\Analytics\Application\Port\ReportExporter;
-use EruoFood\Analytics\Application\Service\EventTranslator;
 use EruoFood\Analytics\Application\Service\EventCollectionService;
+use EruoFood\Analytics\Application\Service\EventTranslator;
 use EruoFood\Analytics\Domain\Metric\AnalyticsEventRepository;
 use EruoFood\Analytics\Domain\Metric\MetricRepository;
 use EruoFood\Analytics\Domain\Report\ReportRepository;

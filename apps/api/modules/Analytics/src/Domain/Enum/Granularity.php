@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace EruoFood\Analytics\Domain\Enum;
 
+use DateTimeImmutable;
+
 /**
  * A time-bucket granularity for a metric series. Metrics are collected into
  * daily buckets and rolled up to weekly/monthly on read.
@@ -15,7 +17,7 @@ enum Granularity: string
     case Month = 'month';
 
     /** Format a date into this granularity's bucket key. */
-    public function bucketOf(\DateTimeImmutable $date): string
+    public function bucketOf(DateTimeImmutable $date): string
     {
         return match ($this) {
             self::Day => $date->format('Y-m-d'),

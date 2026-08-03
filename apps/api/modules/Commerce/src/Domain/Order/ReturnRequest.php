@@ -38,8 +38,15 @@ final class ReturnRequest
         DateTimeImmutable $now,
     ): self {
         return new self(
-            $id, $orderId, $customerUserId, $reason, $refundAmount,
-            ReturnStatus::Requested, null, $now, null,
+            $id,
+            $orderId,
+            $customerUserId,
+            $reason,
+            $refundAmount,
+            ReturnStatus::Requested,
+            null,
+            $now,
+            null,
         );
     }
 
@@ -55,8 +62,15 @@ final class ReturnRequest
         ?DateTimeImmutable $resolvedAt,
     ): self {
         return new self(
-            $id, $orderId, $customerUserId, $reason, $refundAmount, $status,
-            $resolutionNote, $requestedAt, $resolvedAt,
+            $id,
+            $orderId,
+            $customerUserId,
+            $reason,
+            $refundAmount,
+            $status,
+            $resolutionNote,
+            $requestedAt,
+            $resolvedAt,
         );
     }
 

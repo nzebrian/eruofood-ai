@@ -38,7 +38,7 @@ final class EloquentSubscriptionRepository implements SubscriptionRepository
         );
     }
 
-    public function due(\DateTimeImmutable $now): array
+    public function due(DateTimeImmutable $now): array
     {
         return array_map(
             fn (SubscriptionModel $m): Subscription => $this->toDomain($m),

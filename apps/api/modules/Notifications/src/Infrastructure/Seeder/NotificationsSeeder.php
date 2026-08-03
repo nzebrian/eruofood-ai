@@ -43,7 +43,12 @@ final class NotificationsSeeder extends Seeder
                     continue;
                 }
                 $templates->save(\EruoFood\Notifications\Domain\Template\NotificationTemplate::create(
-                    $templates->nextIdentity(), $key, $channel, 'en', $subject, $body,
+                    $templates->nextIdentity(),
+                    $key,
+                    $channel,
+                    'en',
+                    $subject,
+                    $body,
                 ));
             }
         }

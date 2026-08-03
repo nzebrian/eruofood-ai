@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace EruoFood\Reviews\Infrastructure\Persistence\Eloquent;
 
 use EruoFood\Reviews\Domain\Enum\ReviewStatus;
-use EruoFood\Reviews\Domain\Enum\SubjectType;
 use EruoFood\Reviews\Domain\Review\ReviewStatsRepository;
 use EruoFood\Reviews\Infrastructure\Persistence\Eloquent\Model\ReviewModel;
 use Illuminate\Support\Facades\DB;

@@ -86,9 +86,25 @@ final class Product extends AggregateRoot
         }
 
         $product = new self(
-            $id, $storeId, $categoryId, $name, $slug, $kind, $department, $description,
-            false, $basePrice, array_values($variants), array_values($images),
-            array_values($tags), ProductStatus::Draft, false, $barcode, $brand, 0.0, 0,
+            $id,
+            $storeId,
+            $categoryId,
+            $name,
+            $slug,
+            $kind,
+            $department,
+            $description,
+            false,
+            $basePrice,
+            array_values($variants),
+            array_values($images),
+            array_values($tags),
+            ProductStatus::Draft,
+            false,
+            $barcode,
+            $brand,
+            0.0,
+            0,
         );
         if ($autoPublish) {
             $product->publish();
@@ -124,10 +140,25 @@ final class Product extends AggregateRoot
         int $ratingCount,
     ): self {
         return new self(
-            $id, $storeId, $categoryId, $name, $slug, $kind, $department, $description,
-            $descriptionIsAiGenerated, $basePrice, array_values($variants),
-            array_values($images), array_values($tags), $status, $featured, $barcode,
-            $brand, $ratingAverage, $ratingCount,
+            $id,
+            $storeId,
+            $categoryId,
+            $name,
+            $slug,
+            $kind,
+            $department,
+            $description,
+            $descriptionIsAiGenerated,
+            $basePrice,
+            array_values($variants),
+            array_values($images),
+            array_values($tags),
+            $status,
+            $featured,
+            $barcode,
+            $brand,
+            $ratingAverage,
+            $ratingCount,
         );
     }
 

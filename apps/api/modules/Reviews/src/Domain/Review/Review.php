@@ -61,8 +61,22 @@ final class Review
         DateTimeImmutable $now,
     ): self {
         return new self(
-            $id, $subject, $authorId, $rating, $title, $body, array_values($photos),
-            $verifiedPurchase, $initialStatus, 0, 0, null, null, null, $now, $now,
+            $id,
+            $subject,
+            $authorId,
+            $rating,
+            $title,
+            $body,
+            array_values($photos),
+            $verifiedPurchase,
+            $initialStatus,
+            0,
+            0,
+            null,
+            null,
+            null,
+            $now,
+            $now,
         );
     }
 
@@ -88,9 +102,22 @@ final class Review
         DateTimeImmutable $updatedAt,
     ): self {
         return new self(
-            $id, $subject, $authorId, $rating, $title, $body, array_values($photos),
-            $verifiedPurchase, $status, $helpfulYes, $helpfulNo, $ownerResponse,
-            $moderatedBy, $moderationReason, $createdAt, $updatedAt,
+            $id,
+            $subject,
+            $authorId,
+            $rating,
+            $title,
+            $body,
+            array_values($photos),
+            $verifiedPurchase,
+            $status,
+            $helpfulYes,
+            $helpfulNo,
+            $ownerResponse,
+            $moderatedBy,
+            $moderationReason,
+            $createdAt,
+            $updatedAt,
         );
     }
 

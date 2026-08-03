@@ -50,8 +50,14 @@ final class InventoryItem
         }
 
         return new self(
-            $id, $productId, $variantSku, $warehouseId, $supplierId,
-            $quantity, max(0, $lowStockThreshold), [],
+            $id,
+            $productId,
+            $variantSku,
+            $warehouseId,
+            $supplierId,
+            $quantity,
+            max(0, $lowStockThreshold),
+            [],
         );
     }
 
@@ -69,8 +75,14 @@ final class InventoryItem
         array $batches,
     ): self {
         return new self(
-            $id, $productId, $variantSku, $warehouseId, $supplierId,
-            $quantity, $lowStockThreshold, array_values($batches),
+            $id,
+            $productId,
+            $variantSku,
+            $warehouseId,
+            $supplierId,
+            $quantity,
+            $lowStockThreshold,
+            array_values($batches),
         );
     }
 

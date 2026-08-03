@@ -13,7 +13,7 @@ use EruoFood\Search\Infrastructure\Embedding\HashingEmbeddingGenerator;
 
 function builder(bool $ai = false, ?QueryUnderstanding $understanding = null): QueryBuilder
 {
-    $understanding ??= new class implements QueryUnderstanding {
+    $understanding ??= new class () implements QueryUnderstanding {
         public function expand(string $rawQuery, string $locale): array
         {
             return ['ai-term'];
@@ -49,9 +49,18 @@ it('rejects distance sort without a location', function (): void {
 
 it('matches documents against every filter dimension', function (): void {
     $facets = new DocumentFacets(
-        region: 'South West', states: ['Lagos'], cuisine: 'Yoruba', category: 'rice',
-        ingredients: ['rice', 'pepper'], dietary: ['halal'], allergens: ['gluten'],
-        difficulty: 'medium', rating: 4.5, priceMinor: 250000, prepTimeMinutes: 45, calories: 600,
+        region: 'South West',
+        states: ['Lagos'],
+        cuisine: 'Yoruba',
+        category: 'rice',
+        ingredients: ['rice', 'pepper'],
+        dietary: ['halal'],
+        allergens: ['gluten'],
+        difficulty: 'medium',
+        rating: 4.5,
+        priceMinor: 250000,
+        prepTimeMinutes: 45,
+        calories: 600,
     );
 
     expect($facets->matches(new SearchFilters(region: 'south west', state: 'lagos', ingredients: ['rice'])))->toBeTrue()

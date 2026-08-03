@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace EruoFood\Marketplace\Application\Port;
 
 use EruoFood\Marketplace\Application\DTO\DeliveryQuote;
-use EruoFood\Marketplace\Domain\Vendor\Vendor;
 use EruoFood\Marketplace\Domain\ValueObject\GeoLocation;
+use EruoFood\Marketplace\Domain\Vendor\Vendor;
 use EruoFood\Shared\Domain\ValueObject\Money;
 
 /**

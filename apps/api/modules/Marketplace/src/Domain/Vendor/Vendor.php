@@ -115,10 +115,24 @@ final class Vendor extends AggregateRoot
         DateTimeImmutable $createdAt,
     ): self {
         return new self(
-            $id, $ownerUserId, $name, $slug, $type, $status, $category, $description,
-            $contact, $address, array_values($branches), $businessHours,
-            array_values($deliveryZones), array_values($images), $featured,
-            $ratingAverage, $ratingCount, $createdAt,
+            $id,
+            $ownerUserId,
+            $name,
+            $slug,
+            $type,
+            $status,
+            $category,
+            $description,
+            $contact,
+            $address,
+            array_values($branches),
+            $businessHours,
+            array_values($deliveryZones),
+            array_values($images),
+            $featured,
+            $ratingAverage,
+            $ratingCount,
+            $createdAt,
         );
     }
 

@@ -19,6 +19,7 @@ require __DIR__.'/../vendor/autoload.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
+use EruoFood\PublicApi\Application\Port\SecretHasher;
 use EruoFood\PublicApi\Application\Service\OAuthService;
 use EruoFood\PublicApi\Domain\Enum\OAuthGrant;
 use EruoFood\PublicApi\Domain\Exception\OAuthError;
@@ -27,7 +28,6 @@ use EruoFood\PublicApi\Domain\OAuth\AccessTokenRepository;
 use EruoFood\PublicApi\Domain\OAuth\OAuthClient;
 use EruoFood\PublicApi\Domain\OAuth\OAuthClientRepository;
 use EruoFood\PublicApi\Domain\ValueObject\ScopeSet;
-use EruoFood\PublicApi\Application\Port\SecretHasher;
 use Illuminate\Support\Facades\Artisan;
 
 config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
@@ -62,7 +62,12 @@ echo "DB-backed OAuth2 — persisted via Eloquent (sqlite :memory:)\n\n";
 $secret = 'super-secret-value';
 $clientId = $clients->nextIdentity();
 $clients->save(OAuthClient::register(
-    $clientId, 'app-1', 'dev-1', 'Test client', $hasher->hash($secret), true,
+    $clientId,
+    'app-1',
+    'dev-1',
+    'Test client',
+    $hasher->hash($secret),
+    true,
     [OAuthGrant::AuthorizationCode, OAuthGrant::ClientCredentials, OAuthGrant::RefreshToken],
     ['https://app.example/cb'],
     new ScopeSet(['orders:read', 'orders:write', 'foods:read']),
@@ -71,8 +76,16 @@ $clients->save(OAuthClient::register(
 // A second, isolated client.
 $otherId = $clients->nextIdentity();
 $clients->save(OAuthClient::register(
-    $otherId, 'app-2', 'dev-2', 'Other client', $hasher->hash('other-secret'), true,
-    [OAuthGrant::RefreshToken], ['https://other.example/cb'], new ScopeSet(['foods:read']), new DateTimeImmutable(),
+    $otherId,
+    'app-2',
+    'dev-2',
+    'Other client',
+    $hasher->hash('other-secret'),
+    true,
+    [OAuthGrant::RefreshToken],
+    ['https://other.example/cb'],
+    new ScopeSet(['foods:read']),
+    new DateTimeImmutable(),
 ));
 
 echo "1) Authorization Code + PKCE (persisted code, single use):\n";
@@ -155,8 +168,15 @@ echo "\n8) Token expiry + revocation (persisted state):\n";
 // Forge an already-expired token directly in the store and confirm it is rejected.
 $expiredPlain = 'efoat_expired_'.bin2hex(random_bytes(8));
 $accessTokens->save(AccessToken::issue(
-    $accessTokens->nextIdentity(), $hasher->hash($expiredPlain), $clientId, 'app-1', 'dev-1', 'user-42',
-    new ScopeSet(['orders:read']), (new DateTimeImmutable())->modify('-1 hour'), new DateTimeImmutable(),
+    $accessTokens->nextIdentity(),
+    $hasher->hash($expiredPlain),
+    $clientId,
+    'app-1',
+    'dev-1',
+    'user-42',
+    new ScopeSet(['orders:read']),
+    (new DateTimeImmutable())->modify('-1 hour'),
+    new DateTimeImmutable(),
 ));
 check('an expired access token is rejected', $oauth->authenticateAccessToken($expiredPlain) === null);
 // Revoke a live token.

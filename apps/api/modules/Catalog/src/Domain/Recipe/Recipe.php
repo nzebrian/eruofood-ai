@@ -76,10 +76,25 @@ final class Recipe extends AggregateRoot
         array $tags = [],
     ): self {
         return new self(
-            $id, $foodId, $authorId, $title, $slug, $summary,
-            $prepTimeMinutes, $cookTimeMinutes, $difficulty, $servingSize,
-            $ingredients, self::sortSteps($steps), $tips, $tags, [],
-            ContentStatus::Draft, 1, 0.0, 0,
+            $id,
+            $foodId,
+            $authorId,
+            $title,
+            $slug,
+            $summary,
+            $prepTimeMinutes,
+            $cookTimeMinutes,
+            $difficulty,
+            $servingSize,
+            $ingredients,
+            self::sortSteps($steps),
+            $tips,
+            $tags,
+            [],
+            ContentStatus::Draft,
+            1,
+            0.0,
+            0,
         );
     }
 
@@ -112,9 +127,25 @@ final class Recipe extends AggregateRoot
         int $ratingCount,
     ): self {
         return new self(
-            $id, $foodId, $authorId, $title, $slug, $summary, $prepTimeMinutes,
-            $cookTimeMinutes, $difficulty, $servingSize, $ingredients, $steps,
-            $tips, $tags, $relatedRecipeIds, $status, $version, $ratingAverage, $ratingCount,
+            $id,
+            $foodId,
+            $authorId,
+            $title,
+            $slug,
+            $summary,
+            $prepTimeMinutes,
+            $cookTimeMinutes,
+            $difficulty,
+            $servingSize,
+            $ingredients,
+            $steps,
+            $tips,
+            $tags,
+            $relatedRecipeIds,
+            $status,
+            $version,
+            $ratingAverage,
+            $ratingCount,
         );
     }
 

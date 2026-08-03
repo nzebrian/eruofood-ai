@@ -33,8 +33,14 @@ final class LedgerPosting
     public function debit(LedgerAccount $account, Money $amount): self
     {
         $this->entries[] = new LedgerEntry(
-            $this->ids->next(), $this->correlationId, $account,
-            TransactionDirection::Debit, $amount, $this->type, $this->reference, $this->at,
+            $this->ids->next(),
+            $this->correlationId,
+            $account,
+            TransactionDirection::Debit,
+            $amount,
+            $this->type,
+            $this->reference,
+            $this->at,
         );
 
         return $this;
@@ -43,8 +49,14 @@ final class LedgerPosting
     public function credit(LedgerAccount $account, Money $amount): self
     {
         $this->entries[] = new LedgerEntry(
-            $this->ids->next(), $this->correlationId, $account,
-            TransactionDirection::Credit, $amount, $this->type, $this->reference, $this->at,
+            $this->ids->next(),
+            $this->correlationId,
+            $account,
+            TransactionDirection::Credit,
+            $amount,
+            $this->type,
+            $this->reference,
+            $this->at,
         );
 
         return $this;

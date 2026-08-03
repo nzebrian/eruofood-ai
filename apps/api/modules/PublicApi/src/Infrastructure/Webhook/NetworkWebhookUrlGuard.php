@@ -25,9 +25,9 @@ use Throwable;
 final readonly class NetworkWebhookUrlGuard implements WebhookUrlGuard
 {
     /**
-     * @param list<string>       $allowedSchemes lowercased, e.g. ['https']
-     * @param list<int>          $allowedPorts   e.g. [443]
-     * @param list<string>       $allowedHosts   optional explicit allowlist; if non-empty, the host must match
+     * @param list<string> $allowedSchemes lowercased, e.g. ['https']
+     * @param list<int> $allowedPorts e.g. [443]
+     * @param list<string> $allowedHosts optional explicit allowlist; if non-empty, the host must match
      * @param list<array{0:string,1:int}> $blockedCidrs additional CIDR blocks (base IP + prefix) to reject
      */
     public function __construct(

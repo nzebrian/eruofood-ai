@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Ai\Application\Service;
 
 use EruoFood\Ai\Domain\Exception\AiGenerationFailed;
+use JsonException;
 
 /**
  * The AI Response Parser.
@@ -30,7 +31,7 @@ final readonly class AiResponseParser
         try {
             /** @var array<mixed> $decoded */
             $decoded = json_decode($candidate, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (JsonException) {
             throw AiGenerationFailed::unparseable();
         }
 

@@ -32,7 +32,12 @@ it('turns a published domain event into an in-app notification (no direct call)'
 
     // A business module publishes an event on the shared bus — Payments here.
     app(EventBus::class)->publish(new PaymentSucceeded(
-        'pay-1', 'order-1', $userId, 1000000, 'NGN', 'mock',
+        'pay-1',
+        'order-1',
+        $userId,
+        1000000,
+        'NGN',
+        'mock',
     ));
 
     // The Notifications context reacted and created the notification.

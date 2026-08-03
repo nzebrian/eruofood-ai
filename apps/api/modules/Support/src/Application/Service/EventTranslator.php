@@ -18,7 +18,7 @@ use EruoFood\Shared\Domain\DomainEvent;
 final readonly class EventTranslator
 {
     /**
-     * @param array<string, string> $eventMap  external event name => interaction kind
+     * @param array<string, string> $eventMap external event name => interaction kind
      */
     public function __construct(
         private CrmService $crm,

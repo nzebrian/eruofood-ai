@@ -23,39 +23,81 @@ use EruoFood\PublicApi\Infrastructure\Security\Sha256SecretHasher;
  */
 function makeOAuth(): array
 {
-    $clients = new class implements OAuthClientRepository {
+    $clients = new class () implements OAuthClientRepository {
         public array $s = [];
         private int $n = 0;
-        public function nextIdentity(): string { return 'c'.(++$this->n); }
-        public function findById(string $id): ?OAuthClient { return $this->s[$id] ?? null; }
-        public function save(OAuthClient $c): void { $this->s[$c->id()] = $c; }
-    };
-    $codes = new class implements AuthorizationCodeRepository {
-        public array $s = [];
-        private int $n = 0;
-        public function nextIdentity(): string { return 'code'.(++$this->n); }
-        public function findByHash(string $h): ?AuthorizationCode {
-            foreach ($this->s as $c) { if (hash_equals($c->hashedCode(), $h)) { return $c; } } return null;
+        public function nextIdentity(): string
+        {
+            return 'c'.(++$this->n);
         }
-        public function save(AuthorizationCode $c): void { $this->s[$c->id()] = $c; }
+        public function findById(string $id): ?OAuthClient
+        {
+            return $this->s[$id] ?? null;
+        }
+        public function save(OAuthClient $c): void
+        {
+            $this->s[$c->id()] = $c;
+        }
     };
-    $access = new class implements AccessTokenRepository {
+    $codes = new class () implements AuthorizationCodeRepository {
         public array $s = [];
         private int $n = 0;
-        public function nextIdentity(): string { return 'at'.(++$this->n); }
-        public function findByHash(string $h): ?AccessToken {
-            foreach ($this->s as $t) { if (hash_equals($t->hashedToken(), $h)) { return $t; } } return null;
+        public function nextIdentity(): string
+        {
+            return 'code'.(++$this->n);
         }
-        public function save(AccessToken $t): void { $this->s[$t->id()] = $t; }
+        public function findByHash(string $h): ?AuthorizationCode
+        {
+            foreach ($this->s as $c) {
+                if (hash_equals($c->hashedCode(), $h)) {
+                    return $c;
+                }
+            } return null;
+        }
+        public function save(AuthorizationCode $c): void
+        {
+            $this->s[$c->id()] = $c;
+        }
     };
-    $refresh = new class implements RefreshTokenRepository {
+    $access = new class () implements AccessTokenRepository {
         public array $s = [];
         private int $n = 0;
-        public function nextIdentity(): string { return 'rt'.(++$this->n); }
-        public function findByHash(string $h): ?RefreshToken {
-            foreach ($this->s as $t) { if (hash_equals($t->hashedToken(), $h)) { return $t; } } return null;
+        public function nextIdentity(): string
+        {
+            return 'at'.(++$this->n);
         }
-        public function save(RefreshToken $t): void { $this->s[$t->id()] = $t; }
+        public function findByHash(string $h): ?AccessToken
+        {
+            foreach ($this->s as $t) {
+                if (hash_equals($t->hashedToken(), $h)) {
+                    return $t;
+                }
+            } return null;
+        }
+        public function save(AccessToken $t): void
+        {
+            $this->s[$t->id()] = $t;
+        }
+    };
+    $refresh = new class () implements RefreshTokenRepository {
+        public array $s = [];
+        private int $n = 0;
+        public function nextIdentity(): string
+        {
+            return 'rt'.(++$this->n);
+        }
+        public function findByHash(string $h): ?RefreshToken
+        {
+            foreach ($this->s as $t) {
+                if (hash_equals($t->hashedToken(), $h)) {
+                    return $t;
+                }
+            } return null;
+        }
+        public function save(RefreshToken $t): void
+        {
+            $this->s[$t->id()] = $t;
+        }
     };
     $hasher = new Sha256SecretHasher();
     $service = new OAuthService($clients, $access, $refresh, $codes, $hasher, [
@@ -65,7 +107,12 @@ function makeOAuth(): array
 
     $secret = 'secret-value';
     $clients->save(OAuthClient::register(
-        'c-fixed', 'app-1', 'dev-1', 'client', $hasher->hash($secret), true,
+        'c-fixed',
+        'app-1',
+        'dev-1',
+        'client',
+        $hasher->hash($secret),
+        true,
         [OAuthGrant::AuthorizationCode, OAuthGrant::ClientCredentials, OAuthGrant::RefreshToken],
         ['https://app.example/cb'],
         new ScopeSet(['orders:read', 'orders:write', 'foods:read']),

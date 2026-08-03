@@ -11,7 +11,6 @@ use EruoFood\Marketplace\Application\Service\CartService;
 use EruoFood\Marketplace\Application\Service\CheckoutService;
 use EruoFood\Marketplace\Application\Service\VendorDashboardService;
 use EruoFood\Marketplace\Application\Service\VendorService;
-use EruoFood\Marketplace\Interface\Http\Controller\MenuManagementController;
 use EruoFood\Marketplace\Domain\Cart\CartRepository;
 use EruoFood\Marketplace\Domain\Delivery\DeliveryRepository;
 use EruoFood\Marketplace\Domain\Menu\MenuCategoryRepository;
@@ -31,6 +30,7 @@ use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentOrderReposi
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentRiderRepository;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentVendorRepository;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentVendorReviewRepository;
+use EruoFood\Marketplace\Interface\Http\Controller\MenuManagementController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 

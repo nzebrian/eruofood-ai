@@ -13,8 +13,8 @@ namespace EruoFood\Search\Domain\ValueObject;
 final readonly class SearchFilters
 {
     /**
-     * @param list<string> $ingredients      must contain all of these
-     * @param list<string> $dietary          must satisfy all of these dietary preferences
+     * @param list<string> $ingredients must contain all of these
+     * @param list<string> $dietary must satisfy all of these dietary preferences
      * @param list<string> $excludeAllergens must contain none of these allergens
      */
     public function __construct(

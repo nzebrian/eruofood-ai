@@ -93,8 +93,15 @@ final readonly class MenuService
     {
         $item = $this->manageableItem($userId, $isAdmin, $itemId);
         $item->update(
-            $input->categoryId, $input->name, $input->description, $input->basePrice,
-            $input->variants, $input->images, $input->tags, $input->calories, $input->nutritionItemId,
+            $input->categoryId,
+            $input->name,
+            $input->description,
+            $input->basePrice,
+            $input->variants,
+            $input->images,
+            $input->tags,
+            $input->calories,
+            $input->nutritionItemId,
         );
         $this->items->save($item);
 

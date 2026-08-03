@@ -8,9 +8,9 @@ use DateTimeImmutable;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Support\Domain\Event\SlaBreached;
 use EruoFood\Support\Domain\Event\TicketEscalated;
+use EruoFood\Support\Domain\Sla\SlaPolicyRepository;
 use EruoFood\Support\Domain\Ticket\Ticket;
 use EruoFood\Support\Domain\Ticket\TicketRepository;
-use EruoFood\Support\Domain\Sla\SlaPolicyRepository;
 
 /**
  * SLA management: applies the priority's policy to a ticket (computing its

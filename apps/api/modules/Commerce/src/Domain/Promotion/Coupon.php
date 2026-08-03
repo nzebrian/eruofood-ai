@@ -46,8 +46,15 @@ final class Coupon
         ?DateTimeImmutable $expiresAt = null,
     ): self {
         return new self(
-            $id, strtoupper(trim($code)), $type, $value, max(0, $minSpendMinor),
-            $maxRedemptions, 0, $expiresAt, true,
+            $id,
+            strtoupper(trim($code)),
+            $type,
+            $value,
+            max(0, $minSpendMinor),
+            $maxRedemptions,
+            0,
+            $expiresAt,
+            true,
         );
     }
 
@@ -63,8 +70,15 @@ final class Coupon
         bool $active,
     ): self {
         return new self(
-            $id, $code, $type, $value, $minSpendMinor, $maxRedemptions,
-            $timesRedeemed, $expiresAt, $active,
+            $id,
+            $code,
+            $type,
+            $value,
+            $minSpendMinor,
+            $maxRedemptions,
+            $timesRedeemed,
+            $expiresAt,
+            $active,
         );
     }
 

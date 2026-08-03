@@ -70,9 +70,23 @@ final class MenuItem
         }
 
         return new self(
-            $id, $vendorId, $categoryId, $name, $description, false, $basePrice,
-            array_values($variants), true, array_values($images), array_values($tags),
-            false, null, $trackInventory, max(0, $stock), $calories, $nutritionItemId,
+            $id,
+            $vendorId,
+            $categoryId,
+            $name,
+            $description,
+            false,
+            $basePrice,
+            array_values($variants),
+            true,
+            array_values($images),
+            array_values($tags),
+            false,
+            null,
+            $trackInventory,
+            max(0, $stock),
+            $calories,
+            $nutritionItemId,
         );
     }
 
@@ -101,10 +115,23 @@ final class MenuItem
         ?string $nutritionItemId,
     ): self {
         return new self(
-            $id, $vendorId, $categoryId, $name, $description, $descriptionIsAiGenerated,
-            $basePrice, array_values($variants), $available, array_values($images),
-            array_values($tags), $featured, $promotion, $trackInventory, $stock,
-            $calories, $nutritionItemId,
+            $id,
+            $vendorId,
+            $categoryId,
+            $name,
+            $description,
+            $descriptionIsAiGenerated,
+            $basePrice,
+            array_values($variants),
+            $available,
+            array_values($images),
+            array_values($tags),
+            $featured,
+            $promotion,
+            $trackInventory,
+            $stock,
+            $calories,
+            $nutritionItemId,
         );
     }
 

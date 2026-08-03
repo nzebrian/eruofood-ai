@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace EruoFood\Search\Application\Service;
 
+use function assert;
+
 use EruoFood\Search\Application\DTO\ExecutedSearch;
 use EruoFood\Search\Application\Port\EmbeddingGenerator;
 use EruoFood\Search\Application\Port\SearchCache;
@@ -51,7 +53,7 @@ final readonly class SearchService
             )
             : $this->index->search($query, $embedding);
 
-        \assert($results instanceof SearchResults);
+        assert($results instanceof SearchResults);
 
         $queryId = $this->analytics->recordQuery($query->term, $query->type, $results->total, $userId);
 
