@@ -46,18 +46,30 @@ final class NotificationPreference
         return new self($userId, $channelsByCategory, $quietHours, $language, $maxPerDay);
     }
 
-    /** Whether a channel is enabled for a category (default: on, except promo SMS). */
+    /**
+     * Whether a channel is enabled for a category.
+     *
+     * When the user has set an explicit channel list for a category, it is
+     * honoured exactly — a channel omitted from that list is disabled, including
+     * in-app. When a category has no explicit configuration, sensible defaults
+     * apply: in-app is always on, and every other channel is on except
+     * promotional SMS. This lets a user genuinely restrict a category (e.g.
+     * "payments by email only") while still receiving in-app notifications by
+     * default for categories they have not customised.
+     */
     public function allows(NotificationCategory $category, NotificationChannel $channel): bool
     {
-        if ($channel->isAlwaysOn()) {
-            return true;
-        }
         $configured = $this->channelsByCategory[$category->value] ?? null;
         if ($configured === null) {
-            // Default: promotional SMS off; everything else on.
+            // Unconfigured default: in-app always on; promotional SMS off; the rest on.
+            if ($channel->isAlwaysOn()) {
+                return true;
+            }
+
             return ! ($category === NotificationCategory::Promotional && $channel === NotificationChannel::Sms);
         }
 
+        // Explicit per-category configuration is honoured exactly.
         return in_array($channel->value, $configured, true);
     }
 

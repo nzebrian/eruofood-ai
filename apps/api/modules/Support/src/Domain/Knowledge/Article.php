@@ -29,7 +29,7 @@ final class Article
         private array $tags,
         private int $helpfulYes,
         private int $helpfulNo,
-        private readonly string $authorId,
+        private readonly ?string $authorId,
         private ?DateTimeImmutable $publishedAt,
         private readonly DateTimeImmutable $createdAt,
         private DateTimeImmutable $updatedAt,
@@ -47,7 +47,7 @@ final class Article
         ?string $excerpt,
         string $category,
         array $tags,
-        string $authorId,
+        ?string $authorId,
         DateTimeImmutable $now,
     ): self {
         return new self($id, $slug, $title, $body, $excerpt, $category, ArticleStatus::Draft, 1, $tags, 0, 0, $authorId, null, $now, $now);
@@ -68,7 +68,7 @@ final class Article
         array $tags,
         int $helpfulYes,
         int $helpfulNo,
-        string $authorId,
+        ?string $authorId,
         ?DateTimeImmutable $publishedAt,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
@@ -169,7 +169,7 @@ final class Article
         return $this->helpfulNo;
     }
 
-    public function authorId(): string
+    public function authorId(): ?string
     {
         return $this->authorId;
     }

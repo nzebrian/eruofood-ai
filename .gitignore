@@ -64,3 +64,4 @@ coverage/
 
 # ---- Always keep directory placeholders ----
 !**/.gitkeep
+dump.rdb

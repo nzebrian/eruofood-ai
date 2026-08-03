@@ -43,10 +43,12 @@ it('submits a review that auto-publishes and updates the subject rating summary'
     expect($review['verified_purchase'])->toBeFalse();
 
     // Public summary reflects the published review.
+    // A whole-number average serialises to JSON `5` (decodes to int); assert the
+    // numeric value so the check is stable across SQLite and PostgreSQL.
     $this->getJson('/api/v1/reviews/vendor/vendor-1/summary')
         ->assertOk()
         ->assertJsonPath('data.count', 1)
-        ->assertJsonPath('data.average', 5.0);
+        ->assertJsonPath('data.average', fn ($value): bool => (float) $value === 5.0);
 
     // Public listing returns it.
     $this->getJson('/api/v1/reviews/vendor/vendor-1')

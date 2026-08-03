@@ -84,6 +84,7 @@ final class SearchServiceProvider extends ServiceProvider
             return new SearchIndexManager(
                 $app->make(SearchIndexRepository::class),
                 $app->make(EmbeddingGenerator::class),
+                $app->make(SearchCache::class),
                 [
                     'food' => new FoodSourceProvider($db),
                     'recipe' => new RecipeSourceProvider($db),

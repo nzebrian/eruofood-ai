@@ -65,7 +65,7 @@ final class EloquentMetricRepository implements MetricRepository
         $rows = MetricBucketModel::query()
             ->where('metric', $metric)
             ->whereNull('dimension_key')
-            ->whereBetween('bucket_date', [$range->fromDate(), $range->toDate()])
+            ->whereBetween('bucket_date', [$range->from, $range->to])
             ->orderBy('bucket_date')
             ->get();
 
@@ -89,7 +89,7 @@ final class EloquentMetricRepository implements MetricRepository
         $rows = MetricBucketModel::query()
             ->where('metric', $metric)
             ->where('dimension_key', $dimensionKey)
-            ->whereBetween('bucket_date', [$range->fromDate(), $range->toDate()])
+            ->whereBetween('bucket_date', [$range->from, $range->to])
             ->get();
 
         $out = [];
@@ -109,7 +109,7 @@ final class EloquentMetricRepository implements MetricRepository
     {
         $query = MetricBucketModel::query()
             ->where('metric', $metric)
-            ->whereBetween('bucket_date', [$range->fromDate(), $range->toDate()]);
+            ->whereBetween('bucket_date', [$range->from, $range->to]);
         $dimensionKey === null ? $query->whereNull('dimension_key') : $query->where('dimension_key', $dimensionKey);
         if ($dimensionValue !== null) {
             $query->where('dimension_value', $dimensionValue);

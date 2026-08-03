@@ -22,7 +22,7 @@ return new class extends Migration
             $table->jsonb('tags')->default('[]');
             $table->integer('helpful_yes')->default(0);
             $table->integer('helpful_no')->default(0);
-            $table->uuid('author_id');
+            $table->uuid('author_id')->nullable();
             $table->timestamp('published_at')->nullable();
             $table->timestamp('created_at');
             $table->timestamp('updated_at');

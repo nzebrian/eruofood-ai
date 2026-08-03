@@ -20,7 +20,9 @@ it('creates a plan, generates a merged shopping list, and adjusts portions', fun
         ],
     ])->assertCreated()->json('data');
 
-    expect($plan['estimated_cost'])->toBe(1400.0);
+    // JSON serialises a whole-number float as `1400`, which decodes to int, so
+    // compare the numeric value (identical on SQLite and PostgreSQL).
+    expect((float) $plan['estimated_cost'])->toBe(1400.0);
     $planId = $plan['id'];
 
     // Shopping list merges the two Akara lines (2 servings, 600) + Jollof (2, 800).

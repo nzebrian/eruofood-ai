@@ -39,9 +39,11 @@ final class NativeReportExporter implements ReportExporter
         if ($handle === false) {
             return '';
         }
-        fputcsv($handle, $report->columns());
+        // Explicit escape ('') keeps this RFC-4180 compliant and silences the
+        // PHP 8.4 deprecation of the implicit escape-character default.
+        fputcsv($handle, $report->columns(), ',', '"', '');
         foreach ($report->rows() as $row) {
-            fputcsv($handle, $row);
+            fputcsv($handle, $row, ',', '"', '');
         }
         rewind($handle);
         $out = stream_get_contents($handle) ?: '';

@@ -15,7 +15,7 @@ use EruoFood\Analytics\Interface\Http\Concerns\ResolvesDateRange;
 use EruoFood\Analytics\Interface\Http\Concerns\RespondsWithData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /** Generate, list and export analytics reports. */
 final readonly class ReportController
@@ -59,14 +59,21 @@ final readonly class ReportController
         return $this->data($this->presenter->report($report));
     }
 
-    public function export(Request $request, string $id): Response
+    public function export(Request $request, string $id): StreamedResponse
     {
         $format = ExportFormat::tryFrom((string) $request->string('format', 'csv')) ?? ExportFormat::Csv;
         $result = $this->exports->exportExisting($id, $format);
 
-        return new Response($result->content, 200, [
-            'Content-Type' => $result->mimeType,
-            'Content-Disposition' => 'attachment; filename="'.$result->filename.'"',
-        ]);
+        // Streamed download: memory-efficient for large exports and the standard
+        // shape for file responses.
+        return response()->streamDownload(
+            static function () use ($result): void {
+                echo $result->content;
+            },
+            $result->filename,
+            [
+                'Content-Type' => $result->mimeType,
+            ],
+        );
     }
 }

@@ -68,7 +68,7 @@ final class SupportSeeder extends Seeder
             if ($articles->findBySlug($slug) !== null) {
                 continue;
             }
-            $article = Article::draft($articles->nextIdentity(), $slug, $title, $body, null, $category, [], 'system', $now);
+            $article = Article::draft($articles->nextIdentity(), $slug, $title, $body, null, $category, [], null, $now);
             $article->publish($now);
             $articles->save($article);
         }

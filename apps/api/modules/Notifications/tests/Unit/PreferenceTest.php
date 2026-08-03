@@ -19,12 +19,21 @@ it('allows everything by default except promotional SMS, and in-app always', fun
         ->and($p->allows(NotificationCategory::Promotional, NotificationChannel::InApp))->toBeTrue();
 });
 
-it('honours per-category channel overrides but keeps in-app on', function (): void {
+it('honours per-category channel overrides exactly, including disabling in-app', function (): void {
     $p = prefs();
+    // An explicit override that omits in-app disables it for that category.
     $p->setCategoryChannels(NotificationCategory::Order, [NotificationChannel::Push]);
     expect($p->allows(NotificationCategory::Order, NotificationChannel::Email))->toBeFalse()
         ->and($p->allows(NotificationCategory::Order, NotificationChannel::Push))->toBeTrue()
-        ->and($p->allows(NotificationCategory::Order, NotificationChannel::InApp))->toBeTrue();
+        ->and($p->allows(NotificationCategory::Order, NotificationChannel::InApp))->toBeFalse()
+        // A category the user has NOT customised still gets in-app by default.
+        ->and($p->allows(NotificationCategory::Payment, NotificationChannel::InApp))->toBeTrue();
+
+    // Restricting a category to email-only silences push and in-app for it.
+    $p->setCategoryChannels(NotificationCategory::Payment, [NotificationChannel::Email]);
+    expect($p->allows(NotificationCategory::Payment, NotificationChannel::Email))->toBeTrue()
+        ->and($p->allows(NotificationCategory::Payment, NotificationChannel::Push))->toBeFalse()
+        ->and($p->allows(NotificationCategory::Payment, NotificationChannel::InApp))->toBeFalse();
 });
 
 it('detects quiet hours across midnight', function (): void {

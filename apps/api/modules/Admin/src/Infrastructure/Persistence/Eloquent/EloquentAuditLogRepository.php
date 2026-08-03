@@ -51,7 +51,10 @@ final class EloquentAuditLogRepository implements AuditLogRepository
             $builder->where('subject_id', $query->subjectId);
         }
 
-        $paginator = $builder->orderByDesc('created_at')->paginate(perPage: $query->perPage, page: $query->page);
+        // Deterministic ordering: entries written in the same instant share a
+        // created_at, so tiebreak on the time-ordered UUID (monotonic) to keep
+        // the newest first and the order stable across databases.
+        $paginator = $builder->orderByDesc('created_at')->orderByDesc('id')->paginate(perPage: $query->perPage, page: $query->page);
 
         return new Paginated(
             array_map(fn (AuditLogModel $m): AuditLogEntry => $this->toDomain($m), $paginator->items()),

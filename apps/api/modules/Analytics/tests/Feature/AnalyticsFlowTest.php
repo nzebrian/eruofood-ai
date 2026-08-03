@@ -41,8 +41,8 @@ it('collects domain events into metrics and surfaces them on the executive dashb
     $token = analyticsAdmin($this, 'exec@example.com');
 
     // Business modules publish events on the shared bus — Payments here.
-    app(EventBus::class)->publish(new PaymentSucceeded('p1', 'o1', 'u1', 1000000, 'NGN', 'paystack'));
-    app(EventBus::class)->publish(new PaymentSucceeded('p2', 'o2', 'u2', 500000, 'NGN', 'flutterwave'));
+    app(EventBus::class)->publish(new PaymentSucceeded('11111111-1111-4111-8111-111111111101', '11111111-1111-4111-8111-1111111110a1', '22222222-2222-4222-8222-222222222201', 1000000, 'NGN', 'paystack'));
+    app(EventBus::class)->publish(new PaymentSucceeded('11111111-1111-4111-8111-111111111102', '11111111-1111-4111-8111-1111111110a2', '22222222-2222-4222-8222-222222222202', 500000, 'NGN', 'flutterwave'));
 
     $dashboard = $this->withToken($token)->getJson('/api/v1/analytics/dashboards/executive')
         ->assertOk()->json('data');
@@ -60,7 +60,7 @@ it('blocks non-admins from company dashboards', function (): void {
 
 it('generates a financial report and exports it as CSV', function (): void {
     $token = analyticsAdmin($this, 'report@example.com');
-    app(EventBus::class)->publish(new PaymentSucceeded('p3', null, 'u1', 750000, 'NGN', 'mock'));
+    app(EventBus::class)->publish(new PaymentSucceeded('11111111-1111-4111-8111-111111111103', null, '22222222-2222-4222-8222-222222222201', 750000, 'NGN', 'mock'));
 
     $report = $this->withToken($token)->postJson('/api/v1/analytics/reports', ['key' => 'financial'])
         ->assertCreated()->json('data');
@@ -75,7 +75,7 @@ it('generates a financial report and exports it as CSV', function (): void {
 
 it('creates and runs a scheduled report', function (): void {
     $token = analyticsAdmin($this, 'sched@example.com');
-    app(EventBus::class)->publish(new PaymentSucceeded('p4', null, 'u1', 200000, 'NGN', 'mock'));
+    app(EventBus::class)->publish(new PaymentSucceeded('11111111-1111-4111-8111-111111111104', null, '22222222-2222-4222-8222-222222222201', 200000, 'NGN', 'mock'));
 
     $this->withToken($token)->postJson('/api/v1/analytics/scheduled-reports', [
         'name' => 'Daily revenue',

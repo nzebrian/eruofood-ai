@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Search\Application\Service;
 
 use EruoFood\Search\Application\Port\EmbeddingGenerator;
+use EruoFood\Search\Application\Port\SearchCache;
 use EruoFood\Search\Application\Port\SourceDocumentProvider;
 use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\Enum\SearchType;
@@ -24,6 +25,7 @@ final readonly class SearchIndexManager
     public function __construct(
         private SearchIndexRepository $index,
         private EmbeddingGenerator $embedder,
+        private SearchCache $cache,
         private array $providers,
     ) {
     }
@@ -42,12 +44,16 @@ final readonly class SearchIndexManager
             // Source gone/hidden — remove any indexed doc for it (a vendor
             // source may have been indexed as either restaurant or vendor).
             $this->index->deleteBySourceId($sourceId);
+            $this->cache->flush();
 
             return;
         }
 
         $document->assignEmbedding($this->embedder->embed($document->searchableText()));
         $this->index->save($document);
+        // The index changed — drop cached result sets so queries reflect it
+        // immediately (stale hits would otherwise surface unpublished content).
+        $this->cache->flush();
     }
 
     public function remove(string $type, string $sourceId): void
@@ -55,6 +61,7 @@ final readonly class SearchIndexManager
         $searchType = SearchType::tryFrom($type);
         if ($searchType !== null) {
             $this->index->deleteBySource($searchType, $sourceId);
+            $this->cache->flush();
         }
     }
 
