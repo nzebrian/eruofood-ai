@@ -28,7 +28,6 @@ return new class extends Migration
             $table->softDeletes();
 
             $table->index(['status', 'region']);
-            $table->index('category_id');
         });
     }
 

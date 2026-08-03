@@ -180,7 +180,7 @@ final class IdentityServiceProvider extends ServiceProvider
 
         return [
             'google' => new GoogleAuthenticator(
-                $app->make('http'),
+                $app->make(\Illuminate\Http\Client\Factory::class),
                 $config->get('identity.providers.google.client_id'),
                 (bool) $config->get('identity.providers.google.enabled'),
             ),

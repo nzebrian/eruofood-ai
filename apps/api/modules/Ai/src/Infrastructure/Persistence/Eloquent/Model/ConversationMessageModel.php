@@ -18,6 +18,9 @@ final class ConversationMessageModel extends Model
 {
     protected $table = 'ai_conversation_messages';
 
+    /** Messages are append-only: only created_at is tracked (no updated_at column). */
+    public const UPDATED_AT = null;
+
     public $incrementing = false;
 
     protected $keyType = 'string';

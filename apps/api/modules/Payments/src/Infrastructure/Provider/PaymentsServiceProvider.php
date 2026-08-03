@@ -105,6 +105,8 @@ final class PaymentsServiceProvider extends ServiceProvider
             EloquentWalletRepository::class, EloquentSettlementRepository::class, EloquentPayoutRepository::class,
             EloquentSubscriptionRepository::class, RefundService::class, WalletService::class,
             SettlementService::class, SubscriptionService::class, FinancialReportService::class,
+            \EruoFood\Payments\Interface\Http\Controller\PaymentController::class,
+            \EruoFood\Payments\Interface\Http\Controller\WalletController::class,
         ] as $needsCurrency) {
             $this->app->when($needsCurrency)->needs('$currency')->give($currency);
         }

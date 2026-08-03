@@ -9,6 +9,15 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run outside a transaction: the best-effort pgvector/pg_trgm setup below
+     * may fail when the extension is unavailable, and on PostgreSQL a failed
+     * statement aborts the surrounding transaction — which would roll back the
+     * table creation itself. Without a wrapping transaction the table is
+     * committed first and the optional acceleration is skipped cleanly.
+     */
+    public $withinTransaction = false;
+
     public function up(): void
     {
         Schema::create('search_documents', function (Blueprint $table): void {

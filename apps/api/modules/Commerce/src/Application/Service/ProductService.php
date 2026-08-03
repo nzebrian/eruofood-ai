@@ -202,12 +202,14 @@ final readonly class ProductService
         return $product;
     }
 
-    private function ownedStore(string $storeId, string $actorUserId, bool $actorIsAdmin): void
+    private function ownedStore(string $storeId, string $actorUserId, bool $actorIsAdmin): \EruoFood\Commerce\Domain\Store\Store
     {
         $store = $this->stores->findById($storeId) ?? throw CommerceNotFound::of('store', $storeId);
         if (! $actorIsAdmin && ! $store->isOwnedBy($actorUserId)) {
             throw new \EruoFood\Commerce\Domain\Exception\NotResourceOwner();
         }
+
+        return $store;
     }
 
     private function uniqueSlug(string $name): Slug

@@ -51,15 +51,16 @@ final readonly class AuthenticatePublicApi
 
     private function authenticate(Request $request): ?AuthenticatedContext
     {
-        [$scheme, $credential] = $this->presentedCredential($request);
-        if ($credential === null) {
-            return null;
-        }
-
-        foreach ($this->resolvers as $resolver) {
-            $context = $resolver->resolve($scheme, $credential);
-            if ($context !== null) {
-                return $context;
+        // Try every presented credential, not just the first. The dedicated
+        // X-Api-Key header is attempted before the Authorization bearer, so an
+        // explicit API key always wins over an unrelated bearer token that may
+        // be present on the request.
+        foreach ($this->presentedCredentials($request) as [$scheme, $credential]) {
+            foreach ($this->resolvers as $resolver) {
+                $context = $resolver->resolve($scheme, $credential);
+                if ($context !== null) {
+                    return $context;
+                }
             }
         }
 
@@ -67,20 +68,22 @@ final readonly class AuthenticatePublicApi
     }
 
     /**
-     * @return array{0:string, 1:?string} [scheme, credential]
+     * @return list<array{0:string, 1:string}> ordered [scheme, credential] pairs
      */
-    private function presentedCredential(Request $request): array
+    private function presentedCredentials(Request $request): array
     {
-        $bearer = $request->bearerToken();
-        if (is_string($bearer) && $bearer !== '') {
-            return ['bearer', $bearer];
-        }
+        $credentials = [];
 
         $apiKey = $request->header('X-Api-Key');
         if (is_string($apiKey) && $apiKey !== '') {
-            return ['api_key_header', $apiKey];
+            $credentials[] = ['api_key_header', $apiKey];
         }
 
-        return ['none', null];
+        $bearer = $request->bearerToken();
+        if (is_string($bearer) && $bearer !== '') {
+            $credentials[] = ['bearer', $bearer];
+        }
+
+        return $credentials;
     }
 }

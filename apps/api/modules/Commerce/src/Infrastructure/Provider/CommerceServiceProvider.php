@@ -112,6 +112,7 @@ final class CommerceServiceProvider extends ServiceProvider
             EloquentProductRepository::class, EloquentCartRepository::class,
             EloquentOrderRepository::class, EloquentReturnRequestRepository::class,
             CartService::class, CheckoutService::class, AdminDashboardService::class,
+            \EruoFood\Commerce\Interface\Http\Controller\ProductManagementController::class,
         ] as $needsCurrency) {
             $this->app->when($needsCurrency)->needs('$currency')->give($currency);
         }

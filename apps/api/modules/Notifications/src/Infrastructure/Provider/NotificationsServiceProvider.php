@@ -120,7 +120,10 @@ final class NotificationsServiceProvider extends ServiceProvider
         // Contextual primitives.
         foreach ([NotificationService::class, PreferenceService::class] as $needs) {
             $this->app->when($needs)->needs('$defaultLanguage')->give($language);
-            $this->app->when($needs)->needs('$defaultQuietHours')->give(fn (): QuietHours => $quietHours);
+            // QuietHours is a typed constructor dependency, so the contextual
+            // binding must match by type (a name-based '$defaultQuietHours'
+            // binding is never consulted for a class-typed parameter).
+            $this->app->when($needs)->needs(QuietHours::class)->give(fn (): QuietHours => $quietHours);
         }
         $this->app->when(NotificationService::class)->needs('$maxAttempts')->give($maxAttempts);
     }
