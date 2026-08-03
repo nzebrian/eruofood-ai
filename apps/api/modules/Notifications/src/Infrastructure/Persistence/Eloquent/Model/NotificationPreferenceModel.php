@@ -6,6 +6,13 @@ namespace EruoFood\Notifications\Infrastructure\Persistence\Eloquent\Model;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $user_id
+ * @property array<array-key, mixed> $channels_by_category
+ * @property array<array-key, mixed> $quiet_hours
+ * @property string $language
+ * @property int $max_per_day
+ */
 final class NotificationPreferenceModel extends Model
 {
     protected $table = 'notifications_preferences';

@@ -25,10 +25,10 @@ final class EloquentSettingRepository implements SettingRepository
             $builder->where('group', $group);
         }
 
-        return array_map(
+        return array_values(array_map(
             fn (SettingModel $m): Setting => $this->toDomain($m),
             $builder->orderBy('group')->orderBy('key')->get()->all(),
-        );
+        ));
     }
 
     public function save(Setting $setting): void

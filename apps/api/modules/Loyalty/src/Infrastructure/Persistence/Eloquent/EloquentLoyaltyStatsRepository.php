@@ -56,13 +56,13 @@ final class EloquentLoyaltyStatsRepository implements LoyaltyStatsRepository
             ->limit($limit)
             ->get();
 
-        return array_map(
+        return array_values(array_map(
             static fn (RedemptionModel $r): array => [
                 'reward_id' => (string) $r->reward_id,
                 'redemptions' => (int) $r->getAttribute('redemptions'),
                 'points' => (int) $r->getAttribute('points'),
             ],
             $rows->all(),
-        );
+        ));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $status
  * @property float|null $latitude
  * @property float|null $longitude
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface $created_at
  */
 final class RiderModel extends Model
 {

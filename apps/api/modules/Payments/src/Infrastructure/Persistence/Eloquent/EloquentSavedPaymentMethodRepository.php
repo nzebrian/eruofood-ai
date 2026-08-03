@@ -28,10 +28,10 @@ final class EloquentSavedPaymentMethodRepository implements SavedPaymentMethodRe
 
     public function forUser(string $userId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (SavedPaymentMethodModel $m): SavedPaymentMethod => $this->toDomain($m),
             SavedPaymentMethodModel::query()->where('user_id', $userId)->orderByDesc('is_default')->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function clearDefaultFor(string $userId): void

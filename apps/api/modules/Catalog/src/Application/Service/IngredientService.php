@@ -74,7 +74,7 @@ final readonly class IngredientService
      */
     private function mapLocalNames(array $localNames): array
     {
-        return array_values(array_map(static fn (array $ln): LocalName => LocalName::fromArray($ln), $localNames));
+        return array_map(static fn (array $ln): LocalName => LocalName::fromArray($ln), $localNames);
     }
 
     private function clampPerPage(int $perPage): int

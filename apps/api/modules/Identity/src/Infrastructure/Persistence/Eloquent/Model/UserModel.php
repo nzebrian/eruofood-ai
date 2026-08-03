@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Identity\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -18,13 +19,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $phone
  * @property string|null $password
  * @property string $status
- * @property \Illuminate\Support\Carbon|null $email_verified_at
+ * @property DateTimeInterface|null $email_verified_at
  * @property string|null $avatar_path
  * @property array<int, string> $roles
- * @property array<string, mixed> $preferences
+ * @property array<array-key, mixed> $preferences
  * @property string|null $two_factor_secret
  * @property array<int, string>|null $two_factor_recovery_codes
- * @property \Illuminate\Support\Carbon|null $two_factor_confirmed_at
+ * @property DateTimeInterface|null $two_factor_confirmed_at
  */
 final class UserModel extends Model
 {

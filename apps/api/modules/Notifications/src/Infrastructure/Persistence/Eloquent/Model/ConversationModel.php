@@ -4,8 +4,18 @@ declare(strict_types=1);
 
 namespace EruoFood\Notifications\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $id
+ * @property string $type
+ * @property array<array-key, mixed> $participant_ids
+ * @property string|null $subject
+ * @property string|null $context_ref
+ * @property DateTimeInterface $last_message_at
+ * @property DateTimeInterface $created_at
+ */
 final class ConversationModel extends Model
 {
     protected $table = 'notifications_conversations';

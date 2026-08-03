@@ -45,7 +45,7 @@ final class EloquentMenuItemRepository implements MenuItemRepository
             $query->where('available', true);
         }
 
-        return array_map(fn (MenuItemModel $m): MenuItem => $this->toDomain($m), $query->orderBy('name')->get()->all());
+        return array_values(array_map(fn (MenuItemModel $m): MenuItem => $this->toDomain($m), $query->orderBy('name')->get()->all()));
     }
 
     public function search(?string $term, ?string $vendorId, bool $featuredOnly, int $page, int $perPage): Paginated
@@ -67,7 +67,7 @@ final class EloquentMenuItemRepository implements MenuItemRepository
         $paginator = $query->orderByDesc('featured')->orderBy('name')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (MenuItemModel $m): MenuItem => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (MenuItemModel $m): MenuItem => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

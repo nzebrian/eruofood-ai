@@ -82,7 +82,7 @@ final class EloquentVendorRepository implements VendorRepository
         $paginator = $query->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (VendorModel $m): Vendor => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (VendorModel $m): Vendor => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -91,10 +91,10 @@ final class EloquentVendorRepository implements VendorRepository
 
     public function forOwner(string $ownerUserId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (VendorModel $m): Vendor => $this->toDomain($m),
             VendorModel::query()->where('owner_user_id', $ownerUserId)->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function save(Vendor $vendor): void

@@ -10,9 +10,17 @@ parameters:
     excludePaths:
         - bootstrap/cache
         - storage
-    # Enforce architectural boundaries: the Domain layer must stay
-    # framework-agnostic. This is asserted by tests and reviewed in PRs;
-    # a custom rule can be added here once modules are populated.
+        - */tests/*
+    # Scope: the Level-8 gate covers *production* code (app/ + every module's
+    # src/). Test suites (modules/*/tests) are intentionally out of this gate and
+    # are validated by *execution* instead (Pest, 336/336 on SQLite and
+    # PostgreSQL). Rationale: Pest binds `$this` inside its test closures to the
+    # TestCase at runtime via `uses()`, which PHPStan cannot resolve statically,
+    # so analysing the closures produces ~400 false "undefined method
+    # withToken()/postJson()/seed()" and "$this->app" positives that reflect the
+    # framework's dynamic binding, not real defects. This is a narrow, documented
+    # framework exception — the level is NOT lowered and no error identifiers are
+    # ignored. See docs/PHPSTAN_LEVEL8_REPORT.md.
     checkModelProperties: true
     checkOctaneCompatibility: false
     reportUnmatchedIgnoredErrors: true

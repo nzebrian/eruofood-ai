@@ -63,8 +63,8 @@ final class OAuthClient
             $name,
             $hashedSecret,
             $confidential,
-            array_values($grants),
-            array_values($redirectUris),
+            $grants,
+            $redirectUris,
             $allowedScopes,
             $now,
         );
@@ -93,8 +93,8 @@ final class OAuthClient
             $name,
             $hashedSecret,
             $confidential,
-            array_values($grants),
-            array_values($redirectUris),
+            $grants,
+            $redirectUris,
             $allowedScopes,
             $createdAt,
         );

@@ -57,7 +57,7 @@ final class Conversation
         DateTimeImmutable $lastMessageAt,
         DateTimeImmutable $createdAt,
     ): self {
-        return new self($id, $type, array_values($participantIds), $subject, $contextRef, $lastMessageAt, $createdAt);
+        return new self($id, $type, $participantIds, $subject, $contextRef, $lastMessageAt, $createdAt);
     }
 
     public function hasParticipant(string $userId): bool

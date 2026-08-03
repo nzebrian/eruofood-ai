@@ -63,7 +63,7 @@ final class NativeReportExporter implements ReportExporter
         $sheetRows = '';
         foreach ($rows as $r => $cells) {
             $cellsXml = '';
-            foreach (array_values($cells) as $c => $value) {
+            foreach ($cells as $c => $value) {
                 $ref = $this->cellRef($c, $r + 1);
                 if (is_int($value) || is_float($value)) {
                     $cellsXml .= sprintf('<c r="%s"><v>%s</v></c>', $ref, $value);

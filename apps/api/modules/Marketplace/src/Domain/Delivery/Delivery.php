@@ -96,7 +96,7 @@ final class Delivery
             $zoneName,
             $pickup,
             $dropoff,
-            array_values($trackPoints),
+            $trackPoints,
             $assignedAt,
             $deliveredAt,
             $createdAt,

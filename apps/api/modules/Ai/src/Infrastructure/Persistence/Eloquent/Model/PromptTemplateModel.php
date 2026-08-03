@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Ai\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $model
  * @property list<string> $variables
  * @property bool $active
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface $created_at
  */
 final class PromptTemplateModel extends Model
 {

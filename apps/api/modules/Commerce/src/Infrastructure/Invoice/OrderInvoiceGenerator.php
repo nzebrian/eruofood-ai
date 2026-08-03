@@ -34,7 +34,7 @@ final readonly class OrderInvoiceGenerator implements InvoiceGenerator
             number: 'INV-'.$order->reference(),
             orderReference: $order->reference(),
             issuedAt: $order->placedAt()->format(DATE_ATOM),
-            lines: array_values($lines),
+            lines: $lines,
             subtotalMinor: $order->subtotal()->minorUnits,
             discountMinor: $order->discount()->minorUnits,
             taxMinor: $order->tax()->minorUnits,

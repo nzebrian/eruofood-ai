@@ -96,9 +96,9 @@ final class Product extends AggregateRoot
             $description,
             false,
             $basePrice,
-            array_values($variants),
-            array_values($images),
-            array_values($tags),
+            $variants,
+            $images,
+            $tags,
             ProductStatus::Draft,
             false,
             $barcode,
@@ -150,9 +150,9 @@ final class Product extends AggregateRoot
             $description,
             $descriptionIsAiGenerated,
             $basePrice,
-            array_values($variants),
-            array_values($images),
-            array_values($tags),
+            $variants,
+            $images,
+            $tags,
             $status,
             $featured,
             $barcode,
@@ -186,9 +186,9 @@ final class Product extends AggregateRoot
         $this->description = $description;
         $this->descriptionIsAiGenerated = false;
         $this->basePrice = $basePrice;
-        $this->variants = array_values($variants);
-        $this->images = array_values($images);
-        $this->tags = array_values($tags);
+        $this->variants = $variants;
+        $this->images = $images;
+        $this->tags = $tags;
         $this->barcode = $barcode;
         $this->brand = $brand;
     }

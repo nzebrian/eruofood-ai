@@ -84,7 +84,7 @@ final readonly class CatalogReadAdapter implements CatalogReadPort
             $f->description(),
             $f->region()->value,
             is_scalar($first) ? (string) $first : null,
-            array_values(array_map('strval', $f->tags())),
+            array_map('strval', $f->tags()),
             null,
         );
     }

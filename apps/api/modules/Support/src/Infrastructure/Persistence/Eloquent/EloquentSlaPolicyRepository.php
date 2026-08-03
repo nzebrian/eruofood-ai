@@ -27,10 +27,10 @@ final class EloquentSlaPolicyRepository implements SlaPolicyRepository
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (SlaPolicyModel $m): SlaPolicy => $this->toDomain($m),
             SlaPolicyModel::query()->orderBy('resolution_minutes')->get()->all(),
-        );
+        ));
     }
 
     public function save(SlaPolicy $policy): void

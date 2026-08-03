@@ -81,7 +81,7 @@ final class EloquentWalletRepository implements WalletRepository
             ->orderByDesc('created_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(function (WalletTransactionModel $m): WalletTransaction {
+            array_values(array_map(function (WalletTransactionModel $m): WalletTransaction {
                 return WalletTransaction::fromArray([
                     'id' => $m->id,
                     'wallet_id' => $m->wallet_id,
@@ -93,7 +93,7 @@ final class EloquentWalletRepository implements WalletRepository
                     'description' => $m->description,
                     'created_at' => DateTimeImmutable::createFromInterface($m->created_at)->format(DATE_ATOM),
                 ], $m->currency ?: $this->currency);
-            }, $paginator->items()),
+            }, $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

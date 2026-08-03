@@ -58,7 +58,7 @@ final readonly class AutocompleteService
             }
         }
 
-        return array_values(array_slice(array_unique([...$fromIndex, ...$fromHistory]), 0, $this->suggestionLimit));
+        return array_slice(array_unique([...$fromIndex, ...$fromHistory]), 0, $this->suggestionLimit);
     }
 
     /**

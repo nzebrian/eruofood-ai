@@ -73,7 +73,7 @@ final class EloquentSettlementRepository implements SettlementRepository
     private function paginate(\Illuminate\Pagination\LengthAwarePaginator $paginator, int $page, int $perPage): Paginated
     {
         return new Paginated(
-            array_map(fn (SettlementModel $m): Settlement => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (SettlementModel $m): Settlement => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

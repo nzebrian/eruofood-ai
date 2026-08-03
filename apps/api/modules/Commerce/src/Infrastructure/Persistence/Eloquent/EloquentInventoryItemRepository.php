@@ -36,10 +36,10 @@ final class EloquentInventoryItemRepository implements InventoryItemRepository
 
     public function forProduct(string $productId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (InventoryItemModel $m): InventoryItem => $this->toDomain($m),
             InventoryItemModel::query()->where('product_id', $productId)->get()->all(),
-        );
+        ));
     }
 
     public function lowStock(int $page, int $perPage): Paginated
@@ -50,7 +50,7 @@ final class EloquentInventoryItemRepository implements InventoryItemRepository
             ->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (InventoryItemModel $m): InventoryItem => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (InventoryItemModel $m): InventoryItem => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

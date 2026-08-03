@@ -58,7 +58,7 @@ final class EloquentNutritionItemRepository implements NutritionItemRepository
         $paginator = $query->orderBy('name')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (NutritionItemModel $m): NutritionItem => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (NutritionItemModel $m): NutritionItem => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

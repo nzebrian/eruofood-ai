@@ -32,19 +32,19 @@ final class EloquentSubscriptionRepository implements SubscriptionRepository
 
     public function forUser(string $userId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (SubscriptionModel $m): Subscription => $this->toDomain($m),
             SubscriptionModel::query()->where('user_id', $userId)->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function due(DateTimeImmutable $now): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (SubscriptionModel $m): Subscription => $this->toDomain($m),
             SubscriptionModel::query()->where('status', SubscriptionStatus::Active->value)
                 ->where('next_billing_at', '<=', $now->format('Y-m-d H:i:s'))->get()->all(),
-        );
+        ));
     }
 
     public function save(Subscription $subscription): void

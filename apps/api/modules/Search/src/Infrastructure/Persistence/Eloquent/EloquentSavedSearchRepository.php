@@ -29,10 +29,10 @@ final class EloquentSavedSearchRepository implements SavedSearchRepository
 
     public function forUser(string $userId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (SavedSearchModel $m): SavedSearch => $this->toDomain($m),
             SavedSearchModel::query()->where('user_id', $userId)->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function save(SavedSearch $savedSearch): void

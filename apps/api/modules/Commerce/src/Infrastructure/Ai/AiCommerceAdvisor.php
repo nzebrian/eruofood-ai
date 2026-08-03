@@ -57,7 +57,7 @@ final readonly class AiCommerceAdvisor implements CommerceAdvisor
             }
         }
 
-        return array_values(array_slice($lines, 0, 40));
+        return array_slice($lines, 0, 40);
     }
 
     public function assist(string $question, ?string $userId): string

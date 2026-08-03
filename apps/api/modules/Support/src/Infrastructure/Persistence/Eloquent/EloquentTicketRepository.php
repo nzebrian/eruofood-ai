@@ -84,7 +84,7 @@ final class EloquentTicketRepository implements TicketRepository
             ->paginate(perPage: $query->perPage, page: $query->page);
 
         return new Paginated(
-            array_map(fn (TicketModel $m): Ticket => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (TicketModel $m): Ticket => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $query->page,
             $query->perPage,
@@ -93,7 +93,7 @@ final class EloquentTicketRepository implements TicketRepository
 
     public function breachingResolution(DateTimeImmutable $now, int $limit): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (TicketModel $m): Ticket => $this->toDomain($m),
             TicketModel::query()
                 ->whereNotIn('status', [TicketStatus::Resolved->value, TicketStatus::Closed->value])
@@ -105,7 +105,7 @@ final class EloquentTicketRepository implements TicketRepository
                 ->limit($limit)
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function save(Ticket $ticket): void

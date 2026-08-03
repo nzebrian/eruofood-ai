@@ -37,7 +37,7 @@ final class EloquentCustomerProfileRepository implements CustomerProfileReposito
         $paginator = $builder->orderByDesc('last_interaction_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (CustomerProfileModel $m): CustomerProfile => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (CustomerProfileModel $m): CustomerProfile => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

@@ -60,6 +60,6 @@ final readonly class JwtTokenIssuer implements TokenIssuer
         /** @var list<string> $roles */
         $roles = isset($decoded->roles) ? (array) $decoded->roles : [];
 
-        return new TokenClaims((string) $decoded->sub, array_values($roles));
+        return new TokenClaims((string) $decoded->sub, $roles);
     }
 }

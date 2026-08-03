@@ -137,7 +137,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         $total = count($sorted);
         $page = array_slice($sorted, $query->offset(), $query->perPage);
 
-        return new SearchResults(array_values($page), $total, $query->page, $query->perPage, $facets);
+        return new SearchResults($page, $total, $query->page, $query->perPage, $facets);
     }
 
     public function suggest(string $prefix, ?SearchType $type, int $limit): array
@@ -176,7 +176,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         $hits = array_map(fn (SearchDocumentModel $m): SearchHit => $this->neighbourHit($this->toDomain($m), $embedding), $rows);
         usort($hits, static fn (SearchHit $a, SearchHit $b): int => $b->semanticScore <=> $a->semanticScore);
 
-        return array_values(array_slice($hits, 0, $limit));
+        return array_slice($hits, 0, $limit);
     }
 
     public function popular(SearchType $type, int $limit): array
@@ -392,7 +392,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
             sourceId: $m->source_id,
             title: $m->title,
             description: (string) $m->description,
-            keywords: array_values(array_map('strval', $keywords)),
+            keywords: array_map('strval', $keywords),
             url: $m->url,
             image: $m->image,
             locale: (string) ($m->locale ?? 'en'),

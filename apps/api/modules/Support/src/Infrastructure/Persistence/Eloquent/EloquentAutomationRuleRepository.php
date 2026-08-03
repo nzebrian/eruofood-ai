@@ -25,19 +25,19 @@ final class EloquentAutomationRuleRepository implements AutomationRuleRepository
 
     public function forTrigger(string $trigger): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (AutomationRuleModel $m): AutomationRule => $this->toDomain($m),
             AutomationRuleModel::query()->where('trigger', $trigger)->where('enabled', true)
                 ->orderBy('sort_order')->get()->all(),
-        );
+        ));
     }
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (AutomationRuleModel $m): AutomationRule => $this->toDomain($m),
             AutomationRuleModel::query()->orderBy('trigger')->orderBy('sort_order')->get()->all(),
-        );
+        ));
     }
 
     public function save(AutomationRule $rule): void

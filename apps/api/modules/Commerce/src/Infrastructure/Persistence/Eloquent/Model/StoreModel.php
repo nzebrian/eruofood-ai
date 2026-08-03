@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Commerce\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -14,12 +15,12 @@ use Illuminate\Database\Eloquent\Model;
  * @property bool $verified
  * @property string|null $description
  * @property string|null $logo
- * @property array<string, mixed>|null $address
+ * @property array<array-key, mixed>|null $address
  * @property string|null $support_email
  * @property string|null $support_phone
  * @property float $rating_average
  * @property int $rating_count
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface $created_at
  */
 final class StoreModel extends Model
 {

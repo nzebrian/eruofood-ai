@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Commerce\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -15,8 +16,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $currency
  * @property string $status
  * @property string|null $resolution_note
- * @property \Illuminate\Support\Carbon $requested_at
- * @property \Illuminate\Support\Carbon|null $resolved_at
+ * @property DateTimeInterface $requested_at
+ * @property DateTimeInterface|null $resolved_at
  */
 final class ReturnRequestModel extends Model
 {

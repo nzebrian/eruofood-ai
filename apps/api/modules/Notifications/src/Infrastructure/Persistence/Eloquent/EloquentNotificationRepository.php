@@ -41,7 +41,7 @@ final class EloquentNotificationRepository implements NotificationRepository, De
         $paginator = $query->orderByDesc('created_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (NotificationModel $m): Notification => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (NotificationModel $m): Notification => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -56,23 +56,23 @@ final class EloquentNotificationRepository implements NotificationRepository, De
 
     public function dueForDispatch(NotificationChannel $channel, int $limit): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (NotificationModel $m): Notification => $this->toDomain($m),
             NotificationModel::query()
                 ->where('channel', $channel->value)
                 ->whereIn('status', [NotificationStatus::Pending->value, NotificationStatus::Queued->value])
                 ->where(fn ($q) => $q->whereNull('scheduled_for')->orWhere('scheduled_for', '<=', now()))
                 ->orderBy('created_at')->limit($limit)->get()->all(),
-        );
+        ));
     }
 
     public function retryable(int $maxAttempts, int $limit): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (NotificationModel $m): Notification => $this->toDomain($m),
             NotificationModel::query()->where('status', NotificationStatus::Failed->value)
                 ->where('attempts', '<', $maxAttempts)->orderBy('created_at')->limit($limit)->get()->all(),
-        );
+        ));
     }
 
     public function markAllRead(string $userId): void

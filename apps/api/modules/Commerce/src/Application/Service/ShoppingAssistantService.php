@@ -91,8 +91,8 @@ final readonly class ShoppingAssistantService
         }
 
         return [
-            'products' => array_values($upsells),
-            'blurb' => $this->blurb('upgrade picks', array_values($upsells), $userId),
+            'products' => $upsells,
+            'blurb' => $this->blurb('upgrade picks', $upsells, $userId),
         ];
     }
 

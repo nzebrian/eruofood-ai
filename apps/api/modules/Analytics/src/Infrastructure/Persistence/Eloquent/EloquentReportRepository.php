@@ -32,7 +32,7 @@ final class EloquentReportRepository implements ReportRepository
         $paginator = ReportModel::query()->orderByDesc('generated_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ReportModel $m): Report => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ReportModel $m): Report => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

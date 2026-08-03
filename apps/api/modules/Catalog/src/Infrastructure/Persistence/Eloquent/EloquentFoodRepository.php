@@ -69,7 +69,7 @@ final readonly class EloquentFoodRepository implements FoodRepository
         $paginator = $query->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (FoodModel $m): Food => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (FoodModel $m): Food => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

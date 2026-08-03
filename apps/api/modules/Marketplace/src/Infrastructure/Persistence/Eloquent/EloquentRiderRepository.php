@@ -35,10 +35,10 @@ final class EloquentRiderRepository implements RiderRepository
 
     public function available(int $limit = 20): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (RiderModel $m): Rider => $this->toDomain($m),
             RiderModel::query()->where('status', RiderStatus::Available->value)->limit($limit)->get()->all(),
-        );
+        ));
     }
 
     public function save(Rider $rider): void

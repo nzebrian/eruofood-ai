@@ -38,7 +38,7 @@ final class AdminAccount
      */
     public static function grant(string $userId, array $roles, DateTimeImmutable $now): self
     {
-        return new self($userId, array_values($roles), [], AccountStatus::Active, $now);
+        return new self($userId, $roles, [], AccountStatus::Active, $now);
     }
 
     /**
@@ -52,7 +52,7 @@ final class AdminAccount
         AccountStatus $status,
         DateTimeImmutable $createdAt,
     ): self {
-        return new self($userId, array_values($roles), array_values($extraPermissions), $status, $createdAt);
+        return new self($userId, $roles, $extraPermissions, $status, $createdAt);
     }
 
     /**
@@ -60,7 +60,7 @@ final class AdminAccount
      */
     public function setRoles(array $roles): void
     {
-        $this->roles = array_values($roles);
+        $this->roles = $roles;
     }
 
     public function grantPermission(string $permission): void

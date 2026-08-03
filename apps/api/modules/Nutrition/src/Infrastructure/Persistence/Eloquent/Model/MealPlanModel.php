@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Nutrition\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $period
  * @property string $start_date
  * @property list<array<string, mixed>> $entries
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface $created_at
  */
 final class MealPlanModel extends Model
 {

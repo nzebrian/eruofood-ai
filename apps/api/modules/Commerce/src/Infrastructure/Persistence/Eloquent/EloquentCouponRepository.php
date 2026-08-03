@@ -39,10 +39,10 @@ final class EloquentCouponRepository implements CouponRepository
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (CouponModel $m): Coupon => $this->toDomain($m),
             CouponModel::query()->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function save(Coupon $coupon): void

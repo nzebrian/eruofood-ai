@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -20,9 +21,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property float|null $dropoff_lat
  * @property float|null $dropoff_lng
  * @property list<array{lat: float, lng: float, at: string}> $track_points
- * @property \Illuminate\Support\Carbon|null $assigned_at
- * @property \Illuminate\Support\Carbon|null $delivered_at
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface|null $assigned_at
+ * @property DateTimeInterface|null $delivered_at
+ * @property DateTimeInterface $created_at
  */
 final class DeliveryModel extends Model
 {

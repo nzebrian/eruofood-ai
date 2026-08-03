@@ -4,8 +4,17 @@ declare(strict_types=1);
 
 namespace EruoFood\Admin\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $id
+ * @property string $admin_user_id
+ * @property string $target_user_id
+ * @property string $reason
+ * @property DateTimeInterface $started_at
+ * @property DateTimeInterface|null $ended_at
+ */
 final class ImpersonationModel extends Model
 {
     protected $table = 'admin_impersonations';

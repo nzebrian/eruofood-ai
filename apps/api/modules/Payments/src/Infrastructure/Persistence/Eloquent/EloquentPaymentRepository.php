@@ -121,7 +121,7 @@ final class EloquentPaymentRepository implements PaymentRepository
     private function paginate(\Illuminate\Pagination\LengthAwarePaginator $paginator, int $page, int $perPage): Paginated
     {
         return new Paginated(
-            array_map(fn (PaymentModel $m): Payment => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (PaymentModel $m): Payment => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

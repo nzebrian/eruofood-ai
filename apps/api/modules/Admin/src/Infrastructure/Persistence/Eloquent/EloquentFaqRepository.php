@@ -31,10 +31,10 @@ final class EloquentFaqRepository implements FaqRepository
             $builder->where('category', $category);
         }
 
-        return array_map(
+        return array_values(array_map(
             fn (FaqModel $m): FaqItem => $this->toDomain($m),
             $builder->orderBy('category')->orderBy('sort_order')->get()->all(),
-        );
+        ));
     }
 
     public function save(FaqItem $item): void

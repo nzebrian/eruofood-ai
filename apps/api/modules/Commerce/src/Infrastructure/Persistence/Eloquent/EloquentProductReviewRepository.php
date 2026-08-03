@@ -34,7 +34,7 @@ final class EloquentProductReviewRepository implements ProductReviewRepository
             ->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ProductReviewModel $m): ProductReview => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ProductReviewModel $m): ProductReview => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

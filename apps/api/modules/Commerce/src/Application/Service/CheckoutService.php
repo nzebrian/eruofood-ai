@@ -94,7 +94,7 @@ final readonly class CheckoutService
             id: $this->orders->nextIdentity(),
             reference: $this->orders->nextReference(),
             customerUserId: $userId,
-            lines: array_values($lines),
+            lines: $lines,
             subtotal: $breakdown->subtotal,
             discount: $breakdown->discount,
             tax: $breakdown->tax,

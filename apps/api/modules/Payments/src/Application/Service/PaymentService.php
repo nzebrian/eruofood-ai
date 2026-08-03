@@ -66,7 +66,7 @@ final readonly class PaymentService implements PaymentInitiator
             methodType: PaymentMethodType::from($request->methodType),
             provider: $request->provider !== null ? PaymentProvider::from($request->provider) : null,
             idempotencyKey: $request->idempotencyKey,
-            splits: array_values($splits),
+            splits: $splits,
         ), '0.0.0.0');
 
         return new PaymentIntent(

@@ -57,7 +57,7 @@ final class EloquentAuditLogRepository implements AuditLogRepository
         $paginator = $builder->orderByDesc('created_at')->orderByDesc('id')->paginate(perPage: $query->perPage, page: $query->page);
 
         return new Paginated(
-            array_map(fn (AuditLogModel $m): AuditLogEntry => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (AuditLogModel $m): AuditLogEntry => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $query->page,
             $query->perPage,

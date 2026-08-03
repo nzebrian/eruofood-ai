@@ -27,7 +27,7 @@ final class EloquentCartRepository implements CartRepository
             $m->items ?? [],
         );
 
-        return Cart::reconstitute($m->user_id, $m->vendor_id, array_values($items), $this->currency);
+        return Cart::reconstitute($m->user_id, $m->vendor_id, $items, $this->currency);
     }
 
     public function save(Cart $cart): void

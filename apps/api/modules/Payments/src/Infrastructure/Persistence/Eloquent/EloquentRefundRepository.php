@@ -33,10 +33,10 @@ final class EloquentRefundRepository implements RefundRepository
 
     public function forPayment(string $paymentId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (RefundModel $m): Refund => $this->toDomain($m),
             RefundModel::query()->where('payment_id', $paymentId)->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function all(int $page, int $perPage): Paginated
@@ -44,7 +44,7 @@ final class EloquentRefundRepository implements RefundRepository
         $paginator = RefundModel::query()->orderByDesc('created_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (RefundModel $m): Refund => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (RefundModel $m): Refund => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

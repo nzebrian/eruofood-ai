@@ -27,7 +27,7 @@ final readonly class ScopeSet
         }
         $keys = array_keys($normalised);
         sort($keys);
-        $this->values = array_values($keys);
+        $this->values = $keys;
     }
 
     public static function fromArray(mixed $values): self

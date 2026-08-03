@@ -85,7 +85,7 @@ final class Promotion
             $name,
             $type,
             $value,
-            array_values($productIds),
+            $productIds,
             $startsAt,
             $endsAt,
             $flashSale,

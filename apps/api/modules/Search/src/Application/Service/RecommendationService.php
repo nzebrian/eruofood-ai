@@ -69,10 +69,10 @@ final readonly class RecommendationService
             return $this->index->popular($type, $limit);
         }
 
-        return array_map(
+        return array_values(array_map(
             static fn (SearchHit $hit): SearchDocument => $hit->document,
             $this->index->similarTo($anchor, $limit),
-        );
+        ));
     }
 
     /**

@@ -35,10 +35,10 @@ final class EloquentWebhookRepository implements WebhookRepository
 
     public function forApplication(string $applicationId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (WebhookModel $m): Webhook => $this->toDomain($m),
             WebhookModel::query()->where('application_id', $applicationId)->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function subscribedTo(string $eventName): array
@@ -83,7 +83,7 @@ final class EloquentWebhookRepository implements WebhookRepository
 
     public function dueDeliveries(DateTimeImmutable $now, int $limit): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (WebhookDeliveryModel $m): WebhookDelivery => $this->deliveryToDomain($m),
             WebhookDeliveryModel::query()
                 ->whereIn('status', [DeliveryStatus::Pending->value, DeliveryStatus::Retrying->value])
@@ -93,16 +93,16 @@ final class EloquentWebhookRepository implements WebhookRepository
                 ->limit($limit)
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function deliveriesForWebhook(string $webhookId, int $limit): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (WebhookDeliveryModel $m): WebhookDelivery => $this->deliveryToDomain($m),
             WebhookDeliveryModel::query()->where('webhook_id', $webhookId)
                 ->orderByDesc('created_at')->limit($limit)->get()->all(),
-        );
+        ));
     }
 
     public function saveDelivery(WebhookDelivery $d): void

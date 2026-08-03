@@ -28,7 +28,7 @@ final class EloquentDiaryRepository implements DiaryRepository
 
     public function forUserAndDate(string $userId, string $date): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (DiaryEntryModel $m): DiaryEntry => $this->toDomain($m),
             DiaryEntryModel::query()
                 ->where('user_id', $userId)
@@ -36,7 +36,7 @@ final class EloquentDiaryRepository implements DiaryRepository
                 ->orderBy('created_at')
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function save(DiaryEntry $entry): void

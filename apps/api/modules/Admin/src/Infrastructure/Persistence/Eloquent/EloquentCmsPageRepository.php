@@ -48,7 +48,7 @@ final class EloquentCmsPageRepository implements CmsPageRepository
         $paginator = $builder->orderByDesc('updated_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (CmsPageModel $m): CmsPage => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (CmsPageModel $m): CmsPage => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -100,7 +100,7 @@ final class EloquentCmsPageRepository implements CmsPageRepository
             seo: new SeoMetadata(
                 $seo['meta_title'] ?? null,
                 $seo['meta_description'] ?? null,
-                array_values(array_map('strval', $keywords)),
+                array_map('strval', $keywords),
                 $seo['og_image'] ?? null,
             ),
             status: PublishStatus::from($m->status),

@@ -22,10 +22,10 @@ final class EloquentAdminAccountRepository implements AdminAccountRepository
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (AdminAccountModel $m): AdminAccount => $this->toDomain($m),
             AdminAccountModel::query()->orderBy('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function save(AdminAccount $account): void

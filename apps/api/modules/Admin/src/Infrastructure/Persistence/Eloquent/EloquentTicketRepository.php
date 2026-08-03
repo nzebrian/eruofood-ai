@@ -46,7 +46,7 @@ final class EloquentTicketRepository implements TicketRepository
         $paginator = $builder->orderByDesc('priority_weight')->orderBy('updated_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (TicketModel $m): Ticket => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (TicketModel $m): Ticket => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

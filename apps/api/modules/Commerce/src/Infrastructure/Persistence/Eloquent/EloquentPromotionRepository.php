@@ -28,26 +28,26 @@ final class EloquentPromotionRepository implements PromotionRepository
 
     public function activeAt(DateTimeImmutable $now): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (PromotionModel $m): Promotion => $this->toDomain($m),
             $this->activeQuery($now)->orderByDesc('flash_sale')->get()->all(),
-        );
+        ));
     }
 
     public function activeFlashSales(DateTimeImmutable $now): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (PromotionModel $m): Promotion => $this->toDomain($m),
             $this->activeQuery($now)->where('flash_sale', true)->orderBy('ends_at')->get()->all(),
-        );
+        ));
     }
 
     public function forStore(string $storeId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (PromotionModel $m): Promotion => $this->toDomain($m),
             PromotionModel::query()->where('store_id', $storeId)->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function save(Promotion $promotion): void

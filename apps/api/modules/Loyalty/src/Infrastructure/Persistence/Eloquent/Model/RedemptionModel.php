@@ -4,8 +4,21 @@ declare(strict_types=1);
 
 namespace EruoFood\Loyalty\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $id
+ * @property string $reward_id
+ * @property string $user_id
+ * @property string $code
+ * @property int $points_spent
+ * @property string $benefit_type
+ * @property int $benefit_value
+ * @property string $status
+ * @property DateTimeInterface $created_at
+ * @property DateTimeInterface $updated_at
+ */
 final class RedemptionModel extends Model
 {
     protected $table = 'loyalty_redemptions';

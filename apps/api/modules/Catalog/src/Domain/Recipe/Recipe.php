@@ -232,7 +232,7 @@ final class Recipe extends AggregateRoot
     {
         usort($steps, static fn (CookingStep $a, CookingStep $b): int => $a->order <=> $b->order);
 
-        return array_values($steps);
+        return $steps;
     }
 
     // ---- Accessors ----------------------------------------------------------

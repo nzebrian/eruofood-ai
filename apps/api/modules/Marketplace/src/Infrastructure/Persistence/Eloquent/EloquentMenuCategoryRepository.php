@@ -25,10 +25,10 @@ final class EloquentMenuCategoryRepository implements MenuCategoryRepository
 
     public function forVendor(string $vendorId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (MenuCategoryModel $m): MenuCategory => $this->toDomain($m),
             MenuCategoryModel::query()->where('vendor_id', $vendorId)->orderBy('sort_order')->orderBy('name')->get()->all(),
-        );
+        ));
     }
 
     public function save(MenuCategory $category): void

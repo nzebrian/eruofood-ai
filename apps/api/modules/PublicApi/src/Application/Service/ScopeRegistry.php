@@ -38,7 +38,7 @@ final readonly class ScopeRegistry
             }
         }
 
-        return new ScopeSet(array_values(array_map('strval', $requested)));
+        return new ScopeSet(array_map('strval', $requested));
     }
 
     public function describe(Scope $scope): string

@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $slug
  * @property string|null $description
  * @property array<int, array<string, string>> $local_names
- * @property array<string, mixed>|null $nutrition
+ * @property array<array-key, mixed>|null $nutrition
  */
 final class IngredientModel extends Model
 {

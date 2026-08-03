@@ -103,7 +103,7 @@ final class EloquentOrderRepository implements OrderRepository
     private function paginate($paginator, int $page, int $perPage): Paginated
     {
         return new Paginated(
-            array_map(fn (OrderModel $m): Order => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (OrderModel $m): Order => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

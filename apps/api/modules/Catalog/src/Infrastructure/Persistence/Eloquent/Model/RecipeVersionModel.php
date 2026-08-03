@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $id
  * @property string $recipe_id
  * @property int $version
- * @property array<string, mixed> $snapshot
+ * @property array<array-key, mixed> $snapshot
  */
 final class RecipeVersionModel extends Model
 {

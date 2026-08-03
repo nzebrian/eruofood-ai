@@ -44,7 +44,7 @@ final class Broadcast
         ?DateTimeImmutable $scheduledFor,
         DateTimeImmutable $now,
     ): self {
-        return new self($id, $title, $body, $category, array_values($channels), $segment, $scheduledFor, false, 0, $now);
+        return new self($id, $title, $body, $category, $channels, $segment, $scheduledFor, false, 0, $now);
     }
 
     /**
@@ -62,7 +62,7 @@ final class Broadcast
         int $recipientCount,
         DateTimeImmutable $createdAt,
     ): self {
-        return new self($id, $title, $body, $category, array_values($channels), $segment, $scheduledFor, $sent, $recipientCount, $createdAt);
+        return new self($id, $title, $body, $category, $channels, $segment, $scheduledFor, $sent, $recipientCount, $createdAt);
     }
 
     public function markSent(int $recipientCount): void

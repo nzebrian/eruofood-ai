@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $user_id
  * @property int $rating
  * @property string|null $comment
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface $created_at
  */
 final class VendorReviewModel extends Model
 {

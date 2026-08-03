@@ -82,7 +82,7 @@ final class InventoryItem
             $supplierId,
             $quantity,
             $lowStockThreshold,
-            array_values($batches),
+            $batches,
         );
     }
 
@@ -186,7 +186,7 @@ final class InventoryItem
                 $result[] = new Batch($batch->batchNumber, $left, $batch->expiresAt, $batch->receivedAt);
             }
         }
-        $this->batches = array_values($result);
+        $this->batches = $result;
     }
 
     public function id(): string

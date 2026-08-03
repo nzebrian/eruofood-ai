@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $category
  * @property string $serving_label
  * @property float $serving_grams
- * @property array<string, mixed> $nutrition
+ * @property array<array-key, mixed> $nutrition
  * @property string|null $food_id
  */
 final class NutritionItemModel extends Model

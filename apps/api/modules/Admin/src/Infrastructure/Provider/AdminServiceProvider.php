@@ -74,7 +74,7 @@ final class AdminServiceProvider extends ServiceProvider
 
             return new PermissionService(
                 $app->make(AdminAccountRepository::class),
-                array_values($bootstrap),
+                $bootstrap,
                 (bool) $config->get('admin.identity_admin_is_super', true),
             );
         });

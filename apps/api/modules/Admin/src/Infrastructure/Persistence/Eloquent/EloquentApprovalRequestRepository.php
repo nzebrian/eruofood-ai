@@ -39,7 +39,7 @@ final class EloquentApprovalRequestRepository implements ApprovalRequestReposito
         $paginator = $builder->orderByDesc('submitted_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ApprovalRequestModel $m): ApprovalRequest => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ApprovalRequestModel $m): ApprovalRequest => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

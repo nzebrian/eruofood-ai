@@ -111,7 +111,7 @@ final class Notification extends AggregateRoot
             $attempts,
             $scheduledFor,
             $readAt,
-            array_values($timeline),
+            $timeline,
             $createdAt,
         );
     }

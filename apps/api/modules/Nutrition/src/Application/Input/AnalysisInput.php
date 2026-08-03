@@ -28,6 +28,6 @@ final readonly class AnalysisInput
             ];
         }
 
-        return new self(array_values($items));
+        return new self($items);
     }
 }

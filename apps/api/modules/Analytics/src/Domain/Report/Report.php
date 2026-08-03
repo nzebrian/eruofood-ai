@@ -51,7 +51,7 @@ final class Report
         array $rows,
         DateTimeImmutable $now,
     ): self {
-        return new self($id, $key, $title, $range, array_values($columns), array_values($rows), ReportStatus::Ready, $now);
+        return new self($id, $key, $title, $range, $columns, $rows, ReportStatus::Ready, $now);
     }
 
     /**
@@ -68,7 +68,7 @@ final class Report
         ReportStatus $status,
         DateTimeImmutable $generatedAt,
     ): self {
-        return new self($id, $key, $title, $range, array_values($columns), array_values($rows), $status, $generatedAt);
+        return new self($id, $key, $title, $range, $columns, $rows, $status, $generatedAt);
     }
 
     public function id(): string

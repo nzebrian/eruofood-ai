@@ -56,10 +56,10 @@ final readonly class MarketplaceReadAdapter implements RestaurantReadPort
 
     public function menu(string $restaurantId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (MenuItem $i): MenuItemResource => $this->toMenuItem($i),
             $this->items->forVendor($restaurantId, onlyAvailable: true),
-        );
+        ));
     }
 
     private function toRestaurant(Vendor $v): RestaurantResource
@@ -72,7 +72,7 @@ final readonly class MarketplaceReadAdapter implements RestaurantReadPort
             $v->category(),
             $v->description(),
             $v->isFeatured(),
-            array_values($v->images()),
+            $v->images(),
         );
     }
 
@@ -89,7 +89,7 @@ final readonly class MarketplaceReadAdapter implements RestaurantReadPort
             $price->minorUnits,
             $price->currency,
             $i->isAvailable(),
-            array_values($i->tags()),
+            $i->tags(),
         );
     }
 }

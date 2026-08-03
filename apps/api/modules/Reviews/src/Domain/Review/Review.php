@@ -67,7 +67,7 @@ final class Review
             $rating,
             $title,
             $body,
-            array_values($photos),
+            $photos,
             $verifiedPurchase,
             $initialStatus,
             0,
@@ -108,7 +108,7 @@ final class Review
             $rating,
             $title,
             $body,
-            array_values($photos),
+            $photos,
             $verifiedPurchase,
             $status,
             $helpfulYes,
@@ -161,7 +161,7 @@ final class Review
         $this->rating = $rating;
         $this->title = $title;
         $this->body = $body;
-        $this->photos = array_values($photos);
+        $this->photos = $photos;
         $this->updatedAt = $now;
     }
 

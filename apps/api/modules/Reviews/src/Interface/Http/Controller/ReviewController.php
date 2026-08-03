@@ -144,6 +144,6 @@ final class ReviewController
         /** @var list<mixed> $raw */
         $raw = (array) $request->input('photos', []);
 
-        return array_values(array_map('strval', $raw));
+        return array_map('strval', $raw);
     }
 }

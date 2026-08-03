@@ -41,10 +41,10 @@ final class EloquentCategoryRepository implements CategoryRepository
             $query->where('department', $department->value);
         }
 
-        return array_map(
+        return array_values(array_map(
             fn (CategoryModel $m): Category => $this->toDomain($m),
             $query->orderBy('sort_order')->orderBy('name')->get()->all(),
-        );
+        ));
     }
 
     public function save(Category $category): void

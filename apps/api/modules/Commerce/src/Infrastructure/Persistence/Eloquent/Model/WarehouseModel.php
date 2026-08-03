@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $id
  * @property string $name
  * @property string|null $code
- * @property array<string, mixed>|null $address
+ * @property array<array-key, mixed>|null $address
  */
 final class WarehouseModel extends Model
 {

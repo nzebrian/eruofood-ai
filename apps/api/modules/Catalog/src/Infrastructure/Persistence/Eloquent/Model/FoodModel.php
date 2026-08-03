@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $region
  * @property array<int, string> $states
  * @property array<int, array<string, string>> $local_names
- * @property array<string, mixed>|null $nutrition
+ * @property array<array-key, mixed>|null $nutrition
  * @property array<int, string> $images
  * @property string|null $video_url
  * @property array<int, string> $tags

@@ -36,7 +36,7 @@ final class EloquentRatingSummaryRepository implements RatingSummaryRepository
 
     public function topRated(SubjectType $type, int $minCount, int $limit): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (RatingSummaryModel $m): RatingSummary => $this->toDomain($m),
             RatingSummaryModel::query()
                 ->where('subject_type', $type->value)
@@ -46,7 +46,7 @@ final class EloquentRatingSummaryRepository implements RatingSummaryRepository
                 ->limit($limit)
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     private function key(Subject $subject): string

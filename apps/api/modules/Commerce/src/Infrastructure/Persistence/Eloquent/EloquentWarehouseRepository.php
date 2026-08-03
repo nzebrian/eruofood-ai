@@ -26,10 +26,10 @@ final class EloquentWarehouseRepository implements WarehouseRepository
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (WarehouseModel $m): Warehouse => $this->toDomain($m),
             WarehouseModel::query()->orderBy('name')->get()->all(),
-        );
+        ));
     }
 
     public function save(Warehouse $warehouse): void

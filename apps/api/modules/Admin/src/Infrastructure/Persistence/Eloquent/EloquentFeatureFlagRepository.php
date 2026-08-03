@@ -20,10 +20,10 @@ final class EloquentFeatureFlagRepository implements FeatureFlagRepository
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (FeatureFlagModel $m): FeatureFlag => $this->toDomain($m),
             FeatureFlagModel::query()->orderBy('key')->get()->all(),
-        );
+        ));
     }
 
     public function save(FeatureFlag $flag): void

@@ -77,10 +77,10 @@ final class MenuItem
             $description,
             false,
             $basePrice,
-            array_values($variants),
+            $variants,
             true,
-            array_values($images),
-            array_values($tags),
+            $images,
+            $tags,
             false,
             null,
             $trackInventory,
@@ -122,10 +122,10 @@ final class MenuItem
             $description,
             $descriptionIsAiGenerated,
             $basePrice,
-            array_values($variants),
+            $variants,
             $available,
-            array_values($images),
-            array_values($tags),
+            $images,
+            $tags,
             $featured,
             $promotion,
             $trackInventory,
@@ -159,9 +159,9 @@ final class MenuItem
         $this->description = $description;
         $this->descriptionIsAiGenerated = false;
         $this->basePrice = $basePrice;
-        $this->variants = array_values($variants);
-        $this->images = array_values($images);
-        $this->tags = array_values($tags);
+        $this->variants = $variants;
+        $this->images = $images;
+        $this->tags = $tags;
         $this->calories = $calories;
         $this->nutritionItemId = $nutritionItemId;
     }

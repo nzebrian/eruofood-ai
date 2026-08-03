@@ -27,11 +27,11 @@ final class EloquentConversationRepository implements ConversationRepository
 
     public function forUser(string $userId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (ConversationModel $m): Conversation => $this->toDomain($m),
             ConversationModel::query()->whereJsonContains('participant_ids', $userId)
                 ->orderByDesc('last_message_at')->get()->all(),
-        );
+        ));
     }
 
     public function save(Conversation $conversation): void

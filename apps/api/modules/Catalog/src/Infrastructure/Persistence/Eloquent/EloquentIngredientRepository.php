@@ -40,7 +40,7 @@ final class EloquentIngredientRepository implements IngredientRepository
             ->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (IngredientModel $m): Ingredient => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (IngredientModel $m): Ingredient => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

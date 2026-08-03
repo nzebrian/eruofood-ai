@@ -84,7 +84,7 @@ final class Payment extends AggregateRoot
             $methodType,
             null,
             $idempotencyKey,
-            array_values($splits),
+            $splits,
             null,
             [['status' => PaymentStatus::Pending->value, 'at' => $now->format(DATE_ATOM), 'note' => null]],
             $now,
@@ -124,9 +124,9 @@ final class Payment extends AggregateRoot
             $methodType,
             $providerReference,
             $idempotencyKey,
-            array_values($splits),
+            $splits,
             $failureReason,
-            array_values($timeline),
+            $timeline,
             $createdAt,
         );
     }

@@ -31,10 +31,10 @@ final class EloquentBannerRepository implements BannerRepository
             $builder->where('placement', $placement);
         }
 
-        return array_map(
+        return array_values(array_map(
             fn (BannerModel $m): Banner => $this->toDomain($m),
             $builder->orderBy('sort_order')->get()->all(),
-        );
+        ));
     }
 
     public function save(Banner $banner): void

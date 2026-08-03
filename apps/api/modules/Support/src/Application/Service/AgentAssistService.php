@@ -42,9 +42,9 @@ final readonly class AgentAssistService
      */
     private function thread(array $messages): array
     {
-        return array_map(
+        return array_values(array_map(
             static fn (TicketMessage $m): array => ['author' => $m->authorType->value, 'body' => $m->body],
             array_values(array_filter($messages, static fn (TicketMessage $m): bool => ! $m->internal)),
-        );
+        ));
     }
 }

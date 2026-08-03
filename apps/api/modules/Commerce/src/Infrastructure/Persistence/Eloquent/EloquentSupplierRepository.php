@@ -25,10 +25,10 @@ final class EloquentSupplierRepository implements SupplierRepository
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (SupplierModel $m): Supplier => $this->toDomain($m),
             SupplierModel::query()->orderBy('name')->get()->all(),
-        );
+        ));
     }
 
     public function save(Supplier $supplier): void

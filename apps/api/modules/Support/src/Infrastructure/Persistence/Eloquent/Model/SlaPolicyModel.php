@@ -6,6 +6,13 @@ namespace EruoFood\Support\Infrastructure\Persistence\Eloquent\Model;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $id
+ * @property string $name
+ * @property string $priority
+ * @property int $first_response_minutes
+ * @property int $resolution_minutes
+ */
 final class SlaPolicyModel extends Model
 {
     protected $table = 'support_sla_policies';

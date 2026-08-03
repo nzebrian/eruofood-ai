@@ -56,10 +56,10 @@ final readonly class CommerceReadAdapter implements CommerceReadPort
 
     public function categories(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (Category $c): ProductCategoryResource => $this->toCategory($c),
             $this->categories->all(),
-        );
+        ));
     }
 
     private function toProduct(Product $p): ProductResource
@@ -76,7 +76,7 @@ final readonly class CommerceReadAdapter implements CommerceReadPort
             $price->minorUnits,
             $price->currency,
             $p->categoryId(),
-            array_values($p->images()),
+            $p->images(),
         );
     }
 

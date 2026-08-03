@@ -35,7 +35,7 @@ final class EloquentMealPlanRepository implements MealPlanRepository
             ->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (MealPlanModel $m): MealPlan => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (MealPlanModel $m): MealPlan => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -73,7 +73,7 @@ final class EloquentMealPlanRepository implements MealPlanRepository
             title: $m->title,
             period: PlanPeriod::from($m->period),
             startDate: $m->start_date,
-            entries: array_values($entries),
+            entries: $entries,
             createdAt: DateTimeImmutable::createFromInterface($m->created_at),
         );
     }

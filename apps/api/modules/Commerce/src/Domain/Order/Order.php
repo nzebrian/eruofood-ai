@@ -82,7 +82,7 @@ final class Order extends AggregateRoot
             $id,
             $reference,
             $customerUserId,
-            array_values($lines),
+            $lines,
             $subtotal,
             $discount,
             $tax,
@@ -129,7 +129,7 @@ final class Order extends AggregateRoot
             $id,
             $reference,
             $customerUserId,
-            array_values($lines),
+            $lines,
             $subtotal,
             $discount,
             $tax,
@@ -141,7 +141,7 @@ final class Order extends AggregateRoot
             $scheduledFor,
             $note,
             $status,
-            array_values($statusHistory),
+            $statusHistory,
             $placedAt,
         );
     }

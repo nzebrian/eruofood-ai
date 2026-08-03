@@ -68,9 +68,9 @@ final class HealthProfile
             $gender,
             $activityLevel,
             $goal,
-            array_values($dietaryPreferences),
-            array_values($allergies),
-            array_values($medicalRestrictions),
+            $dietaryPreferences,
+            $allergies,
+            $medicalRestrictions,
             $now,
             $now,
         );
@@ -103,9 +103,9 @@ final class HealthProfile
             $gender,
             $activityLevel,
             $goal,
-            array_values($dietaryPreferences),
-            array_values($allergies),
-            array_values($medicalRestrictions),
+            $dietaryPreferences,
+            $allergies,
+            $medicalRestrictions,
             $createdAt,
             $updatedAt,
         );
@@ -135,9 +135,9 @@ final class HealthProfile
         $this->gender = $gender;
         $this->activityLevel = $activityLevel;
         $this->goal = $goal;
-        $this->dietaryPreferences = array_values($dietaryPreferences);
-        $this->allergies = array_values($allergies);
-        $this->medicalRestrictions = array_values($medicalRestrictions);
+        $this->dietaryPreferences = $dietaryPreferences;
+        $this->allergies = $allergies;
+        $this->medicalRestrictions = $medicalRestrictions;
         $this->updatedAt = $now;
     }
 

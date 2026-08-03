@@ -40,7 +40,7 @@ final class EloquentDeliveryRepository implements DeliveryRepository
 
     public function activeForRider(string $riderId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (DeliveryModel $m): Delivery => $this->toDomain($m),
             DeliveryModel::query()
                 ->where('rider_id', $riderId)
@@ -48,7 +48,7 @@ final class EloquentDeliveryRepository implements DeliveryRepository
                 ->orderBy('created_at')
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function save(Delivery $delivery): void

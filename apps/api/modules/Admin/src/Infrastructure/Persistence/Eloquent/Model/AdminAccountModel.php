@@ -4,8 +4,16 @@ declare(strict_types=1);
 
 namespace EruoFood\Admin\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $user_id
+ * @property array<array-key, mixed> $roles
+ * @property array<array-key, mixed> $extra_permissions
+ * @property string $status
+ * @property DateTimeInterface $created_at
+ */
 final class AdminAccountModel extends Model
 {
     protected $table = 'admin_accounts';

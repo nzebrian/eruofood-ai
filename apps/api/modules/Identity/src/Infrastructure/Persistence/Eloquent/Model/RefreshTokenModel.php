@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Identity\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -15,9 +16,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $token_hash
  * @property string|null $ip_address
  * @property string|null $user_agent
- * @property \Illuminate\Support\Carbon $expires_at
- * @property \Illuminate\Support\Carbon|null $revoked_at
- * @property \Illuminate\Support\Carbon|null $last_used_at
+ * @property DateTimeInterface $expires_at
+ * @property DateTimeInterface|null $revoked_at
+ * @property DateTimeInterface|null $last_used_at
  */
 final class RefreshTokenModel extends Model
 {

@@ -65,7 +65,7 @@ final class SearchDocument
             $sourceId,
             $title,
             $description,
-            array_values($keywords),
+            $keywords,
             $url,
             $image,
             $locale,
@@ -96,7 +96,7 @@ final class SearchDocument
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
     ): self {
-        return new self($id, $type, $sourceId, $title, $description, array_values($keywords), $url, $image, $locale, $facets, $geo, $embedding, $createdAt, $updatedAt);
+        return new self($id, $type, $sourceId, $title, $description, $keywords, $url, $image, $locale, $facets, $geo, $embedding, $createdAt, $updatedAt);
     }
 
     /**
@@ -114,7 +114,7 @@ final class SearchDocument
     ): void {
         $this->title = $title;
         $this->description = $description;
-        $this->keywords = array_values($keywords);
+        $this->keywords = $keywords;
         $this->url = $url;
         $this->image = $image;
         $this->facets = $facets;

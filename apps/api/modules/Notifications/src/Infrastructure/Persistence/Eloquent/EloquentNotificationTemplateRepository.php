@@ -34,10 +34,10 @@ final class EloquentNotificationTemplateRepository implements NotificationTempla
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (NotificationTemplateModel $m): NotificationTemplate => $this->toDomain($m),
             NotificationTemplateModel::query()->orderBy('key')->get()->all(),
-        );
+        ));
     }
 
     public function save(NotificationTemplate $template): void

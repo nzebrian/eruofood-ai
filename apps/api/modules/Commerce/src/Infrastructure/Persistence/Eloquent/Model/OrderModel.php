@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Commerce\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -20,12 +21,12 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $currency
  * @property string|null $coupon_code
  * @property bool $pickup
- * @property array<string, mixed>|null $shipping_address
- * @property \Illuminate\Support\Carbon|null $scheduled_for
+ * @property array<array-key, mixed>|null $shipping_address
+ * @property DateTimeInterface|null $scheduled_for
  * @property string|null $note
  * @property string $status
  * @property list<array{status: string, at: string}> $status_history
- * @property \Illuminate\Support\Carbon $placed_at
+ * @property DateTimeInterface $placed_at
  */
 final class OrderModel extends Model
 {

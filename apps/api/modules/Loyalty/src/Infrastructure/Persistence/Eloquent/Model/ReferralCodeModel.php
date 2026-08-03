@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace EruoFood\Loyalty\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $code
+ * @property string $user_id
+ * @property DateTimeInterface $created_at
+ */
 final class ReferralCodeModel extends Model
 {
     protected $table = 'loyalty_referral_codes';

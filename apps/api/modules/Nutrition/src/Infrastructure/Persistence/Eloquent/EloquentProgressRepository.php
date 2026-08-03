@@ -19,7 +19,7 @@ final class EloquentProgressRepository implements ProgressRepository
 
     public function forUser(string $userId, int $limit = 90): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (ProgressEntryModel $m): ProgressEntry => $this->toDomain($m),
             ProgressEntryModel::query()
                 ->where('user_id', $userId)
@@ -27,7 +27,7 @@ final class EloquentProgressRepository implements ProgressRepository
                 ->limit($limit)
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function latest(string $userId): ?ProgressEntry

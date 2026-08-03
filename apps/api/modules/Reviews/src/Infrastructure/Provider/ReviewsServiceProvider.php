@@ -52,7 +52,7 @@ final class ReviewsServiceProvider extends ServiceProvider
         $this->app->singleton(ContentModerator::class, function ($app): ContentModerator {
             /** @var list<string> $blocklist */
             $blocklist = (array) $app['config']->get('reviews.blocklist', []);
-            $wordlist = new WordlistContentModerator(array_values(array_map('strval', $blocklist)));
+            $wordlist = new WordlistContentModerator(array_map('strval', $blocklist));
             if ((bool) $app['config']->get('reviews.ai_moderation', false) && $app->bound(AiAdvisor::class)) {
                 return new AiBackedContentModerator($app->make(AiAdvisor::class), $wordlist);
             }

@@ -117,7 +117,7 @@ final class EloquentOrderRepository implements OrderRepository
     private function paginate(\Illuminate\Pagination\LengthAwarePaginator $paginator, int $page, int $perPage): Paginated
     {
         return new Paginated(
-            array_map(fn (OrderModel $m): Order => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (OrderModel $m): Order => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -136,7 +136,7 @@ final class EloquentOrderRepository implements OrderRepository
             id: $m->id,
             reference: $m->reference,
             customerUserId: $m->customer_user_id,
-            lines: array_values($lines),
+            lines: $lines,
             subtotal: new Money($m->subtotal_minor, $currency),
             discount: new Money($m->discount_minor, $currency),
             tax: new Money($m->tax_minor, $currency),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Commerce\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -13,8 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $type
  * @property int $value
  * @property list<string> $product_ids
- * @property \Illuminate\Support\Carbon|null $starts_at
- * @property \Illuminate\Support\Carbon|null $ends_at
+ * @property DateTimeInterface|null $starts_at
+ * @property DateTimeInterface|null $ends_at
  * @property bool $flash_sale
  */
 final class PromotionModel extends Model

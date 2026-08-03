@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Ai\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -12,8 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $user_id
  * @property string $feature
  * @property string $title
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property DateTimeInterface $created_at
+ * @property DateTimeInterface $updated_at
  */
 final class ConversationModel extends Model
 {

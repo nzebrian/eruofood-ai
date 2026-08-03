@@ -65,7 +65,7 @@ final class EloquentProductRepository implements ProductRepository
         $paginator = $query->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ProductModel $m): Product => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ProductModel $m): Product => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -80,7 +80,7 @@ final class EloquentProductRepository implements ProductRepository
             ->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ProductModel $m): Product => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ProductModel $m): Product => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -95,7 +95,7 @@ final class EloquentProductRepository implements ProductRepository
             ->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ProductModel $m): Product => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ProductModel $m): Product => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -116,10 +116,10 @@ final class EloquentProductRepository implements ProductRepository
             $query->where('kind', $product->kind()->value);
         }
 
-        return array_map(
+        return array_values(array_map(
             fn (ProductModel $m): Product => $this->toDomain($m),
             $query->orderByDesc('rating_average')->limit($limit)->get()->all(),
-        );
+        ));
     }
 
     public function findManyById(array $ids): array

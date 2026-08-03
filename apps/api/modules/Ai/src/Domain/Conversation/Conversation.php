@@ -55,7 +55,7 @@ final class Conversation extends AggregateRoot
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
     ): self {
-        return new self($id, $userId, $feature, $title, array_values($messages), $createdAt, $updatedAt);
+        return new self($id, $userId, $feature, $title, $messages, $createdAt, $updatedAt);
     }
 
     public function addMessage(MessageRole $role, string $content, DateTimeImmutable $at): void
@@ -77,10 +77,10 @@ final class Conversation extends AggregateRoot
      */
     public function toAiMessages(): array
     {
-        return array_map(
+        return array_values(array_map(
             static fn (ConversationMessage $m): AiMessage => $m->toAiMessage(),
             $this->messages,
-        );
+        ));
     }
 
     public function id(): string

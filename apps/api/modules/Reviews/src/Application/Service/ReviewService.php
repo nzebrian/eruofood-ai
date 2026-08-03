@@ -85,7 +85,7 @@ final readonly class ReviewService
             new Rating($rating),
             $title,
             $body,
-            array_values($photos),
+            $photos,
             $verified,
             $status,
             new DateTimeImmutable(),
@@ -138,7 +138,7 @@ final readonly class ReviewService
         if (count($photos) > $this->maxPhotos) {
             throw new ReviewsInvalidState(sprintf('At most %d photos are allowed.', $this->maxPhotos));
         }
-        $review->edit(new Rating($rating), $title, $body, array_values($photos), new DateTimeImmutable());
+        $review->edit(new Rating($rating), $title, $body, $photos, new DateTimeImmutable());
         $this->reviews->save($review);
         if ($review->status()->countsToRating()) {
             $this->projector->project($review->subject());

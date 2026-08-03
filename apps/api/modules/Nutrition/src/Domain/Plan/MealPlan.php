@@ -41,7 +41,7 @@ final class MealPlan
         array $entries,
         DateTimeImmutable $now,
     ): self {
-        return new self($id, $userId, $title, $period, $startDate, array_values($entries), $now);
+        return new self($id, $userId, $title, $period, $startDate, $entries, $now);
     }
 
     /**
@@ -56,7 +56,7 @@ final class MealPlan
         array $entries,
         DateTimeImmutable $createdAt,
     ): self {
-        return new self($id, $userId, $title, $period, $startDate, array_values($entries), $createdAt);
+        return new self($id, $userId, $title, $period, $startDate, $entries, $createdAt);
     }
 
     /** Scale every entry's portion by a factor (portion adjustment). */

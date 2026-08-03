@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -15,8 +16,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $status
  * @property string $category
  * @property string|null $description
- * @property array<string, mixed> $contact
- * @property array<string, mixed> $address
+ * @property array<array-key, mixed> $contact
+ * @property array<array-key, mixed> $address
  * @property list<array<string, mixed>> $branches
  * @property array<int, array{open: string, close: string}> $business_hours
  * @property list<array<string, mixed>> $delivery_zones
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $rating_count
  * @property float|null $latitude
  * @property float|null $longitude
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface $created_at
  */
 final class VendorModel extends Model
 {

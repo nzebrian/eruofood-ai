@@ -45,7 +45,7 @@ final class LoyaltyServiceProvider extends ServiceProvider
             /** @var list<array<string, mixed>> $tiers */
             $tiers = (array) $app['config']->get('loyalty.tiers', []);
 
-            return new TierPolicy(array_map(static fn (array $t): Tier => Tier::fromArray($t), array_values($tiers)));
+            return new TierPolicy(array_map(static fn (array $t): Tier => Tier::fromArray($t), $tiers));
         });
 
         // Repositories → Eloquent adapters.
@@ -122,7 +122,7 @@ final class LoyaltyServiceProvider extends ServiceProvider
             $events[] = $qualifying;
         }
 
-        (new DomainEventSubscriber($this->app->make(Dispatcher::class), array_values($events)))->register();
+        (new DomainEventSubscriber($this->app->make(Dispatcher::class), $events))->register();
     }
 
     /**

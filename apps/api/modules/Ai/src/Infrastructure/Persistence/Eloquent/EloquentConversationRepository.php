@@ -40,7 +40,7 @@ final class EloquentConversationRepository implements ConversationRepository
             ->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ConversationModel $m): Conversation => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ConversationModel $m): Conversation => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

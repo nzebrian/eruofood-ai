@@ -152,6 +152,6 @@ final class KnowledgeBaseController
         /** @var list<mixed> $raw */
         $raw = (array) $request->input('tags', []);
 
-        return array_values(array_map('strval', $raw));
+        return array_map('strval', $raw);
     }
 }

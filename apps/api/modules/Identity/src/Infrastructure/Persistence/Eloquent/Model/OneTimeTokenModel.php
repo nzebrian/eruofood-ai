@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Identity\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $purpose
  * @property string $subject
  * @property string $token_hash
- * @property \Illuminate\Support\Carbon $expires_at
+ * @property DateTimeInterface $expires_at
  */
 final class OneTimeTokenModel extends Model
 {

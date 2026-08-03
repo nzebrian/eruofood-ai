@@ -37,7 +37,7 @@ final class EloquentPayoutRepository implements PayoutRepository
         $paginator = PayoutModel::query()->orderByDesc('created_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (PayoutModel $m): Payout => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (PayoutModel $m): Payout => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,

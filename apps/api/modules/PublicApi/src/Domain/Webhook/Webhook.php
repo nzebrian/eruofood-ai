@@ -42,7 +42,7 @@ final class Webhook
         string $secret,
         DateTimeImmutable $now,
     ): self {
-        return new self($id, $applicationId, $url, array_values($events), $secret, WebhookStatus::Active, $now, $now);
+        return new self($id, $applicationId, $url, $events, $secret, WebhookStatus::Active, $now, $now);
     }
 
     /**
@@ -58,7 +58,7 @@ final class Webhook
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
     ): self {
-        return new self($id, $applicationId, $url, array_values($events), $secret, $status, $createdAt, $updatedAt);
+        return new self($id, $applicationId, $url, $events, $secret, $status, $createdAt, $updatedAt);
     }
 
     /**
@@ -67,7 +67,7 @@ final class Webhook
     public function update(string $url, array $events, DateTimeImmutable $now): void
     {
         $this->url = $url;
-        $this->events = array_values($events);
+        $this->events = $events;
         $this->updatedAt = $now;
     }
 

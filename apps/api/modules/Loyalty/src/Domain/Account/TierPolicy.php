@@ -26,7 +26,7 @@ final readonly class TierPolicy
             throw new LoyaltyInvalidState('At least one tier must be configured.');
         }
         usort($tiers, static fn (Tier $a, Tier $b): int => $a->threshold <=> $b->threshold);
-        $this->tiers = array_values($tiers);
+        $this->tiers = $tiers;
     }
 
     public function resolve(int $lifetimePoints): Tier

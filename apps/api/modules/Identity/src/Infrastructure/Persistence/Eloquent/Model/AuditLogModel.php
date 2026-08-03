@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $id
  * @property string $action
  * @property string|null $actor_id
- * @property array<string, mixed> $context
+ * @property array<array-key, mixed> $context
  * @property string|null $ip_address
  */
 final class AuditLogModel extends Model

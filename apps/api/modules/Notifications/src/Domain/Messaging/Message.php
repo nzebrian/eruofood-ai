@@ -43,7 +43,7 @@ final class Message
         array $attachments,
         DateTimeImmutable $now,
     ): self {
-        return new self($id, $conversationId, $senderId, $type, $body, array_values($attachments), [$senderId], $now);
+        return new self($id, $conversationId, $senderId, $type, $body, $attachments, [$senderId], $now);
     }
 
     /**
@@ -60,7 +60,7 @@ final class Message
         array $readBy,
         DateTimeImmutable $createdAt,
     ): self {
-        return new self($id, $conversationId, $senderId, $type, $body, array_values($attachments), array_values($readBy), $createdAt);
+        return new self($id, $conversationId, $senderId, $type, $body, $attachments, $readBy, $createdAt);
     }
 
     public function markReadBy(string $userId): void

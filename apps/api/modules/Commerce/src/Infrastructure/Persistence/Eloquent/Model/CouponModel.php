@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Commerce\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $min_spend_minor
  * @property int|null $max_redemptions
  * @property int $times_redeemed
- * @property \Illuminate\Support\Carbon|null $expires_at
+ * @property DateTimeInterface|null $expires_at
  * @property bool $active
  */
 final class CouponModel extends Model

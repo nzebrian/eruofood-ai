@@ -62,7 +62,7 @@ final class EloquentLedgerRepository implements LedgerRepository
             ->orderByDesc('posted_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (LedgerEntryModel $m): LedgerEntry => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (LedgerEntryModel $m): LedgerEntry => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -71,10 +71,10 @@ final class EloquentLedgerRepository implements LedgerRepository
 
     public function forCorrelation(string $correlationId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (LedgerEntryModel $m): LedgerEntry => $this->toDomain($m),
             LedgerEntryModel::query()->where('correlation_id', $correlationId)->get()->all(),
-        );
+        ));
     }
 
     private function toDomain(LedgerEntryModel $m): LedgerEntry

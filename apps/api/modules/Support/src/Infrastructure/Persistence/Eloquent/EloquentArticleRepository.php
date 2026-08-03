@@ -53,7 +53,7 @@ final class EloquentArticleRepository implements ArticleRepository
         $paginator = $builder->orderByDesc('updated_at')->paginate(perPage: $perPage, page: $page);
 
         return new Paginated(
-            array_map(fn (ArticleModel $m): Article => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ArticleModel $m): Article => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $page,
             $perPage,
@@ -65,7 +65,7 @@ final class EloquentArticleRepository implements ArticleRepository
         /** @var list<string> $cats */
         $cats = ArticleModel::query()->select('category')->distinct()->orderBy('category')->pluck('category')->all();
 
-        return array_values(array_map('strval', $cats));
+        return array_map('strval', $cats);
     }
 
     public function save(Article $article): void

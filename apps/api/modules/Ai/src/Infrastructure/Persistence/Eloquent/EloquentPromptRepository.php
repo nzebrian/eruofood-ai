@@ -40,14 +40,14 @@ final class EloquentPromptRepository implements PromptRepository
 
     public function versionsForFeature(AiFeature $feature): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (PromptTemplateModel $m): PromptTemplate => $this->toDomain($m),
             PromptTemplateModel::query()
                 ->where('feature', $feature->value)
                 ->orderByDesc('version')
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function latestVersion(AiFeature $feature): int

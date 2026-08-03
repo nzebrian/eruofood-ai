@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property list<string> $images
  * @property list<string> $tags
  * @property bool $featured
- * @property array<string, mixed>|null $promotion
+ * @property array<array-key, mixed>|null $promotion
  * @property bool $track_inventory
  * @property int $stock
  * @property int|null $calories

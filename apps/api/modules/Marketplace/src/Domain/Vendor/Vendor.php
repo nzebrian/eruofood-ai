@@ -125,10 +125,10 @@ final class Vendor extends AggregateRoot
             $description,
             $contact,
             $address,
-            array_values($branches),
+            $branches,
             $businessHours,
-            array_values($deliveryZones),
-            array_values($images),
+            $deliveryZones,
+            $images,
             $featured,
             $ratingAverage,
             $ratingCount,
@@ -173,7 +173,7 @@ final class Vendor extends AggregateRoot
     /** @param list<Branch> $branches */
     public function setBranches(array $branches): void
     {
-        $this->branches = array_values($branches);
+        $this->branches = $branches;
     }
 
     public function setBusinessHours(BusinessHours $hours): void
@@ -184,13 +184,13 @@ final class Vendor extends AggregateRoot
     /** @param list<DeliveryZone> $zones */
     public function setDeliveryZones(array $zones): void
     {
-        $this->deliveryZones = array_values($zones);
+        $this->deliveryZones = $zones;
     }
 
     /** @param list<string> $images */
     public function setImages(array $images): void
     {
-        $this->images = array_values($images);
+        $this->images = $images;
     }
 
     public function setFeatured(bool $featured): void

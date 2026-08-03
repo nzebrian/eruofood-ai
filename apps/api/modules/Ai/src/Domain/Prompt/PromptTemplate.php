@@ -68,7 +68,7 @@ final class PromptTemplate
             $systemTemplate,
             $userTemplate,
             $model,
-            array_values(array_map('strval', $variables)),
+            array_map('strval', $variables),
             $active,
             $createdAt,
         );

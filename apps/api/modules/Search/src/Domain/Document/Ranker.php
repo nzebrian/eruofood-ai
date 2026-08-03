@@ -51,7 +51,7 @@ final readonly class Ranker
 
         usort($hits, $comparator);
 
-        return array_values($hits);
+        return $hits;
     }
 
     private static function nullsLast(?int $value): int

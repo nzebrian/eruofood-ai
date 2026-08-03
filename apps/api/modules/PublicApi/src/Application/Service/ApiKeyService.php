@@ -50,7 +50,7 @@ final readonly class ApiKeyService
         $application->isOwnedBy($developerId);
 
         // Never widen beyond the application's grant.
-        $scopes = (new ScopeSet(array_values(array_map('strval', $requestedScopes))))->intersect($application->scopes());
+        $scopes = (new ScopeSet(array_map('strval', $requestedScopes)))->intersect($application->scopes());
 
         $now = new DateTimeImmutable();
         $prefix = $this->generatePrefix();

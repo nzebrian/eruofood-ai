@@ -28,19 +28,19 @@ final class EloquentScheduledReportRepository implements ScheduledReportReposito
 
     public function all(): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (ScheduledReportModel $m): ScheduledReport => $this->toDomain($m),
             ScheduledReportModel::query()->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function due(DateTimeImmutable $now): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (ScheduledReportModel $m): ScheduledReport => $this->toDomain($m),
             ScheduledReportModel::query()->where('active', true)
                 ->where('next_run_at', '<=', $now->format('Y-m-d H:i:s'))->get()->all(),
-        );
+        ));
     }
 
     public function save(ScheduledReport $report): void

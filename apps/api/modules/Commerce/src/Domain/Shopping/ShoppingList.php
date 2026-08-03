@@ -36,7 +36,7 @@ final class ShoppingList
      */
     public static function reconstitute(string $id, string $userId, string $name, array $lines): self
     {
-        return new self($id, $userId, $name, array_values($lines));
+        return new self($id, $userId, $name, $lines);
     }
 
     public function rename(string $name): void

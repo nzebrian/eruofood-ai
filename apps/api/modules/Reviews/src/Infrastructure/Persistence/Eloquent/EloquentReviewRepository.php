@@ -68,7 +68,7 @@ final class EloquentReviewRepository implements ReviewRepository
         $paginator = $builder->paginate(perPage: $query->perPage, page: $query->page);
 
         return new Paginated(
-            array_map(fn (ReviewModel $m): Review => $this->toDomain($m), $paginator->items()),
+            array_values(array_map(fn (ReviewModel $m): Review => $this->toDomain($m), $paginator->items())),
             $paginator->total(),
             $query->page,
             $query->perPage,
@@ -77,7 +77,7 @@ final class EloquentReviewRepository implements ReviewRepository
 
     public function publishedForSubject(Subject $subject): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (ReviewModel $m): Review => $this->toDomain($m),
             ReviewModel::query()
                 ->where('subject_type', $subject->type->value)
@@ -85,7 +85,7 @@ final class EloquentReviewRepository implements ReviewRepository
                 ->where('status', ReviewStatus::Published->value)
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function save(Review $review): void

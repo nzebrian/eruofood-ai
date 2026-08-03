@@ -143,6 +143,6 @@ final class AgentTicketController
         /** @var list<array<string, mixed>> $raw */
         $raw = (array) $request->input('attachments', []);
 
-        return array_map(static fn (array $a): Attachment => Attachment::fromArray($a), array_values($raw));
+        return array_map(static fn (array $a): Attachment => Attachment::fromArray($a), $raw);
     }
 }

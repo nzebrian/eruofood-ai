@@ -4,8 +4,28 @@ declare(strict_types=1);
 
 namespace EruoFood\Reviews\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $id
+ * @property string $subject_type
+ * @property string $subject_id
+ * @property string $author_id
+ * @property int $rating
+ * @property string|null $title
+ * @property string|null $body
+ * @property array<array-key, mixed> $photos
+ * @property bool $verified_purchase
+ * @property string $status
+ * @property int $helpful_yes
+ * @property int $helpful_no
+ * @property array<array-key, mixed>|null $owner_response
+ * @property string|null $moderated_by
+ * @property string|null $moderation_reason
+ * @property DateTimeInterface $created_at
+ * @property DateTimeInterface $updated_at
+ */
 final class ReviewModel extends Model
 {
     protected $table = 'reviews';

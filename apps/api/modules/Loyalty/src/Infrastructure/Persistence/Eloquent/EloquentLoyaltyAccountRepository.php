@@ -52,7 +52,7 @@ final class EloquentLoyaltyAccountRepository implements LoyaltyAccountRepository
             ->paginate(perPage: $query->perPage, page: $query->page);
 
         return new Paginated(
-            array_map(fn (LedgerEntryModel $m): LedgerEntry => $this->entryToDomain($m), $paginator->items()),
+            array_values(array_map(fn (LedgerEntryModel $m): LedgerEntry => $this->entryToDomain($m), $paginator->items())),
             $paginator->total(),
             $query->page,
             $query->perPage,
@@ -61,7 +61,7 @@ final class EloquentLoyaltyAccountRepository implements LoyaltyAccountRepository
 
     public function expirableEntries(DateTimeImmutable $now, int $limit): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (LedgerEntryModel $m): LedgerEntry => $this->entryToDomain($m),
             LedgerEntryModel::query()
                 ->where('type', LedgerEntryType::Earn->value)
@@ -72,7 +72,7 @@ final class EloquentLoyaltyAccountRepository implements LoyaltyAccountRepository
                 ->limit($limit)
                 ->get()
                 ->all(),
-        );
+        ));
     }
 
     public function expiredAgainst(string $earnEntryId): int

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Nutrition\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -14,8 +15,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $item_name
  * @property float $servings
  * @property string|null $nutrition_item_id
- * @property array<string, mixed> $nutrition
- * @property \Illuminate\Support\Carbon $created_at
+ * @property array<array-key, mixed> $nutrition
+ * @property DateTimeInterface $created_at
  */
 final class DiaryEntryModel extends Model
 {

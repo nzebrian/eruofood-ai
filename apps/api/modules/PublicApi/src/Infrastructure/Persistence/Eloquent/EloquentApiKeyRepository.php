@@ -35,10 +35,10 @@ final class EloquentApiKeyRepository implements ApiKeyRepository
 
     public function forApplication(string $applicationId): array
     {
-        return array_map(
+        return array_values(array_map(
             fn (ApiKeyModel $m): ApiKey => $this->toDomain($m),
             ApiKeyModel::query()->where('application_id', $applicationId)->orderByDesc('created_at')->get()->all(),
-        );
+        ));
     }
 
     public function save(ApiKey $key): void

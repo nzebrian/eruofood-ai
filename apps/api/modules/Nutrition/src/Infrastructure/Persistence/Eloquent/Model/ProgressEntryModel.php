@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Nutrition\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $entry_date
  * @property float $weight_kg
  * @property string|null $note
- * @property \Illuminate\Support\Carbon $created_at
+ * @property DateTimeInterface $created_at
  */
 final class ProgressEntryModel extends Model
 {

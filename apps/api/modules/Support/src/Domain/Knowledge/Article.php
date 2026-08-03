@@ -85,7 +85,7 @@ final class Article
         $this->body = $body;
         $this->excerpt = $excerpt;
         $this->category = $category;
-        $this->tags = array_values($tags);
+        $this->tags = $tags;
         $this->version++;
         $this->updatedAt = $now;
     }
