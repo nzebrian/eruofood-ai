@@ -51,9 +51,9 @@ final class ReviewsServiceProvider extends ServiceProvider
         // offline word-list. Both share the word-list as the certain first pass.
         $this->app->singleton(ContentModerator::class, function ($app): ContentModerator {
             /** @var list<string> $blocklist */
-            $blocklist = (array) $app['config']->get('reviews.blocklist', []);
+            $blocklist = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.blocklist', []);
             $wordlist = new WordlistContentModerator(array_map('strval', $blocklist));
-            if ((bool) $app['config']->get('reviews.ai_moderation', false) && $app->bound(AiAdvisor::class)) {
+            if ((bool) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.ai_moderation', false) && $app->bound(AiAdvisor::class)) {
                 return new AiBackedContentModerator($app->make(AiAdvisor::class), $wordlist);
             }
 
@@ -76,9 +76,9 @@ final class ReviewsServiceProvider extends ServiceProvider
             $app->make(ContentModerator::class),
             $app->make(RatingProjector::class),
             $app->make(\EruoFood\Shared\Domain\EventBus::class),
-            (string) $app['config']->get('reviews.moderation', 'post') === 'pre' ? 'pre' : 'post',
-            (bool) $app['config']->get('reviews.content_filter', true),
-            (int) $app['config']->get('reviews.max_photos', 6),
+            (string) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.moderation', 'post') === 'pre' ? 'pre' : 'post',
+            (bool) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.content_filter', true),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.max_photos', 6),
         ));
 
         $this->app->singleton(ModerationService::class, fn ($app): ModerationService => new ModerationService(
@@ -89,7 +89,7 @@ final class ReviewsServiceProvider extends ServiceProvider
 
         $this->app->singleton(ReviewAnalyticsService::class, function ($app): ReviewAnalyticsService {
             /** @var list<string> $subjects */
-            $subjects = (array) $app['config']->get('reviews.subjects', []);
+            $subjects = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.subjects', []);
             $types = [];
             foreach ($subjects as $value) {
                 $type = SubjectType::tryFrom((string) $value);
@@ -108,7 +108,7 @@ final class ReviewsServiceProvider extends ServiceProvider
         // Event → verified-purchase ledger translator.
         $this->app->bind(EventTranslator::class, function ($app): EventTranslator {
             /** @var array<string, array{subject_type: string, subject_field: string, user_field: string}> $map */
-            $map = (array) $app['config']->get('reviews.eligibility_events', []);
+            $map = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.eligibility_events', []);
 
             return new EventTranslator($app->make(PurchaseEligibilityRepository::class), $map);
         });
@@ -125,7 +125,7 @@ final class ReviewsServiceProvider extends ServiceProvider
         // Subscribe the verified-purchase ledger to published order events (the
         // only inbound coupling — one-way, by event name).
         /** @var array<string, array{subject_type: string, subject_field: string, user_field: string}> $map */
-        $map = (array) $this->app['config']->get('reviews.eligibility_events', []);
+        $map = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('reviews.eligibility_events', []);
         (new DomainEventSubscriber($this->app->make(Dispatcher::class), $map))->register();
     }
 }

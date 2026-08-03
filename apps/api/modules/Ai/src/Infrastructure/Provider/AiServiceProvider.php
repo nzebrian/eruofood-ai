@@ -41,7 +41,7 @@ final class AiServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
         /** @var array<string, mixed> $ai */
         $ai = $config->get('ai');
 

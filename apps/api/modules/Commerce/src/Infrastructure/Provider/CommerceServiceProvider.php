@@ -67,7 +67,7 @@ final class CommerceServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
         $currency = (string) $config->get('commerce.currency', 'NGN');
         $requireVerification = (bool) $config->get('commerce.require_verification', true);
         $lowStock = (int) $config->get('commerce.inventory.low_stock_threshold', 10);

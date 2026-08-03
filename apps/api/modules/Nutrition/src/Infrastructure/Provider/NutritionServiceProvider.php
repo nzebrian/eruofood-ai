@@ -55,7 +55,7 @@ final class NutritionServiceProvider extends ServiceProvider
 
     private function calculatorSettings(): CalculatorSettings
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
 
         /** @var array<string, float> $factors */
         $factors = $config->get('nutrition.activity_factors', []);

@@ -52,7 +52,7 @@ final class NotificationsServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
         $language = (string) $config->get('notifications.default_language', 'en');
         $maxAttempts = (int) $config->get('notifications.retry.max_attempts', 3);
         /** @var array<string, bool> $channels */
@@ -138,7 +138,7 @@ final class NotificationsServiceProvider extends ServiceProvider
 
         // Subscribe to published domain events (the only inbound coupling).
         /** @var array<string, mixed> $map */
-        $map = (array) $this->app['config']->get('notifications.event_map', []);
+        $map = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('notifications.event_map', []);
         (new DomainEventSubscriber($this->app->make(Dispatcher::class), $map))->register();
     }
 }

@@ -47,7 +47,7 @@ final class MarketplaceServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
         $currency = (string) $config->get('marketplace.currency', 'NGN');
         $requireVerification = (bool) $config->get('marketplace.require_verification', true);
 

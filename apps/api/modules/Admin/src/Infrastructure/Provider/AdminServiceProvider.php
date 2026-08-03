@@ -49,7 +49,7 @@ final class AdminServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
 
         // Repositories → Eloquent adapters.
         $this->app->bind(AdminAccountRepository::class, EloquentAdminAccountRepository::class);
@@ -99,7 +99,7 @@ final class AdminServiceProvider extends ServiceProvider
         // Subscribe to published domain events for the audit trail (the only
         // inbound coupling — one-way, by event name).
         /** @var array<string, string> $map */
-        $map = (array) $this->app['config']->get('admin.audit_events', []);
+        $map = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('admin.audit_events', []);
         (new DomainEventSubscriber($this->app->make(Dispatcher::class), $map))->register();
     }
 }

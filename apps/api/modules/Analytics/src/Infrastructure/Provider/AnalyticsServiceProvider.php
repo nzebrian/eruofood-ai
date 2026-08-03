@@ -36,7 +36,7 @@ final class AnalyticsServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
 
         $this->app->bind(AnalyticsEventRepository::class, EloquentAnalyticsEventRepository::class);
         $this->app->bind(MetricRepository::class, EloquentMetricRepository::class);
@@ -68,7 +68,7 @@ final class AnalyticsServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__.'/../Persistence/Migration');
 
         /** @var array<string, mixed> $map */
-        $map = (array) $this->app['config']->get('analytics.event_map', []);
+        $map = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('analytics.event_map', []);
         (new DomainEventSubscriber($this->app->make(Dispatcher::class), $map))->register();
     }
 }

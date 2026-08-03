@@ -75,7 +75,7 @@ final class IdentityServiceProvider extends ServiceProvider
 
     private function bindPorts(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
 
         $this->app->bind(UserRepository::class, fn (Application $app): EloquentUserRepository
             => new EloquentUserRepository($app->make(EventBus::class)));
@@ -123,7 +123,7 @@ final class IdentityServiceProvider extends ServiceProvider
 
     private function bindServices(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
 
         $this->app->bind(RegistrationService::class, fn (Application $app): RegistrationService
             => new RegistrationService(
@@ -176,7 +176,7 @@ final class IdentityServiceProvider extends ServiceProvider
      */
     private function socialProviders(Application $app): array
     {
-        $config = $app['config'];
+        $config = $app->make(\Illuminate\Contracts\Config\Repository::class);
 
         return [
             'google' => new GoogleAuthenticator(

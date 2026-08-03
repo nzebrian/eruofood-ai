@@ -60,7 +60,7 @@ final class PaymentsServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
         $currency = (string) $config->get('payments.currency', 'NGN');
         $escrow = (bool) $config->get('payments.escrow.enabled', true);
         $lowBalance = (int) $config->get('payments.wallet.low_balance_minor', 50000);

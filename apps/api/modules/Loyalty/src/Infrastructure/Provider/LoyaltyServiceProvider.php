@@ -43,7 +43,7 @@ final class LoyaltyServiceProvider extends ServiceProvider
         // Tier ladder (config-driven, shared by the projector, service and presenter).
         $this->app->singleton(TierPolicy::class, function ($app): TierPolicy {
             /** @var list<array<string, mixed>> $tiers */
-            $tiers = (array) $app['config']->get('loyalty.tiers', []);
+            $tiers = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.tiers', []);
 
             return new TierPolicy(array_map(static fn (array $t): Tier => Tier::fromArray($t), $tiers));
         });
@@ -54,7 +54,7 @@ final class LoyaltyServiceProvider extends ServiceProvider
         $this->app->bind(LoyaltyStatsRepository::class, EloquentLoyaltyStatsRepository::class);
         $this->app->bind(ReferralRepository::class, EloquentReferralRepository::class);
         $this->app->singleton(RedemptionRepository::class, fn ($app): RedemptionRepository => new EloquentRedemptionRepository(
-            (string) $app['config']->get('loyalty.redemption_prefix', 'EFR'),
+            (string) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.redemption_prefix', 'EFR'),
         ));
 
         // Tier projector — the single writer of a member's tier.
@@ -70,7 +70,7 @@ final class LoyaltyServiceProvider extends ServiceProvider
             $app->make(TierPolicy::class),
             $app->make(TierProjector::class),
             $app->make(EventBus::class),
-            (int) $app['config']->get('loyalty.points_expiry_days', 365),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.points_expiry_days', 365),
         ));
 
         // Referral programme.
@@ -78,15 +78,15 @@ final class LoyaltyServiceProvider extends ServiceProvider
             $app->make(ReferralRepository::class),
             $app->make(LoyaltyService::class),
             $app->make(EventBus::class),
-            (int) $app['config']->get('loyalty.referral.referrer_points', 500),
-            (int) $app['config']->get('loyalty.referral.referee_points', 250),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.referral.referrer_points', 500),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.referral.referee_points', 250),
         ));
 
         // Event → points/referral translator.
         $this->app->bind(EventTranslator::class, function ($app): EventTranslator {
             /** @var array<string, array<string, mixed>> $earnRules */
-            $earnRules = (array) $app['config']->get('loyalty.earn_rules', []);
-            $referral = (array) $app['config']->get('loyalty.referral', []);
+            $earnRules = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.earn_rules', []);
+            $referral = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.referral', []);
 
             return new EventTranslator(
                 $app->make(LoyaltyService::class),
@@ -113,9 +113,9 @@ final class LoyaltyServiceProvider extends ServiceProvider
         // Subscribe to published order/review events (the only inbound coupling —
         // one-way, by event name) plus the referral qualifying event.
         /** @var array<string, mixed> $earnRules */
-        $earnRules = (array) $this->app['config']->get('loyalty.earn_rules', []);
+        $earnRules = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.earn_rules', []);
         /** @var array<string, mixed> $referral */
-        $referral = (array) $this->app['config']->get('loyalty.referral', []);
+        $referral = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('loyalty.referral', []);
         $events = array_keys($earnRules);
         $qualifying = (string) ($referral['qualifying_event'] ?? '');
         if ($qualifying !== '') {

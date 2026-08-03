@@ -30,7 +30,7 @@ final class CatalogServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
 
         $this->app->bind(CategoryRepository::class, EloquentCategoryRepository::class);
         $this->app->bind(IngredientRepository::class, EloquentIngredientRepository::class);

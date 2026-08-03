@@ -47,7 +47,7 @@ final class SearchServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
         $dims = (int) $config->get('search.embedding_dimensions', 64);
         $lexicalWeight = (float) $config->get('search.lexical_weight', 0.6);
 
@@ -59,15 +59,15 @@ final class SearchServiceProvider extends ServiceProvider
         $this->app->singleton(SearchIndexRepository::class, fn ($app): SearchIndexRepository => new EloquentSearchIndexRepository(
             $app->make(Ranker::class),
             $lexicalWeight,
-            (int) $app['config']->get('search.candidate_pool', 200),
-            (bool) $app['config']->get('search.use_pgvector', true),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.candidate_pool', 200),
+            (bool) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.use_pgvector', true),
         ));
         $this->app->bind(SavedSearchRepository::class, EloquentSavedSearchRepository::class);
         $this->app->bind(SearchAnalyticsRepository::class, EloquentSearchAnalyticsRepository::class);
 
         // Query understanding — AI-backed when enabled and available, else offline.
         $this->app->bind(QueryUnderstanding::class, function ($app): QueryUnderstanding {
-            if ((bool) $app['config']->get('search.ai_understanding', false) && $app->bound(AiAdvisor::class)) {
+            if ((bool) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.ai_understanding', false) && $app->bound(AiAdvisor::class)) {
                 return new AiQueryUnderstanding($app->make(AiAdvisor::class));
             }
 
@@ -96,7 +96,7 @@ final class SearchServiceProvider extends ServiceProvider
 
         // Query builder (synonyms + optional AI expansion + pagination clamping).
         $this->app->singleton(QueryBuilder::class, function ($app): QueryBuilder {
-            $cfg = $app['config'];
+            $cfg = $app->make(\Illuminate\Contracts\Config\Repository::class);
             /** @var list<list<string>> $synonyms */
             $synonyms = (array) $cfg->get('search.synonyms', []);
 
@@ -115,22 +115,22 @@ final class SearchServiceProvider extends ServiceProvider
             $app->make(EmbeddingGenerator::class),
             $app->make(SearchAnalyticsRepository::class),
             $app->make(SearchCache::class),
-            (int) $app['config']->get('search.cache_ttl', 120),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.cache_ttl', 120),
         ));
 
         // Autocomplete / suggestions.
         $this->app->singleton(AutocompleteService::class, fn ($app): AutocompleteService => new AutocompleteService(
             $app->make(SearchIndexRepository::class),
             $app->make(SearchAnalyticsRepository::class),
-            (int) $app['config']->get('search.suggestion_limit', 8),
-            (int) $app['config']->get('search.trending_days', 7),
-            (int) $app['config']->get('search.recent_limit', 10),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.suggestion_limit', 8),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.trending_days', 7),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.recent_limit', 10),
         ));
 
         // Event → index translator.
         $this->app->bind(EventIndexTranslator::class, function ($app): EventIndexTranslator {
             /** @var array<string, array{type: string, id_field: string}> $map */
-            $map = (array) $app['config']->get('search.index_events', []);
+            $map = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.index_events', []);
 
             return new EventIndexTranslator($app->make(SearchIndexManager::class), $map);
         });
@@ -148,7 +148,7 @@ final class SearchServiceProvider extends ServiceProvider
 
         // Subscribe to published domain events (the only inbound coupling).
         /** @var array<string, array{type: string, id_field: string}> $map */
-        $map = (array) $this->app['config']->get('search.index_events', []);
+        $map = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.index_events', []);
         (new DomainEventSubscriber($this->app->make(Dispatcher::class), $map))->register();
     }
 }

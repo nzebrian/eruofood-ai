@@ -59,7 +59,7 @@ final class PublicApiServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $config = $this->app['config'];
+        $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
 
         $this->app->bind(DeveloperRepository::class, EloquentDeveloperRepository::class);
         $this->app->bind(ApplicationRepository::class, EloquentApplicationRepository::class);
@@ -78,7 +78,7 @@ final class PublicApiServiceProvider extends ServiceProvider
         // SSRF/egress guard for webhook destinations (registration + send time).
         $this->app->singleton(WebhookUrlGuard::class, function ($app): WebhookUrlGuard {
             /** @var array<string, mixed> $sec */
-            $sec = (array) $app['config']->get('publicapi.webhooks.security', []);
+            $sec = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks.security', []);
 
             return new NetworkWebhookUrlGuard(
                 allowedSchemes: array_map('strtolower', (array) ($sec['allowed_schemes'] ?? ['https'])),
@@ -91,7 +91,7 @@ final class PublicApiServiceProvider extends ServiceProvider
 
         $this->app->bind(WebhookDispatcher::class, function ($app): WebhookDispatcher {
             /** @var array<string, mixed> $sec */
-            $sec = (array) $app['config']->get('publicapi.webhooks.security', []);
+            $sec = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks.security', []);
 
             return new HttpWebhookDispatcher(
                 $app->make(WebhookUrlGuard::class),
@@ -123,7 +123,7 @@ final class PublicApiServiceProvider extends ServiceProvider
         $this->app->bind(\EruoFood\PublicApi\Domain\Read\SearchReadPort::class, \EruoFood\PublicApi\Infrastructure\Read\SearchReadAdapter::class);
 
         $this->app->singleton(ScopeRegistry::class, fn ($app): ScopeRegistry => new ScopeRegistry(
-            (array) $app['config']->get('publicapi.scopes', []),
+            (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.scopes', []),
         ));
 
         $this->app->singleton(ApplicationService::class);
@@ -134,10 +134,10 @@ final class PublicApiServiceProvider extends ServiceProvider
             $app->make(ApplicationRepository::class),
             $app->make(SecretHasher::class),
             $app->make(EventBus::class),
-            (string) $app['config']->get('publicapi.key.prefix', 'efk'),
-            (string) $app['config']->get('publicapi.key.environment_tag', 'live'),
-            (int) $app['config']->get('publicapi.key.secret_bytes', 32),
-            (int) $app['config']->get('publicapi.key.default_ttl_days', 0),
+            (string) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.key.prefix', 'efk'),
+            (string) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.key.environment_tag', 'live'),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.key.secret_bytes', 32),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.key.default_ttl_days', 0),
         ));
 
         // OAuth2 authorization server + the authentication resolver chain. The
@@ -149,7 +149,7 @@ final class PublicApiServiceProvider extends ServiceProvider
             $app->make(\EruoFood\PublicApi\Domain\OAuth\RefreshTokenRepository::class),
             $app->make(\EruoFood\PublicApi\Domain\OAuth\AuthorizationCodeRepository::class),
             $app->make(SecretHasher::class),
-            (array) $app['config']->get('publicapi.oauth', []),
+            (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.oauth', []),
         ));
 
         $this->app->singleton(\EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi::class, fn ($app): \EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi => new \EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi([
@@ -159,15 +159,15 @@ final class PublicApiServiceProvider extends ServiceProvider
 
         $this->app->singleton(RateLimitService::class, fn ($app): RateLimitService => new RateLimitService(
             $app->make(RateLimiter::class),
-            (int) $app['config']->get('publicapi.rate_limit.per_minute', 120),
-            (int) $app['config']->get('publicapi.rate_limit.burst', 40),
-            (array) $app['config']->get('publicapi.rate_limit.endpoints', []),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.rate_limit.per_minute', 120),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.rate_limit.burst', 40),
+            (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.rate_limit.endpoints', []),
         ));
 
         $this->app->singleton(QuotaService::class, fn ($app): QuotaService => new QuotaService(
             $app->make(QuotaStore::class),
-            (int) $app['config']->get('publicapi.quota.daily', 10000),
-            (int) $app['config']->get('publicapi.quota.monthly', 200000),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.quota.daily', 10000),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.quota.monthly', 200000),
         ));
 
         $this->app->singleton(WebhookService::class, fn ($app): WebhookService => new WebhookService(
@@ -176,14 +176,14 @@ final class PublicApiServiceProvider extends ServiceProvider
             $app->make(WebhookSigner::class),
             $app->make(EventBus::class),
             $app->make(WebhookUrlGuard::class),
-            (array) $app['config']->get('publicapi.webhooks', []),
+            (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks', []),
         ));
 
         // The context middleware needs config scalars — bind it explicitly.
         $this->app->singleton(ApiRequestContext::class, fn ($app): ApiRequestContext => new ApiRequestContext(
             $app->make(EventBus::class),
-            (string) $app['config']->get('publicapi.current_version', 'v1'),
-            (array) $app['config']->get('publicapi.deprecated', []),
+            (string) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.current_version', 'v1'),
+            (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.deprecated', []),
         ));
 
         $this->commands([DispatchWebhookRetriesCommand::class]);
@@ -207,7 +207,7 @@ final class PublicApiServiceProvider extends ServiceProvider
 
         // Fan internal domain events out to subscribed webhooks (one-way, by name).
         /** @var array<string, string> $map */
-        $map = (array) $this->app['config']->get('publicapi.webhooks.events', []);
+        $map = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks.events', []);
         (new DomainEventSubscriber($this->app->make(Dispatcher::class), $map))->register();
     }
 }
