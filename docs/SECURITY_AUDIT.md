@@ -144,3 +144,21 @@ staging deployment:
 - **Static analysis note:** PHPStan level 8 reports 1885 pre-existing errors
   (model annotations/generics), not security defects. Tracked in
   `TECHNICAL_DEBT.md`; see `docs/GA_DECISION.md`.
+
+---
+
+# Milestone 20 update
+
+- **Penetration test plan finalised:** `docs/PENETRATION_TEST_PLAN.md` now defines
+  full scope (auth, OAuth2, API keys, BOLA/IDOR, RBAC, admin, payments, wallet,
+  Public API, webhooks, SSRF, uploads, injection, rate limiting, session, token,
+  privilege escalation), CVSS severity handling (Critical/High/Medium/Low/
+  Informational) and a binding release policy: **no unresolved Critical**, **no
+  unresolved High without signed security acceptance**. An external pentest remains
+  **NOT PERFORMED / NOT VALIDATED**.
+- **Egress:** application vs infrastructure enforcement finalised in
+  `docs/INFRA_EGRESS_POLICY.md` (app-layer SSRF guard EXECUTED — PASSED 25/25;
+  infra enforcement provider-dependent, NOT VALIDATED).
+- **Secret rotation** procedure documented in `docs/INCIDENT_RESPONSE.md` §5.
+- **Release security gate:** `release.yml` runs Gitleaks + `composer audit` +
+  `npm audit` as mandatory gates; production tag blocked on High/Critical.

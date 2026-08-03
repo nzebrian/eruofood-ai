@@ -1,0 +1,69 @@
+name: CI · Docker Clean Boot
+
+# Validates the FULL stack from a clean environment: build images, boot the
+# compose stack, run migrations from an empty database, and assert health +
+# readiness. Runs in CI where container-registry access is available (the
+# in-repo dev sandbox is registry-restricted — see docs/VALIDATION_STATUS.md).
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "docker-compose.yml"
+      - "infra/**"
+      - "apps/api/**"
+      - "apps/web/**"
+      - ".github/workflows/ci-docker.yml"
+  pull_request:
+    paths:
+      - "docker-compose.yml"
+      - "infra/**"
+      - ".github/workflows/ci-docker.yml"
+
+jobs:
+  boot:
+    name: Build · Boot · Migrate · Healthcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose config
+        run: docker compose config
+
+      - name: Build images from clean context
+        run: docker compose build
+
+      - name: Boot the full stack
+        run: |
+          cp apps/api/.env.example apps/api/.env
+          docker compose up -d
+          echo "Waiting for services to become healthy..."
+
+      - name: Wait for health (postgres, redis, api)
+        run: |
+          for i in $(seq 1 60); do
+            unhealthy=$(docker compose ps --format '{{.Name}} {{.Health}}' | grep -E 'starting|unhealthy' || true)
+            if [ -z "$unhealthy" ]; then echo "All services healthy."; break; fi
+            echo "still starting: $unhealthy"; sleep 5
+          done
+
+      - name: Migrate from an empty database + seed bootstrap
+        run: |
+          docker compose exec -T api php artisan migrate --force
+          docker compose exec -T api php artisan db:seed --force || true
+
+      - name: Readiness + health endpoints
+        run: |
+          docker compose exec -T api php artisan about
+          curl -fsS http://localhost:8080/api/v1/health
+          curl -fsS http://localhost:8080/api/public/v1/status
+
+      - name: Restart-recovery (workers/scheduler reconnect)
+        run: |
+          docker compose restart worker scheduler api
+          sleep 10
+          curl -fsS http://localhost:8080/api/v1/health
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v

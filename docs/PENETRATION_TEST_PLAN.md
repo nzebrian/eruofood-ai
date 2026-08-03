@@ -142,8 +142,40 @@ analysis. Automated scanners are a starting point, not the deliverable.
 - Retest of all High/Critical findings after remediation.
 - Attestation letter suitable for enterprise customer due-diligence.
 
-## 5. Exit criteria for production GA
-- **Zero** open Critical or High findings.
+## 5. Severity classification & handling (CVSS 3.1)
+
+| Severity | CVSS | Handling | Release impact |
+|---|---|---|---|
+| **CRITICAL** | 9.0–10.0 | Fix immediately; block release; hotfix + retest before any deploy | **Hard block** — no release with an open Critical |
+| **HIGH** | 7.0–8.9 | Fix before GA; block release unless an explicit, written **security acceptance** (risk owner + expiry + compensating control) is signed | **Block** unless formally accepted in writing |
+| **MEDIUM** | 4.0–6.9 | Triage; scheduled remediation with owner + due date; may ship with a tracked plan | Does not block, but must be logged |
+| **LOW** | 0.1–3.9 | Backlog with a target milestone | Does not block |
+| **INFORMATIONAL** | 0.0 | Note as hardening advice; no obligation | Does not block |
+
+## 6. Release policy (binding)
+
+- **No unresolved CRITICAL findings** may exist at release. Non-negotiable.
+- **No unresolved HIGH findings** without an explicit **security acceptance**
+  recorded by the risk owner (name, date, rationale, compensating control, and an
+  expiry by which it must be remediated).
+- All MEDIUM findings triaged with an owner and due date before GA.
+- These rules are enforced as a manual release gate in
+  `docs/GA_RELEASE_CHECKLIST.md` and by the Incident Commander / security owner
+  sign-off, in addition to the automated gates in `.github/workflows/release.yml`.
+
+## 7. Exit criteria for production GA
+- **Zero** open Critical or High findings (High only shippable with signed
+  acceptance per §6).
 - All Medium findings triaged with an accepted remediation plan and owner.
 - SSRF infra acceptance test (§3, API7) passed from a real worker pod.
-- Retest attestation received.
+- Retest attestation received for every High/Critical that was remediated.
+
+---
+
+## Status
+
+An external, independent penetration test is **NOT VALIDATED / NOT PERFORMED**.
+It remains a pre-production external requirement and must be carried out by an
+independent security professional against staging before GA. This document is the
+scope and rules of engagement for that test — it is not evidence that a test
+occurred.

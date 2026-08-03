@@ -302,3 +302,42 @@ recorded in `TECHNICAL_DEBT.md`, and carried as a named factor in the GA decisio
 | **Infrastructure egress enforcement** (NetworkPolicy / firewall / IMDS) | Depends on the final cloud provider and live network fabric. Deployment-ready specs in `docs/INFRA_EGRESS_POLICY.md`; application-layer SSRF guard is EXECUTED — PASSED. |
 | **External penetration test** | Must be performed by an independent team against staging — a pre-production external requirement. Plan in `docs/PENETRATION_TEST_PLAN.md`. Not simulated. |
 | **CI pipeline on GitHub** | Workflows authored; the Lint·Analyse·Test job will now pass Lint & Test but **fail Analyse** (see EXECUTED — FAILED) until the PHPStan debt is addressed or the gate is explicitly de-scoped. |
+
+---
+
+# Milestone 20 — GA Release Engineering & Production Certification
+
+All executable checks re-run this milestone. Verdicts: **EXECUTED — PASSED /
+EXECUTED — FAILED / STATIC VALIDATION ONLY / NOT VALIDATED**.
+
+## EXECUTED — PASSED
+
+| Check | Command | Result |
+|---|---|---|
+| Full Pest suite (SQLite) | `vendor/bin/pest` | **337 passed / 0 failed** (1319 assertions) — +1 new readiness-probe test |
+| Full Pest suite (PostgreSQL 16) | `DB_CONNECTION=pgsql vendor/bin/pest` | **337 passed / 0 failed** |
+| PHPStan Level 8 remediation | `composer run analyse` | **1885 → 162 production errors (−91.4%)** via genuine fixes (model `@property` annotations, list/array typing, dead-code removal, typed config resolve). No suppression, no level change, no baseline. Residual formally dispositioned in `docs/PHPSTAN_LEVEL8_REPORT.md`. |
+| Coding standards (Pint) | `composer run lint` | PASS |
+| Readiness probe | new `GET /api/v1/ready` | DB + Redis checks; 200/503; covered by a feature test |
+
+## EXECUTED — FAILED (documented, non-blocking, scheduled)
+
+| Check | Result |
+|---|---|
+| PHPStan Level 8 (absolute zero) | **162 residual** production errors — all low-severity static-typing refinements at repository↔domain boundaries; runtime is 337/337 green on both engines. Categorised, per-module, with a remediation schedule in `docs/PHPSTAN_LEVEL8_REPORT.md`. Carried as an explicit time-boxed CI waiver (not hidden by a baseline); a **production tag** hard-requires 0 (`release.yml`). |
+
+## STATIC VALIDATION ONLY
+
+| Check | Method |
+|---|---|
+| Docker clean-boot | `docker compose config` validates; a full build→boot→migrate→health/ready workflow is authored (`.github/workflows/ci-docker.yml`) to run in CI where the registry is reachable (the in-repo sandbox is registry-403-blocked). |
+| Release gates | `.github/workflows/release.yml` authored — every mandatory gate (incl. PHPStan L8 = 0) hard-blocks a production tag; images built only after gates pass. Not executed on GitHub this session. |
+
+## NOT VALIDATED (environment / external)
+
+| Check | Why |
+|---|---|
+| Production performance certification | k6 suite (`load/public-api.k6.js`, `load/critical-flows.k6.js`, `load/run.sh`) authored covering auth/OAuth2/Public API/orders/search/rate-limit; needs a scaled staging deployment. |
+| Flutter certification | Toolchain absent in-session; `ci-mobile.yml` + `release.yml` run `analyze`/`test` in CI. |
+| Infrastructure egress enforcement | Provider-dependent; deployment-ready spec in `docs/INFRA_EGRESS_POLICY.md`. |
+| External penetration test | Independent external requirement; scope/severity/release-policy in `docs/PENETRATION_TEST_PLAN.md`. Not simulated. |

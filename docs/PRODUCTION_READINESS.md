@@ -146,3 +146,26 @@ a GO, none of which are core-functionality defects:
 5. **Infrastructure egress enforcement** applied per `docs/INFRA_EGRESS_POLICY.md`.
 6. **External penetration test** per `docs/PENETRATION_TEST_PLAN.md` (independent
    team; zero open High/Critical to exit).
+
+---
+
+# Milestone 20 update — Release Engineering & Certification
+
+- **PHPStan L8:** 1885 → 162 production errors (−91.4%), genuine fixes only;
+  residual dispositioned (`docs/PHPSTAN_LEVEL8_REPORT.md`) with a per-module
+  remediation schedule and a hard production-tag gate at 0.
+- **Runtime suite:** 337/337 on SQLite and PostgreSQL 16 (readiness-probe test
+  added). Pint green.
+- **Release engineering delivered:** production/staging env templates
+  (`infra/env/`), `docs/PRODUCTION_DEPLOYMENT.md` (expand/contract migrations,
+  zero-downtime rollout), `ROLLBACK_PLAN.md`, `BACKUP_RESTORE.md`,
+  `DISASTER_RECOVERY.md`, `INCIDENT_RESPONSE.md` (incl. secret rotation),
+  `GA_RELEASE_CHECKLIST.md`.
+- **CI/CD:** `release.yml` (tag-gated, all mandatory gates hard-block, images built
+  only after gates pass) and `ci-docker.yml` (clean build→boot→migrate→health).
+- **Readiness probe:** `GET /api/v1/ready` (DB + Redis) added for orchestration.
+- **Still NOT VALIDATED:** production performance baseline (needs staging),
+  Flutter execution (toolchain absent; runs in CI), full Docker boot (registry
+  blocked in-session; runs in CI), infra egress enforcement, external pentest.
+
+Full GO/NO-GO in `docs/GA_CERTIFICATION.md`.

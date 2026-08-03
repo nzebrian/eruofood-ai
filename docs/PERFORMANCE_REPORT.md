@@ -119,3 +119,19 @@ SCENARIO=soak   k6 run --out json=soak.json   load/public-api.k6.js
 | Error rate (5xx/401/403) | — | — | — | — |
 | Rate-limited (429) rate | — | — | — | — |
 | Redis / PostgreSQL / app CPU & memory | — | — | — | — |
+
+---
+
+## Milestone 20 update
+
+- **Coverage extended:** `load/critical-flows.k6.js` added for the authenticated
+  and write flows (internal auth register/login/refresh, OAuth2 token, order
+  lifecycle, rate limiting) alongside `load/public-api.k6.js` (read paths). A
+  runner (`load/run.sh`) executes the full profile matrix (baseline/load/stress/
+  spike/soak) and exports JSON. See `load/README.md`.
+- **Certification status: NOT VALIDATED.** No scaled staging deployment exists in
+  this environment, so the production baseline (multi-worker p50/p95/p99, RPS,
+  error rate, CPU/memory, PostgreSQL & Redis latency, queue throughput under load)
+  is still unmeasured. The functional latency floor from Milestone 19 stands
+  (warm p50 26.5 / p95 31.9 / p99 35.1 ms; Redis ~0.043 ms/op). No numbers are
+  fabricated.
