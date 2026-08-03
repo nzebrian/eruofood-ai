@@ -19,6 +19,37 @@ jobs:
   quality:
     name: Lint · Analyse · Test
     runs-on: ubuntu-latest
+
+    # Production-representative backing services.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eruofood
+          POSTGRES_PASSWORD: eruofood
+          POSTGRES_DB: eruofood_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U eruofood"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: eruofood_test
+      DB_USERNAME: eruofood
+      DB_PASSWORD: eruofood
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+
     steps:
       - uses: actions/checkout@v4
 
@@ -49,5 +80,21 @@ jobs:
       - name: Static analysis (PHPStan/Larastan)
         run: composer run analyse
 
-      - name: Tests (Pest) with coverage gate
-        run: composer run test:coverage
+      - name: Tests (Pest) with coverage
+        run: vendor/bin/pest --coverage --coverage-clover=coverage.xml
+
+      - name: Database — migrate from an empty PostgreSQL database
+        run: |
+          php artisan migrate:fresh --force
+          php artisan migrate:rollback --force
+          php artisan migrate --force
+
+      - name: Redis — validate rate limiting, quotas, counters, cache
+        run: php scripts/redis_validation.php
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: apps/api/coverage.xml

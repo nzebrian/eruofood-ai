@@ -183,3 +183,50 @@ through Pest here — see below.
   measured**. Marked *Not Validated* — a load-test environment was unavailable.
 
 These are recorded as GA blockers in `PUBLIC_API_GA_CHECKLIST.md`.
+
+---
+
+# Milestone 18 — Runtime Validation, CI & GA Readiness
+
+A real PHP 8.4 / Laravel 12.64 runtime was established (composer install
+completed via git-source through the session proxy) and the full test suite was
+**executed for the first time**. Verdicts use EXECUTED — PASSED / EXECUTED —
+FAILED / STATIC VALIDATION ONLY / NOT VALIDATED. Environment details are in
+`PRODUCTION_READINESS.md`.
+
+## EXECUTED — PASSED
+
+| Check | Command | Result |
+|---|---|---|
+| Composer install (real, full) | `composer install --prefer-source` | 90 packages; Laravel + Pest + PHPStan present. |
+| PostgreSQL migrations from empty DB | `artisan migrate` (db `eruofood_fresh`) | 101 migrations; 104 tables, 405 indexes; rollback + re-migrate clean. |
+| Redis primitives | `php scripts/redis_validation.php` | **9/9** — rate limit, quota, cache TTL/forget, failure-recovery, and **2000/2000** atomic increments across 20 concurrent processes. |
+| OAuth2 DB-backed security | `php scripts/oauth_db_validation.php` | **18/18** — PKCE, single-use codes, redirect validation, refresh rotation + reuse detection, client isolation, scope/ expiry/ revocation. |
+| OpenAPI contract | `redocly lint` | 0 errors (411 style warnings). |
+| SSRF / OAuth / BOLA unit harnesses (M17) | standalone php | 25/25, 18/18, 6/6 (still green). |
+
+## EXECUTED — with failures
+
+| Check | Command | Result |
+|---|---|---|
+| Full Pest suite (SQLite canonical) | `vendor/bin/pest` | **328 passed / 7 failed** (1295 assertions, ~43s). 8 real defects found & fixed (started at 111 failing). The 7 remaining are itemised in `PRODUCTION_READINESS.md` (2 SQLite numeric-coercion, 1 ordering, 3 feature-logic, mirrored count). |
+| Full Pest suite (PostgreSQL) | `DB_CONNECTION=pgsql vendor/bin/pest` | 303 passed / 32 failed — the extra failures are feature-test **fixtures** using non-UUID ids (`u1`, `system`) that only PostgreSQL's strict `uuid` typing rejects; production ids are UUIDs. Noted as test-fixture debt. |
+
+## STATIC VALIDATION ONLY
+
+- **CI pipeline**: `ci-api.yml` upgraded to provision PostgreSQL 16 + Redis 7
+  services and run standards, static analysis, coverage, fresh-migration, and
+  the Redis validation script; `ci-web`, `ci-mobile`, `contracts`, `security`
+  present. Authored, not executed on GitHub this session.
+- **Docker stack**: `docker compose config` merges & validates all 9 services;
+  Dockerfiles present. Full build+boot not run here.
+
+## NOT VALIDATED
+
+- **Load / stress / soak** and the **performance baseline** (p50/p95/p99, RPS,
+  error rate): no k6 binary or deployed target. Script provided at
+  `load/public-api.k6.js`. See `PERFORMANCE_REPORT.md`.
+- **Flutter** analyze/test: SDK absent.
+- **Infrastructure webhook egress** controls and an **external penetration
+  test**: require production infra / an external team. Checklist in
+  `SECURITY_AUDIT.md`.

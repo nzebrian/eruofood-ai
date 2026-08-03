@@ -89,3 +89,24 @@ Legend: ✅ done · 🟡 done in code, runtime validation pending · ⛔ GA bloc
    in addition to the in-app SSRF guard.
 5. Penetration-test the OAuth2 flows end-to-end against the database-backed
    implementation.
+
+---
+
+## Milestone 18 update — GA blockers re-assessed against a real runtime
+
+The prior blockers were validated in a live PHP 8.4 / PostgreSQL 16 / Redis 7
+environment. Status now (see `PRODUCTION_READINESS.md` for evidence):
+
+| Prior GA blocker | Status now |
+|---|---|
+| Run the full Pest suite in CI | **EXECUTED** — 328/335 pass on SQLite; 8 real defects fixed. CI upgraded with PG+Redis services (runs on GitHub). |
+| Validate Redis (rate limit, quota, idempotency) against real Redis | **EXECUTED — PASSED** (9/9, incl. 2000/2000 concurrent atomic increments). |
+| Load test + p50/p95/p99 baseline | **NOT VALIDATED** — k6 script provided; needs a staging run. |
+| Webhook egress at the network layer | **NOT VALIDATED** — documented in `WEBHOOKS.md` / `SECURITY_AUDIT.md`; infra task. |
+| Pen-test the DB-backed OAuth2 flow | **EXECUTED — PASSED** for the automated security checks (18/18); external pen-test checklist prepared in `SECURITY_AUDIT.md`. |
+| Migrate from an empty PostgreSQL database | **EXECUTED — PASSED** (101 migrations, rollback clean). |
+
+Remaining before full-platform production GO: performance baseline, the 3
+genuine feature-logic test failures (Notifications channel preference, Analytics
+revenue KPI, Search unpublish removal), full Docker stack boot, Flutter
+analyze/test, and the infra egress + external pen-test.
