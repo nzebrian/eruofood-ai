@@ -1,0 +1,57 @@
+# EruoFood AI — STAGING override (production-equivalent topology).
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+# Staging mirrors production settings with non-production data/secrets. It is the
+# target for the k6 performance certification (docs/PERFORMANCE_REPORT.md) and the
+# external penetration test (docs/PENETRATION_TEST_PLAN.md). TLS/HTTPS is
+# terminated at the ingress/LB in front of nginx (staging.api.eruofood.ai);
+# populate env from infra/env/staging.env.example via your secret store — never
+# commit real secrets.
+services:
+  api:
+    env_file: [infra/env/staging.env.example]
+    environment:
+      APP_ENV: staging
+      APP_DEBUG: "false"
+      LOG_LEVEL: info
+    deploy:
+      replicas: 2                       # production runs N behind the LB
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  worker:
+    env_file: [infra/env/staging.env.example]
+    environment:
+      APP_ENV: staging
+      APP_DEBUG: "false"
+    deploy:
+      replicas: 2
+
+  scheduler:
+    env_file: [infra/env/staging.env.example]
+    environment:
+      APP_ENV: staging
+      APP_DEBUG: "false"
+    deploy:
+      replicas: 1                       # singleton — never scale the scheduler
+
+  nginx:
+    # In production TLS terminates at the ingress/LB; staging can front nginx
+    # with a TLS-terminating proxy. Health checked via /api/v1/health.
+    environment:
+      APP_ENV: staging
+
+  web:
+    environment:
+      NODE_ENV: production               # built React bundle, same as prod
+
+  postgres:
+    # Staging uses a managed PostgreSQL in cloud staging; this local service is
+    # for compose-based staging only. Production is managed PG16 + replica + PITR.
+    environment:
+      POSTGRES_DB: eruofood_staging
+
+  redis:
+    # Production uses managed Redis with HA (see docs/REDIS_RESILIENCE.md §5);
+    # enable AOF for queue durability even in compose staging.
+    command: ["redis-server", "--appendonly", "yes"]

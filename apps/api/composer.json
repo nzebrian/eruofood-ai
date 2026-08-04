@@ -1,0 +1,98 @@
+{
+    "name": "eruofood/api",
+    "type": "project",
+    "description": "EruoFood AI — Laravel 12 modular monolith (Clean Architecture + DDD).",
+    "keywords": ["laravel", "ddd", "clean-architecture", "modular-monolith"],
+    "license": "proprietary",
+    "require": {
+        "php": "^8.4",
+        "laravel/framework": "^12.0",
+        "laravel/tinker": "^2.10",
+        "firebase/php-jwt": "^6.10",
+        "pragmarx/google2fa": "^8.0",
+        "league/flysystem-aws-s3-v3": "^3.0"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.23",
+        "laravel/pint": "^1.18",
+        "larastan/larastan": "^3.0",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.5",
+        "pestphp/pest": "^3.5",
+        "pestphp/pest-plugin-laravel": "^3.0",
+        "phpstan/phpstan": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/",
+            "EruoFood\\Shared\\": "modules/Shared/src/",
+            "EruoFood\\Platform\\": "modules/Platform/src/",
+            "EruoFood\\Identity\\": "modules/Identity/src/",
+            "EruoFood\\Catalog\\": "modules/Catalog/src/",
+            "EruoFood\\Ai\\": "modules/Ai/src/",
+            "EruoFood\\Nutrition\\": "modules/Nutrition/src/",
+            "EruoFood\\Marketplace\\": "modules/Marketplace/src/",
+            "EruoFood\\Commerce\\": "modules/Commerce/src/",
+            "EruoFood\\Payments\\": "modules/Payments/src/",
+            "EruoFood\\Notifications\\": "modules/Notifications/src/",
+            "EruoFood\\Analytics\\": "modules/Analytics/src/",
+            "EruoFood\\Admin\\": "modules/Admin/src/",
+            "EruoFood\\Search\\": "modules/Search/src/",
+            "EruoFood\\Support\\": "modules/Support/src/",
+            "EruoFood\\Reviews\\": "modules/Reviews/src/",
+            "EruoFood\\Loyalty\\": "modules/Loyalty/src/",
+            "EruoFood\\PublicApi\\": "modules/PublicApi/src/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/",
+            "EruoFood\\Shared\\Tests\\": "modules/Shared/tests/",
+            "EruoFood\\Platform\\Tests\\": "modules/Platform/tests/",
+            "EruoFood\\Identity\\Tests\\": "modules/Identity/tests/",
+            "EruoFood\\Catalog\\Tests\\": "modules/Catalog/tests/",
+            "EruoFood\\Ai\\Tests\\": "modules/Ai/tests/",
+            "EruoFood\\Nutrition\\Tests\\": "modules/Nutrition/tests/",
+            "EruoFood\\Marketplace\\Tests\\": "modules/Marketplace/tests/",
+            "EruoFood\\Commerce\\Tests\\": "modules/Commerce/tests/",
+            "EruoFood\\Payments\\Tests\\": "modules/Payments/tests/",
+            "EruoFood\\Notifications\\Tests\\": "modules/Notifications/tests/",
+            "EruoFood\\Analytics\\Tests\\": "modules/Analytics/tests/",
+            "EruoFood\\Admin\\Tests\\": "modules/Admin/tests/",
+            "EruoFood\\Search\\Tests\\": "modules/Search/tests/",
+            "EruoFood\\Support\\Tests\\": "modules/Support/tests/",
+            "EruoFood\\Reviews\\Tests\\": "modules/Reviews/tests/",
+            "EruoFood\\Loyalty\\Tests\\": "modules/Loyalty/tests/",
+            "EruoFood\\PublicApi\\Tests\\": "modules/PublicApi/tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "@php artisan package:discover --ansi"
+        ],
+        "lint": "pint --test",
+        "lint:fix": "pint",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "test": "pest",
+        "test:coverage": "pest --coverage --min=80",
+        "check": ["@lint", "@analyse", "@test"]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

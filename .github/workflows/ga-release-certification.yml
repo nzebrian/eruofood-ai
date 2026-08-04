@@ -1,0 +1,134 @@
+name: GA Release Certification
+
+# The single consolidated GA gate. Production deployment is blocked unless EVERY
+# mandatory automated gate below is green. Run this before cutting a production
+# tag; the final `certified` job only passes when all required jobs pass.
+#
+# Gates: Backend Runtime · PHPStan L8 · PostgreSQL · Redis · Docker Clean Boot ·
+#        React · Flutter · OpenAPI · Security · (Staging Smoke + Performance are
+#        confirmed via inputs because they require a deployed staging target).
+
+on:
+  workflow_dispatch:
+    inputs:
+      staging_smoke_passed:
+        description: "Staging smoke tests green? (staging-deploy.yml)"
+        type: boolean
+        default: false
+      performance_passed:
+        description: "Performance thresholds met on staging? (performance-certification.yml)"
+        type: boolean
+        default: false
+      pentest_cleared:
+        description: "External pentest: no open Critical/High? (independent assessor)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ga-release-cert-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend Runtime · PHPStan L8 · PostgreSQL · Redis · Security
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/api } }
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: eruofood, POSTGRES_PASSWORD: eruofood, POSTGRES_DB: eruofood_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U eruofood" --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_DATABASE: eruofood_test
+      DB_USERNAME: eruofood
+      DB_PASSWORD: eruofood
+      REDIS_HOST: 127.0.0.1
+      CACHE_STORE: redis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: "8.4", extensions: "pdo_pgsql, redis, intl, zip, bcmath, pcntl", tools: "composer:v2" }
+      - name: Composer validate — MANDATORY
+        run: composer validate --strict --no-check-publish
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: cp .env.example .env && php artisan key:generate
+      - name: Coding standards (Pint) — MANDATORY
+        run: composer run lint
+      - name: PHPStan Level 8 — MANDATORY
+        run: composer run analyse
+      - name: Full Pest suite on PostgreSQL — MANDATORY
+        run: vendor/bin/pest
+      - name: PostgreSQL fresh migrate/rollback/re-migrate — MANDATORY
+        run: |
+          php artisan migrate:fresh --force
+          php artisan migrate:rollback --force
+          php artisan migrate --force
+      - name: Redis integration — MANDATORY
+        run: php scripts/redis_validation.php
+      - name: Security — composer audit — MANDATORY
+        run: composer audit
+
+  web:
+    name: React · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: "npm", cache-dependency-path: apps/web/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+
+  openapi:
+    name: OpenAPI · Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx --yes @redocly/cli@1 lint packages/api-contracts/openapi.yaml
+
+  security-scan:
+    name: Security · Secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  docker-clean-boot:
+    name: Docker Clean Boot
+    uses: ./.github/workflows/ga-docker-certification.yml
+
+  flutter:
+    name: Flutter Certification
+    uses: ./.github/workflows/ga-flutter-certification.yml
+
+  certified:
+    name: GA CERTIFIED (all mandatory gates green)
+    needs: [backend, web, openapi, security-scan, docker-clean-boot, flutter]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert deploy-time confirmations
+        run: |
+          echo "Automated gates: PASSED (backend, web, openapi, security, docker, flutter)."
+          fail=0
+          [ "${{ inputs.staging_smoke_passed }}" = "true" ] || { echo "::error::Staging smoke NOT confirmed"; fail=1; }
+          [ "${{ inputs.performance_passed }}"   = "true" ] || { echo "::error::Performance thresholds NOT confirmed"; fail=1; }
+          if [ "${{ inputs.pentest_cleared }}" != "true" ]; then
+            echo "::warning::External pentest not cleared — status is TECHNICALLY READY, PENDING INDEPENDENT SECURITY ASSESSMENT."
+          fi
+          exit $fail
+      - name: Result
+        run: echo "GA CERTIFICATION COMPLETE — see docs/PRODUCTION_RELEASE_CHECKLIST.md for the GO evidence."

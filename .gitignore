@@ -1,0 +1,67 @@
+# ---- OS / Editor ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+*.iml
+
+# ---- Environment / Secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- Node / Web ----
+node_modules/
+apps/web/dist/
+apps/web/.vite/
+packages/**/node_modules/
+packages/**/dist/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- PHP / Laravel ----
+apps/api/vendor/
+apps/api/node_modules/
+apps/api/public/build/
+apps/api/public/hot
+apps/api/storage/*.key
+apps/api/storage/framework/cache/*
+apps/api/storage/framework/sessions/*
+apps/api/storage/framework/views/*
+apps/api/storage/logs/*
+apps/api/bootstrap/cache/*.php
+apps/api/.phpunit.result.cache
+apps/api/.phpunit.cache/
+
+# ---- Flutter / Dart ----
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/build/
+apps/mobile/.pub-cache/
+apps/mobile/.pub/
+apps/mobile/ios/Pods/
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+*.g.dart
+*.freezed.dart
+
+# ---- Docker ----
+.docker-data/
+docker-compose.local.yml
+
+# ---- Build / Coverage / Tooling ----
+coverage/
+*.log
+.cache/
+.turbo/
+.php-cs-fixer.cache
+
+# ---- Always keep directory placeholders ----
+!**/.gitkeep
+dump.rdb

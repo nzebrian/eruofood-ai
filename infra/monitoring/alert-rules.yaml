@@ -1,0 +1,111 @@
+# EruoFood AI — Prometheus alerting rules (deployment-ready).
+# Wire the metrics endpoints (app exporter, postgres_exporter, redis_exporter,
+# node_exporter, blackbox_exporter) then load this file into Prometheus.
+# Thresholds align with docs/INCIDENT_RESPONSE.md §4 and PERFORMANCE_REPORT.md.
+groups:
+  - name: eruofood-api
+    rules:
+      - alert: ApiHighErrorRate
+        expr: sum(rate(http_requests_total{job="eruofood-api",status=~"5.."}[5m]))
+              / sum(rate(http_requests_total{job="eruofood-api"}[5m])) > 0.01
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "API 5xx error rate > 1% (5m)"
+          runbook: "docs/INCIDENT_RESPONSE.md"
+
+      - alert: ApiHighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="eruofood-api"}[5m])) by (le)) > 0.4
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency > 400ms (10m)"
+
+      - alert: ApiHighLatencyP99
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="eruofood-api"}[5m])) by (le)) > 0.8
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "API p99 latency > 800ms (10m)" }
+
+      - alert: ApiReadinessProbeFailing
+        expr: probe_success{job="blackbox",instance=~".*/api/v1/ready"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations: { summary: "Readiness probe failing (DB/Redis unreachable)" }
+
+      - alert: AuthFailureSpike
+        expr: sum(rate(auth_failures_total{job="eruofood-api"}[5m])) > 20
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Authentication failure spike (possible credential stuffing)"
+          runbook: "docs/PENETRATION_TEST_PLAN.md (API2)"
+
+  - name: eruofood-postgres
+    rules:
+      - alert: PostgresDown
+        expr: pg_up{job="postgres"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations: { summary: "PostgreSQL unreachable" }
+      - alert: PostgresTooManyConnections
+        expr: sum(pg_stat_activity_count) by (instance) > (pg_settings_max_connections * 0.8)
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "PostgreSQL connections > 80% of max" }
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag_seconds > 30
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "PostgreSQL replica lag > 30s (RPO risk)" }
+
+  - name: eruofood-redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up{job="redis"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Redis unreachable — rate limiting fails closed"
+          runbook: "docs/REDIS_RESILIENCE.md"
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Redis memory > 90%" }
+      - alert: RedisEvictingKeys
+        expr: rate(redis_evicted_keys_total[5m]) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Redis evicting keys (check counters DB uses noeviction)" }
+
+  - name: eruofood-queue-workers
+    rules:
+      - alert: QueueBacklogGrowing
+        expr: eruofood_queue_depth > 1000
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Queue depth > 1000 for 10m (worker throughput?)" }
+      - alert: WorkerDown
+        expr: eruofood_active_workers < 1
+        for: 3m
+        labels: { severity: critical }
+        annotations: { summary: "No active queue workers" }
+      - alert: SchedulerHeartbeatMissing
+        expr: time() - eruofood_scheduler_last_run_timestamp > 300
+        for: 0m
+        labels: { severity: critical }
+        annotations: { summary: "Scheduler heartbeat missing > 5m" }
+
+  - name: eruofood-infra
+    rules:
+      - alert: DiskPressure
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Disk free < 15%" }
+      - alert: ObjectStorageErrors
+        expr: rate(eruofood_s3_errors_total[5m]) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Object-storage errors (media uploads degrading)" }

@@ -1,0 +1,41 @@
+name: CI · Mobile (Flutter)
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["apps/mobile/**", ".github/workflows/ci-mobile.yml"]
+  pull_request:
+    paths: ["apps/mobile/**", ".github/workflows/ci-mobile.yml"]
+
+concurrency:
+  group: ci-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/mobile
+
+jobs:
+  quality:
+    name: Analyse · Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare env asset
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test

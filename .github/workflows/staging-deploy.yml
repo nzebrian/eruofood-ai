@@ -1,0 +1,138 @@
+name: Staging Deploy
+
+# Builds + publishes the images and deploys the production-like staging stack.
+# Secrets are injected from the GitHub "staging" Environment — NOTHING is
+# hard-coded. Two deploy backends are supported; the workflow picks whichever
+# secret set is present:
+#   A) Kubernetes  — secrets.KUBE_CONFIG (+ manifests under infra/k8s/)
+#   B) Compose/SSH — secrets.STAGING_SSH_HOST/USER/KEY (+ docker-compose.staging.yml)
+#
+# Required Environment (staging) secrets — see docs/STAGING_DEPLOYMENT.md:
+#   REGISTRY / REGISTRY_USER / REGISTRY_TOKEN  (or defaults to GHCR + GITHUB_TOKEN)
+#   Kubernetes path:  KUBE_CONFIG, STAGING_NAMESPACE
+#   Compose/SSH path: STAGING_SSH_HOST, STAGING_SSH_USER, STAGING_SSH_KEY
+#   App runtime (delivered to the platform's own secret store, never echoed):
+#     STAGING_APP_KEY, STAGING_DB_* , STAGING_REDIS_*, STAGING_JWT_SECRET,
+#     STAGING_AWS_* , STAGING_MAIL_* , STAGING_OAUTH_* ...
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (tag/branch/SHA) to deploy"
+        default: "main"
+  workflow_call:
+    inputs:
+      ref: { type: string, default: "main" }
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ${{ vars.REGISTRY || 'ghcr.io' }}
+  IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX || github.repository }}
+
+jobs:
+  build-images:
+    name: Build & push images (api, nginx, web)
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - id: meta
+        run: echo "tag=staging-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - name: Registry login
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER || github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Build & push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/php/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api:${{ steps.meta.outputs.tag }}
+      - name: Build & push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/node/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/web:${{ steps.meta.outputs.tag }}
+
+  deploy:
+    name: Deploy staging (${{ needs.build-images.outputs.tag }})
+    needs: build-images
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Select deploy backend
+        id: backend
+        run: |
+          if [ -n "${{ secrets.KUBE_CONFIG }}" ]; then echo "mode=k8s" >> "$GITHUB_OUTPUT";
+          elif [ -n "${{ secrets.STAGING_SSH_HOST }}" ]; then echo "mode=ssh" >> "$GITHUB_OUTPUT";
+          else echo "::error::No deploy backend secrets configured (KUBE_CONFIG or STAGING_SSH_*)"; exit 1; fi
+
+      # --- A) Kubernetes ---
+      - name: Deploy via kubectl
+        if: steps.backend.outputs.mode == 'k8s'
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          NS: ${{ secrets.STAGING_NAMESPACE }}
+          TAG: ${{ needs.build-images.outputs.tag }}
+        run: |
+          mkdir -p ~/.kube && echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+          # Secrets are expected to already live in the cluster's secret store
+          # (External Secrets / sealed-secrets); we only roll the image tags.
+          kubectl -n "$NS" apply -f infra/k8s/            # NetworkPolicy, etc.
+          kubectl -n "$NS" set image deploy/api    api=${REGISTRY}/${IMAGE_PREFIX}/api:$TAG || true
+          kubectl -n "$NS" set image deploy/worker worker=${REGISTRY}/${IMAGE_PREFIX}/api:$TAG || true
+          kubectl -n "$NS" set image deploy/web    web=${REGISTRY}/${IMAGE_PREFIX}/web:$TAG || true
+          # Expand-only migrations as a one-off Job (single runner).
+          kubectl -n "$NS" apply -f infra/k8s/jobs/migrate.yaml || echo "add infra/k8s/jobs/migrate.yaml"
+          kubectl -n "$NS" rollout status deploy/api --timeout=180s
+
+      # --- B) Compose over SSH ---
+      - name: Deploy via docker compose over SSH
+        if: steps.backend.outputs.mode == 'ssh'
+        env:
+          SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          TAG: ${{ needs.build-images.outputs.tag }}
+        run: |
+          install -m 600 /dev/stdin key <<< "$SSH_KEY"
+          ssh -o StrictHostKeyChecking=accept-new -i key "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+            set -euo pipefail
+            cd /opt/eruofood
+            git fetch --all && git checkout --force "${{ inputs.ref }}"
+            # .env is provisioned on the host from the secret store (infra/env/staging.env.example)
+            docker compose -f docker-compose.yml -f docker-compose.staging.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --wait
+            docker compose exec -T api php artisan migrate --force
+          REMOTE
+
+      - name: Post-deploy smoke test
+        run: |
+          test -n "${{ vars.STAGING_URL }}" || { echo "::warning::set STAGING_URL to enable smoke test"; exit 0; }
+          curl -fsS "${{ vars.STAGING_URL }}/api/v1/health"
+          curl -fsS "${{ vars.STAGING_URL }}/api/v1/ready"
+          curl -fsS "${{ vars.STAGING_URL }}/api/public/v1/status"

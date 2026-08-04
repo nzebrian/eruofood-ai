@@ -1,0 +1,21 @@
+# Normalize line endings to LF on checkin
+* text=auto eol=lf
+
+# Explicit binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+
+# Keep shell/scripts LF
+*.sh text eol=lf
+
+# Exclude dev-only paths from language stats / archive exports
+docs/**            linguist-documentation
+*.md               linguist-documentation
+infra/**           linguist-vendored
+.github/export-ignore export-ignore

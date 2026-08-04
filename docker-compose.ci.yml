@@ -1,0 +1,55 @@
+# =============================================================================
+# EruoFood AI — CI / clean-boot overlay (production-shaped, NO bind mounts).
+#
+# WHY THIS FILE EXISTS
+# `docker compose up` (no -f flags) auto-merges docker-compose.override.yml,
+# whose `./apps/api:/var/www/html` bind mount shadows the image's baked
+# vendor/ tree. On a fresh GitHub-hosted runner the host's apps/api/vendor
+# does not exist (it is git-ignored), so the mount overlays an EMPTY vendor
+# directory and `php artisan` dies with:
+#     require(/var/www/html/vendor/autoload.php): No such file or directory
+#
+# The clean-boot certification must therefore run the self-contained images
+# with NO source bind mount. Compose only auto-loads the dev override when no
+# `-f` is given, so CI composes files EXPLICITLY:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml <cmd>
+#
+# That selects base + this overlay and never the dev override, so the vendor/
+# baked into the image at build time is exactly what runs.
+#
+# Because there is no bind mount, the container has no host `.env`; Laravel
+# boots purely from the real environment variables injected below. The APP_KEY
+# here is a THROWAWAY CI key — never a production secret.
+# =============================================================================
+
+x-ci-runtime-env: &ci-runtime-env
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_KEY: base64:HiQiUx7CQYk1O1e/tnXNWQCO8qOCFZoq5FP7VReNyHU=
+  APP_URL: http://localhost:8080
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: info
+  # Base x-app-env sets DB_HOST/PORT/DATABASE/USERNAME/PASSWORD + REDIS_* but not
+  # the connection selectors. Laravel 12 defaults DB_CONNECTION to sqlite and the
+  # cache/queue/session stores to the database driver, so pin them explicitly or
+  # a no-.env container silently targets the wrong backend.
+  DB_CONNECTION: pgsql
+  REDIS_CLIENT: phpredis
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: redis
+  BROADCAST_CONNECTION: null
+
+services:
+  api:
+    environment:
+      <<: *ci-runtime-env
+
+  worker:
+    environment:
+      <<: *ci-runtime-env
+
+  scheduler:
+    environment:
+      <<: *ci-runtime-env

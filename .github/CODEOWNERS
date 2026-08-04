@@ -1,0 +1,11 @@
+# EruoFood AI — code ownership for review routing.
+# Replace the placeholder team with real GitHub teams/handles.
+
+*                       @eruofood/maintainers
+
+/apps/api/              @eruofood/backend
+/apps/web/              @eruofood/frontend
+/apps/mobile/           @eruofood/mobile
+/packages/api-contracts/ @eruofood/backend @eruofood/frontend
+/infra/                 @eruofood/platform
+/.github/               @eruofood/platform
