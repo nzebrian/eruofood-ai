@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Catalog\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $user_id
  * @property int $rating
  * @property string|null $comment
+ * @property DateTimeInterface $created_at
+ * @property DateTimeInterface $updated_at
  */
 final class RecipeReviewModel extends Model
 {

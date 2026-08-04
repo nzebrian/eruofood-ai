@@ -152,17 +152,17 @@ final readonly class VendorService
 
     public function reject(string $id): Vendor
     {
-        return $this->applyAdmin($id, static fn (Vendor $v): mixed => $v->reject());
+        return $this->applyAdmin($id, static fn (Vendor $v) => $v->reject());
     }
 
     public function suspend(string $id): Vendor
     {
-        return $this->applyAdmin($id, static fn (Vendor $v): mixed => $v->suspend());
+        return $this->applyAdmin($id, static fn (Vendor $v) => $v->suspend());
     }
 
     public function setFeatured(string $id, bool $featured): Vendor
     {
-        return $this->applyAdmin($id, static fn (Vendor $v): mixed => $v->setFeatured($featured));
+        return $this->applyAdmin($id, static fn (Vendor $v) => $v->setFeatured($featured));
     }
 
     /** Load a vendor the actor is allowed to manage (owner or admin). */

@@ -31,8 +31,8 @@ final class EloquentLoyaltyStatsRepository implements LoyaltyStatsRepository
     public function pointsByType(): array
     {
         /** @var array<string, int> $rows */
-        $rows = LedgerEntryModel::query()->select('type', DB::raw('sum(points) as p'))
-            ->groupBy('type')->pluck('p', 'type')->map(fn ($v): int => (int) $v)->all();
+        $rows = LedgerEntryModel::query()->selectRaw('type, sum(points) as p')
+            ->groupBy('type')->toBase()->pluck('p', 'type')->map(fn ($v): int => (int) $v)->all();
 
         return $rows;
     }
@@ -40,8 +40,8 @@ final class EloquentLoyaltyStatsRepository implements LoyaltyStatsRepository
     public function membersByTier(): array
     {
         /** @var array<string, int> $rows */
-        $rows = AccountModel::query()->select('tier_key', DB::raw('count(*) as c'))
-            ->groupBy('tier_key')->pluck('c', 'tier_key')->map(fn ($v): int => (int) $v)->all();
+        $rows = AccountModel::query()->selectRaw('tier_key, count(*) as c')
+            ->groupBy('tier_key')->toBase()->pluck('c', 'tier_key')->map(fn ($v): int => (int) $v)->all();
 
         return $rows;
     }
@@ -50,7 +50,7 @@ final class EloquentLoyaltyStatsRepository implements LoyaltyStatsRepository
     {
         $rows = RedemptionModel::query()
             ->where('status', '!=', RedemptionStatus::Cancelled->value)
-            ->select('reward_id', DB::raw('count(*) as redemptions'), DB::raw('sum(points_spent) as points'))
+            ->selectRaw('reward_id, count(*) as redemptions, sum(points_spent) as points')
             ->groupBy('reward_id')
             ->orderByDesc('redemptions')
             ->limit($limit)

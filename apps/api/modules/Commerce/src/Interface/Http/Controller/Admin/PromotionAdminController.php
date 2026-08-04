@@ -41,7 +41,7 @@ final readonly class PromotionAdminController
             (string) $data['name'],
             PromotionType::from((string) $data['type']),
             (int) $data['value'],
-            array_map('strval', $data['product_ids'] ?? []),
+            array_values(array_map('strval', $data['product_ids'] ?? [])),
             isset($data['starts_at']) ? new DateTimeImmutable((string) $data['starts_at']) : null,
             isset($data['ends_at']) ? new DateTimeImmutable((string) $data['ends_at']) : null,
             (bool) ($data['flash_sale'] ?? false),

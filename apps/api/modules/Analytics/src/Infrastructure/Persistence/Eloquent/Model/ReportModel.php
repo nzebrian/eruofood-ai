@@ -11,8 +11,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $id
  * @property string $key
  * @property string $title
- * @property DateTimeInterface $range_from
- * @property DateTimeInterface $range_to
+ * @property string $range_from
+ * @property string $range_to
  * @property array<array-key, mixed> $columns
  * @property array<array-key, mixed> $rows
  * @property string $status

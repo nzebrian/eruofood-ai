@@ -47,7 +47,6 @@ final readonly class PaymentService implements PaymentInitiator
         private LedgerService $ledger,
         private PaymentNotifier $notifier,
         private EventBus $events,
-        private bool $escrowEnabled,
     ) {
     }
 
@@ -190,11 +189,13 @@ final readonly class PaymentService implements PaymentInitiator
         return $this->payments->findById($paymentId) ?? throw PaymentsNotFound::of('payment', $paymentId);
     }
 
+    /** @return Paginated<Payment> */
     public function forPayer(string $userId, int $page, int $perPage): Paginated
     {
         return $this->payments->forPayer($userId, $page, $perPage);
     }
 
+    /** @return Paginated<Payment> */
     public function all(?PaymentStatus $status, int $page, int $perPage): Paginated
     {
         return $this->payments->all($status, $page, $perPage);

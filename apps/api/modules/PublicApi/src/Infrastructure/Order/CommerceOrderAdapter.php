@@ -72,7 +72,7 @@ final readonly class CommerceOrderAdapter implements OrderPort
             $o->reference(),
             $o->status()->value,
             $o->customerUserId(),
-            $o->total()->minor,
+            $o->total()->minorUnits,
             $o->total()->currency,
             $o->isPickup(),
             $o->note(),

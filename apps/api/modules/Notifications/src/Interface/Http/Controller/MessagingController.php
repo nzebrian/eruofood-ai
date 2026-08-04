@@ -47,7 +47,7 @@ final readonly class MessagingController
         $conversation = $this->messaging->startConversation(
             $this->currentUserId($request),
             ConversationType::from((string) $data['type']),
-            array_map('strval', $data['participant_ids']),
+            array_values(array_map('strval', $data['participant_ids'])),
             isset($data['subject']) ? (string) $data['subject'] : null,
             isset($data['context_ref']) ? (string) $data['context_ref'] : null,
         );

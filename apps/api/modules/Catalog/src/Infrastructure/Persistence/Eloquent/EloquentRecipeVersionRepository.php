@@ -27,7 +27,7 @@ final class EloquentRecipeVersionRepository implements RecipeVersionRepository
             ->map(static fn (RecipeVersionModel $m): array => [
                 'version' => $m->version,
                 'snapshot' => $m->snapshot,
-                'created_at' => $m->created_at->toAtomString(),
+                'created_at' => $m->created_at->format(DATE_ATOM),
             ])
             ->all());
     }

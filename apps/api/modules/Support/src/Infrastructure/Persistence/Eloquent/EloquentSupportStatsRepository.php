@@ -20,8 +20,8 @@ final class EloquentSupportStatsRepository implements SupportStatsRepository
     public function queueCounts(): array
     {
         /** @var array<string, int> $rows */
-        $rows = TicketModel::query()->select('status', DB::raw('count(*) as c'))
-            ->groupBy('status')->pluck('c', 'status')->map(fn ($v): int => (int) $v)->all();
+        $rows = TicketModel::query()->selectRaw('status, count(*) as c')
+            ->groupBy('status')->toBase()->pluck('c', 'status')->map(fn ($v): int => (int) $v)->all();
 
         return $rows;
     }

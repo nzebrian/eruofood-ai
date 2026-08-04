@@ -19,8 +19,8 @@ final class EloquentReviewStatsRepository implements ReviewStatsRepository
     public function countsByStatus(): array
     {
         /** @var array<string, int> $rows */
-        $rows = ReviewModel::query()->select('status', DB::raw('count(*) as c'))
-            ->groupBy('status')->pluck('c', 'status')->map(fn ($v): int => (int) $v)->all();
+        $rows = ReviewModel::query()->selectRaw('status, count(*) as c')
+            ->groupBy('status')->toBase()->pluck('c', 'status')->map(fn ($v): int => (int) $v)->all();
 
         return $rows;
     }
@@ -30,7 +30,7 @@ final class EloquentReviewStatsRepository implements ReviewStatsRepository
         /** @var array<int|string, int> $rows */
         $rows = ReviewModel::query()->where('status', ReviewStatus::Published->value)
             ->select('rating', DB::raw('count(*) as c'))
-            ->groupBy('rating')->pluck('c', 'rating')->map(fn ($v): int => (int) $v)->all();
+            ->groupBy('rating')->toBase()->pluck('c', 'rating')->map(fn ($v): int => (int) $v)->all();
 
         $distribution = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0];
         foreach ($rows as $stars => $count) {
@@ -58,7 +58,7 @@ final class EloquentReviewStatsRepository implements ReviewStatsRepository
         /** @var array<string, int> $rows */
         $rows = ReviewModel::query()->where('status', ReviewStatus::Published->value)
             ->select('subject_type', DB::raw('count(*) as c'))
-            ->groupBy('subject_type')->pluck('c', 'subject_type')->map(fn ($v): int => (int) $v)->all();
+            ->groupBy('subject_type')->toBase()->pluck('c', 'subject_type')->map(fn ($v): int => (int) $v)->all();
 
         $out = [];
         foreach ($types as $type) {

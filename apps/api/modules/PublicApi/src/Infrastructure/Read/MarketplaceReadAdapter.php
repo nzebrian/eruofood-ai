@@ -56,10 +56,10 @@ final readonly class MarketplaceReadAdapter implements RestaurantReadPort
 
     public function menu(string $restaurantId): array
     {
-        return array_values(array_map(
+        return array_map(
             fn (MenuItem $i): MenuItemResource => $this->toMenuItem($i),
             $this->items->forVendor($restaurantId, onlyAvailable: true),
-        ));
+        );
     }
 
     private function toRestaurant(Vendor $v): RestaurantResource

@@ -86,10 +86,10 @@ final readonly class ReportGenerator
      */
     private function timeSeriesRows(string $metric, DateRange $range, bool $useSum): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (DataPoint $p): array => [$p->bucket, $p->value],
             $this->metrics->series($metric, $range, Granularity::Day, $useSum),
-        ));
+        );
     }
 
     /**

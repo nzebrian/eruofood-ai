@@ -97,7 +97,7 @@ final class AiServiceProvider extends ServiceProvider
     /** @param array<string, mixed> $ai */
     private function bindCrossCuttingAdapters(array $ai): void
     {
-        /** @var array{pricing: array<string, array{input: float, output: float}>} $ai */
+        /** @var array{pricing: array<string, array{input: float, output: float}>, cache: array{enabled: bool, store: ?string, prefix: string}, rate_limit: array{enabled: bool, max_requests: int, window_seconds: int}} $ai */
         $this->app->bind(CostCalculator::class, fn (): TableCostCalculator => new TableCostCalculator($ai['pricing']));
 
         $this->app->bind(AiResponseCache::class, function (Application $app) use ($ai): AiResponseCache {

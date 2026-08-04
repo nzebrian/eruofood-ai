@@ -58,7 +58,6 @@ final class SearchServiceProvider extends ServiceProvider
         // Repositories.
         $this->app->singleton(SearchIndexRepository::class, fn ($app): SearchIndexRepository => new EloquentSearchIndexRepository(
             $app->make(Ranker::class),
-            $lexicalWeight,
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.candidate_pool', 200),
             (bool) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.use_pgvector', true),
         ));

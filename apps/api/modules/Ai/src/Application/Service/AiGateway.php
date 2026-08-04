@@ -152,7 +152,7 @@ final readonly class AiGateway
             }
         }
 
-        throw $lastError ?? AiGenerationFailed::because('unknown provider error');
+        throw $lastError;
     }
 
     private function backoff(int $attempt): void

@@ -173,7 +173,11 @@ final class Review
 
     public function voteHelpful(bool $helpful): void
     {
-        $helpful ? $this->helpfulYes++ : $this->helpfulNo++;
+        if ($helpful) {
+            $this->helpfulYes++;
+        } else {
+            $this->helpfulNo++;
+        }
     }
 
     public function markVerified(): void

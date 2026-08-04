@@ -30,7 +30,7 @@ final readonly class Google2FaAuthenticator implements TwoFactorAuthenticator
 
     public function verify(string $secret, string $code): bool
     {
-        return $this->engine->verifyKey($secret, $code, $this->window);
+        return (bool) $this->engine->verifyKey($secret, $code, $this->window);
     }
 
     public function generateRecoveryCodes(int $count): array

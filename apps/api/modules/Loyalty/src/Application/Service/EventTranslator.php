@@ -42,8 +42,8 @@ final readonly class EventTranslator
             $this->applyEarnRule($rule, $vars);
         }
 
-        if ($name === ($this->referralQualifying['event'] ?? null)) {
-            $userId = $this->stringField($vars, $this->referralQualifying['user_field'] ?? 'userId');
+        if ($name === ($this->referralQualifying['event'])) {
+            $userId = $this->stringField($vars, $this->referralQualifying['user_field']);
             if ($userId !== null) {
                 $this->referrals->qualify($userId);
             }

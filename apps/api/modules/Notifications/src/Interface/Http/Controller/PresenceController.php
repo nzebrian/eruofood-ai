@@ -35,7 +35,7 @@ final readonly class PresenceController
     public function show(Request $request): JsonResponse
     {
         $data = $request->validate(['user_ids' => ['array'], 'user_ids.*' => ['uuid']]);
-        $ids = array_map('strval', $data['user_ids'] ?? [$this->currentUserId($request)]);
+        $ids = array_values(array_map('strval', $data['user_ids'] ?? [$this->currentUserId($request)]));
 
         return $this->data(['presence' => $this->realtime->presenceOfMany($ids)]);
     }

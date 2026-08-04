@@ -10,7 +10,6 @@ use EruoFood\Support\Domain\Crm\CustomerProfile;
 use EruoFood\Support\Domain\Crm\CustomerProfileRepository;
 use EruoFood\Support\Domain\Crm\CustomerSegment;
 use EruoFood\Support\Infrastructure\Persistence\Eloquent\Model\CustomerProfileModel;
-use Illuminate\Support\Facades\DB;
 
 final class EloquentCustomerProfileRepository implements CustomerProfileRepository
 {
@@ -47,8 +46,8 @@ final class EloquentCustomerProfileRepository implements CustomerProfileReposito
     public function segmentCounts(): array
     {
         /** @var array<string, int> $rows */
-        $rows = CustomerProfileModel::query()->select('segment', DB::raw('count(*) as c'))
-            ->groupBy('segment')->pluck('c', 'segment')->map(fn ($v): int => (int) $v)->all();
+        $rows = CustomerProfileModel::query()->selectRaw('segment, count(*) as c')
+            ->groupBy('segment')->toBase()->pluck('c', 'segment')->map(fn ($v): int => (int) $v)->all();
 
         return $rows;
     }

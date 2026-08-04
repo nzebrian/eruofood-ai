@@ -105,7 +105,11 @@ final class Article
 
     public function vote(bool $helpful): void
     {
-        $helpful ? $this->helpfulYes++ : $this->helpfulNo++;
+        if ($helpful) {
+            $this->helpfulYes++;
+        } else {
+            $this->helpfulNo++;
+        }
     }
 
     public function id(): string

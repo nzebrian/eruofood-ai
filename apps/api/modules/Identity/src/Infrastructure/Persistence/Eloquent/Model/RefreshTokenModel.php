@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property DateTimeInterface $expires_at
  * @property DateTimeInterface|null $revoked_at
  * @property DateTimeInterface|null $last_used_at
+ * @property DateTimeInterface $created_at
+ * @property DateTimeInterface|null $updated_at
  */
 final class RefreshTokenModel extends Model
 {

@@ -98,3 +98,44 @@ baseline. A **new** Level-8 error introduced by future code is a genuine
 regression and must be fixed before merge. This satisfies "0 *unexplained*
 application errors": every remaining error is explained, categorised, and
 scheduled here.
+
+---
+
+## Milestone 21 — FINAL CLEARANCE: PHPStan Level 8 = 0 errors
+
+The residual documented above has been **fully remediated**. `composer run analyse`
+now reports **0 errors** at Level 8 across `app/` + every module's `src/`.
+
+**How the remaining 162 → 0 was achieved (all genuine fixes; no level lowering, no
+broad baseline, no global suppression, no `mixed`-to-silence, no weakened contracts):**
+
+- **`@property` completeness:** added the columns the generator missed (timestamps,
+  ALTER-migration columns like `subject_user_id`, `embedding_vec`); corrected
+  date-as-string columns (`bucket_date`, `range_from/to`) that the code round-trips
+  as strings; JSON columns typed `array<array-key, mixed>`.
+- **`list<X>` vs `array<int,X>` at factory/return/Paginated boundaries:** wrapped
+  the genuinely non-list producers (`array_map`, JSON reads) in `array_values()`;
+  removed the wrappers PHPStan proved already-list.
+- **Domain-event listeners:** guarded with `instanceof DomainEvent` so translator
+  `handle(DomainEvent)` receives the right type.
+- **Aggregate queries:** `->select('col', DB::raw(...))` → `->selectRaw(...)`;
+  alias `pluck()` via `->toBase()`.
+- **Framework typing:** contextual `->give($int)` wrapped in a closure; `$app['config']`
+  → typed `make(Config\Repository::class)`; connection typed as concrete
+  `Illuminate\Database\Connection` where schema/driver methods are used; cache
+  `remember()` fed a `Closure`; typed config-shape helper methods on the PublicApi
+  provider.
+- **Genuine cleanups:** removed dead constructor-injected fields (with their provider
+  wiring) flagged `property.onlyWritten`; removed redundant `array_values`/`?? default`
+  on always-present offsets; converted result-unused ternaries to `if/else`; fixed
+  dead comparisons; added missing generics/iterable value-types; bounded a
+  `@template T of object`; `Money::$minor` → `$minorUnits`.
+
+**Post-remediation verification (Milestone 21):**
+- `composer run analyse` → **[OK] No errors** (Level 8).
+- `composer run lint` (Pint) → **PASS**.
+- Full Pest suite → **337 passed / 0 failed** on SQLite (and PostgreSQL — see
+  `VALIDATION_STATUS.md`). No regression.
+
+The CI/production-tag hard gate `PHPStan Level 8 = 0` is now satisfied by the code
+itself, not by any waiver.

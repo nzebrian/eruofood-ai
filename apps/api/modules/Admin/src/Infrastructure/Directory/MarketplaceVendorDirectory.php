@@ -53,7 +53,7 @@ final readonly class MarketplaceVendorDirectory implements VendorDirectory
             ->map(fn ($r): VendorSummary => $this->toSummary((array) $r))
             ->all();
 
-        return new Paginated($rows, $total, $page, $perPage);
+        return new Paginated(array_values($rows), $total, $page, $perPage);
     }
 
     private function available(): bool

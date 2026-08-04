@@ -58,7 +58,7 @@ final readonly class IdentityUserDirectory implements UserDirectory
             ->map(fn ($r): UserSummary => $this->toSummary((array) $r))
             ->all();
 
-        return new Paginated($rows, $total, $page, $perPage);
+        return new Paginated(array_values($rows), $total, $page, $perPage);
     }
 
     private function available(): bool

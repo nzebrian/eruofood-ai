@@ -76,7 +76,7 @@ final class RbacController
             'roles' => ['required', 'array'],
             'roles.*' => ['string', 'in:'.implode(',', array_map(static fn (AdminRole $r): string => $r->value, AdminRole::cases()))],
         ]);
-        $roles = array_map(static fn (string $r): AdminRole => AdminRole::from($r), $data['roles']);
+        $roles = array_values(array_map(static fn (string $r): AdminRole => AdminRole::from($r), $data['roles']));
 
         return $this->data($this->presenter->account($this->accounts->grant($actor, $userId, $roles)));
     }

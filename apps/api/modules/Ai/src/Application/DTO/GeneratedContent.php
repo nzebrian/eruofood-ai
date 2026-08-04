@@ -21,6 +21,7 @@ final readonly class GeneratedContent
     ) {
     }
 
+    /** @param array<string, mixed> $data */
     public static function structured(array $data, AiCompletionResult $meta): self
     {
         return new self($data, null, $meta);

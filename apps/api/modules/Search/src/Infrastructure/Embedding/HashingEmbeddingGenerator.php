@@ -55,9 +55,7 @@ final readonly class HashingEmbeddingGenerator implements EmbeddingGenerator
         return array_values(array_filter($parts, static fn (string $t): bool => mb_strlen($t) > 1));
     }
 
-    /**
-     * @param list<float> $vector
-     */
+    /** @param array<int, float> $vector */
     private function add(array &$vector, string $feature): void
     {
         $hash = crc32($feature);
@@ -67,7 +65,7 @@ final readonly class HashingEmbeddingGenerator implements EmbeddingGenerator
     }
 
     /**
-     * @param list<float> $vector
+     * @param array<int, float> $vector
      * @return list<float>
      */
     private function normalise(array $vector): array
@@ -77,10 +75,10 @@ final readonly class HashingEmbeddingGenerator implements EmbeddingGenerator
             $magnitude += $value * $value;
         }
         if ($magnitude <= 0.0) {
-            return $vector;
+            return array_values($vector);
         }
         $magnitude = sqrt($magnitude);
 
-        return array_map(static fn (float $v): float => $v / $magnitude, $vector);
+        return array_values(array_map(static fn (float $v): float => $v / $magnitude, $vector));
     }
 }

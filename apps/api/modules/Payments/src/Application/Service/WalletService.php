@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace EruoFood\Payments\Application\Service;
 
 use DateTimeImmutable;
-use EruoFood\Payments\Application\Port\PaymentNotifier;
 use EruoFood\Payments\Domain\Enum\TransactionType;
 use EruoFood\Payments\Domain\Enum\WalletOwnerType;
 use EruoFood\Payments\Domain\Exception\PaymentsInvalidState;
@@ -27,7 +26,6 @@ final readonly class WalletService
 {
     public function __construct(
         private WalletRepository $wallets,
-        private PaymentNotifier $notifier,
         private EventBus $events,
         private string $currency,
         private int $lowBalanceThreshold,
@@ -109,6 +107,7 @@ final readonly class WalletService
         $this->credit($platform, $amountMinor, TransactionType::EscrowHold, $orderId, 'Escrow hold');
     }
 
+    /** @return Paginated<\EruoFood\Payments\Domain\Wallet\WalletTransaction> */
     public function statement(string $walletId, int $page, int $perPage): Paginated
     {
         return $this->wallets->statement($walletId, $page, $perPage);

@@ -29,7 +29,7 @@ final readonly class BusinessHours
             if (! in_array($d, self::DAYS, true)) {
                 throw new InvalidArgumentException('Weekday must be 0-6.');
             }
-            if (! self::isTime((string) ($window['open'] ?? '')) || ! self::isTime((string) ($window['close'] ?? ''))) {
+            if (! self::isTime((string) $window['open']) || ! self::isTime((string) $window['close'])) {
                 throw new InvalidArgumentException('Hours must be HH:MM.');
             }
             $clean[$d] = ['open' => (string) $window['open'], 'close' => (string) $window['close']];

@@ -8,8 +8,6 @@ namespace EruoFood\Search\Application\Port;
  * A small read-through cache for search results, keyed by the query's
  * deterministic cache key. Decouples the pipeline from the framework cache; a
  * null adapter disables caching (e.g. in tests).
- *
- * @template T
  */
 interface SearchCache
 {

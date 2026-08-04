@@ -49,9 +49,9 @@ final readonly class Batch
         return new self(
             (string) $data['batch_number'],
             (int) $data['quantity'],
-            isset($data['expires_at']) && $data['expires_at'] !== null
+            isset($data['expires_at'])
                 ? new DateTimeImmutable((string) $data['expires_at']) : null,
-            isset($data['received_at']) && $data['received_at'] !== null
+            isset($data['received_at'])
                 ? new DateTimeImmutable((string) $data['received_at']) : null,
         );
     }

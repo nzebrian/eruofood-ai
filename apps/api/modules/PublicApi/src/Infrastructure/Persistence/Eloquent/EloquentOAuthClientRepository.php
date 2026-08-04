@@ -58,7 +58,7 @@ final class EloquentOAuthClientRepository implements OAuthClientRepository
             $m->hashed_secret,
             (bool) $m->confidential,
             $grants,
-            array_map('strval', (array) ($m->redirect_uris ?? [])),
+            array_values(array_map('strval', (array) ($m->redirect_uris ?? []))),
             ScopeSet::fromArray($m->allowed_scopes ?? []),
             DateTimeImmutable::createFromInterface($m->created_at),
         );

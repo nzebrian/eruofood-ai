@@ -62,7 +62,6 @@ final class PaymentsServiceProvider extends ServiceProvider
     {
         $config = $this->app->make(\Illuminate\Contracts\Config\Repository::class);
         $currency = (string) $config->get('payments.currency', 'NGN');
-        $escrow = (bool) $config->get('payments.escrow.enabled', true);
         $lowBalance = (int) $config->get('payments.wallet.low_balance_minor', 50000);
 
         // Repositories → Eloquent adapters.
@@ -110,7 +109,6 @@ final class PaymentsServiceProvider extends ServiceProvider
         ] as $needsCurrency) {
             $this->app->when($needsCurrency)->needs('$currency')->give($currency);
         }
-        $this->app->when(PaymentService::class)->needs('$escrowEnabled')->give(fn () => $escrow);
         $this->app->when(WalletService::class)->needs('$lowBalanceThreshold')->give(fn () => $lowBalance);
     }
 

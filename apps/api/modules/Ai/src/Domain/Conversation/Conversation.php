@@ -77,10 +77,10 @@ final class Conversation extends AggregateRoot
      */
     public function toAiMessages(): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (ConversationMessage $m): AiMessage => $m->toAiMessage(),
             $this->messages,
-        ));
+        );
     }
 
     public function id(): string

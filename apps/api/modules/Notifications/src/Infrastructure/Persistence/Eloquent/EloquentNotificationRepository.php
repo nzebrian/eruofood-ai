@@ -15,7 +15,6 @@ use EruoFood\Notifications\Domain\Notification\NotificationRepository;
 use EruoFood\Notifications\Domain\ValueObject\RenderedContent;
 use EruoFood\Notifications\Infrastructure\Persistence\Eloquent\Model\NotificationModel;
 use EruoFood\Shared\Domain\Paginated;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 final class EloquentNotificationRepository implements NotificationRepository, DeliveryStatsRepository
@@ -104,8 +103,8 @@ final class EloquentNotificationRepository implements NotificationRepository, De
     public function countByStatus(): array
     {
         /** @var array<string, int> $rows */
-        $rows = NotificationModel::query()->select('status', DB::raw('count(*) as c'))
-            ->groupBy('status')->pluck('c', 'status')->map(fn ($v): int => (int) $v)->all();
+        $rows = NotificationModel::query()->selectRaw('status, count(*) as c')
+            ->groupBy('status')->toBase()->pluck('c', 'status')->map(fn ($v): int => (int) $v)->all();
 
         return $rows;
     }
@@ -113,8 +112,8 @@ final class EloquentNotificationRepository implements NotificationRepository, De
     public function countByChannel(): array
     {
         /** @var array<string, int> $rows */
-        $rows = NotificationModel::query()->select('channel', DB::raw('count(*) as c'))
-            ->groupBy('channel')->pluck('c', 'channel')->map(fn ($v): int => (int) $v)->all();
+        $rows = NotificationModel::query()->selectRaw('channel, count(*) as c')
+            ->groupBy('channel')->toBase()->pluck('c', 'channel')->map(fn ($v): int => (int) $v)->all();
 
         return $rows;
     }

@@ -15,10 +15,6 @@ use Illuminate\Support\Str;
 
 final class EloquentDeliveryRepository implements DeliveryRepository
 {
-    public function __construct(private readonly string $currency)
-    {
-    }
-
     public function nextIdentity(): string
     {
         return (string) Str::orderedUuid();

@@ -98,7 +98,7 @@ final readonly class EloquentUserRepository implements UserRepository
             $paginator->items(),
         );
 
-        return new Paginated($items, $paginator->total(), $page, $perPage);
+        return new Paginated(array_values($items), $paginator->total(), $page, $perPage);
     }
 
     private function toDomain(UserModel $m): User

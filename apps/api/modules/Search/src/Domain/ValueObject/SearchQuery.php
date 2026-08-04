@@ -44,6 +44,7 @@ final readonly class SearchQuery
     }
 
     /** The full set of lexical terms to match (deduplicated, lower-cased). */
+    /** @return list<string> */
     public function lexicalTerms(): array
     {
         $terms = array_map(

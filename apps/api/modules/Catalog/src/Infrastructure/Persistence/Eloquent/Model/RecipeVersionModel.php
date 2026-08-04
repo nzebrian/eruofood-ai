@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Catalog\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $recipe_id
  * @property int $version
  * @property array<array-key, mixed> $snapshot
+ * @property DateTimeInterface $created_at
  */
 final class RecipeVersionModel extends Model
 {

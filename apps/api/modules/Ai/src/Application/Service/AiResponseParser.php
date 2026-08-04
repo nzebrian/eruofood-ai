@@ -29,7 +29,6 @@ final readonly class AiResponseParser
         $candidate = $this->extractJson($text);
 
         try {
-            /** @var array<mixed> $decoded */
             $decoded = json_decode($candidate, true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             throw AiGenerationFailed::unparseable();
@@ -85,7 +84,7 @@ final readonly class AiResponseParser
             return null;
         }
         if ($brace === false) {
-            return $bracket === false ? null : $bracket;
+            return $bracket;
         }
         if ($bracket === false) {
             return $brace;

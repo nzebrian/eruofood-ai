@@ -22,6 +22,7 @@ interface ArticleRepository
     public function search(?string $term, ?string $category, ?ArticleStatus $status, int $page, int $perPage): Paginated;
 
     /** Distinct category names in use. @return list<string> */
+    /** @return list<string> */
     public function categories(): array;
 
     public function save(Article $article): void;

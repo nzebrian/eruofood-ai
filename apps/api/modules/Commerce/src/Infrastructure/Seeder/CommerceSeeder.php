@@ -115,7 +115,11 @@ final class CommerceSeeder extends Seeder
         }
     }
 
-    /** @template T @param class-string<T> $abstract @return T */
+    /**
+     * @template T of object
+     * @param class-string<T> $abstract
+     * @return T
+     */
     private function app(string $abstract): object
     {
         /** @var T $resolved */

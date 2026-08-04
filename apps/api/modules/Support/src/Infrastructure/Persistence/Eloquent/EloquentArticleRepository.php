@@ -60,6 +60,7 @@ final class EloquentArticleRepository implements ArticleRepository
         );
     }
 
+    /** @return list<string> */
     public function categories(): array
     {
         /** @var list<string> $cats */

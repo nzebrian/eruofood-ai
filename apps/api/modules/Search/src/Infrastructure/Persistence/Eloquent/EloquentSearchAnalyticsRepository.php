@@ -59,11 +59,11 @@ final class EloquentSearchAnalyticsRepository implements SearchAnalyticsReposito
 
     public function trending(int $days, int $limit): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (PopularTerm $t): string => $t->term,
             $this->groupedTerms($days, $limit, static function (): void {
             }),
-        ));
+        );
     }
 
     public function recentForUser(string $userId, int $limit): array
@@ -133,10 +133,10 @@ final class EloquentSearchAnalyticsRepository implements SearchAnalyticsReposito
             ->get()
             ->all();
 
-        return array_values(array_map(
+        return array_map(
             static fn (object $row): PopularTerm => new PopularTerm((string) $row->term, (int) $row->c),
             $rows,
-        ));
+        );
     }
 
     private function threshold(int $days): string

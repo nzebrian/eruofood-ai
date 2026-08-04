@@ -121,7 +121,7 @@ final class Delivery
             return;
         }
         $current = self::ORDER[$this->status->value] ?? -1;
-        $target = self::ORDER[$next->value] ?? -1;
+        $target = self::ORDER[$next->value];
         if ($target !== $current + 1) {
             throw new MarketplaceInvalidState(sprintf(
                 'Cannot move a delivery from "%s" to "%s".',

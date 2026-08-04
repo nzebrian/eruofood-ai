@@ -85,7 +85,7 @@ final class PublicApiServiceProvider extends ServiceProvider
                 enforceHttps: (bool) ($sec['enforce_https'] ?? true),
                 allowedPorts: array_values(array_map('intval', (array) ($sec['allowed_ports'] ?? [443, 80]))),
                 blockPrivateNetworks: (bool) ($sec['block_private_networks'] ?? true),
-                allowedHosts: (array) ($sec['allowed_hosts'] ?? []),
+                allowedHosts: array_values(array_map('strval', (array) ($sec['allowed_hosts'] ?? []))),
             );
         });
 
@@ -149,7 +149,7 @@ final class PublicApiServiceProvider extends ServiceProvider
             $app->make(\EruoFood\PublicApi\Domain\OAuth\RefreshTokenRepository::class),
             $app->make(\EruoFood\PublicApi\Domain\OAuth\AuthorizationCodeRepository::class),
             $app->make(SecretHasher::class),
-            (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.oauth', []),
+            $this->oauthConfig(),
         ));
 
         $this->app->singleton(\EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi::class, fn ($app): \EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi => new \EruoFood\PublicApi\Interface\Http\Middleware\AuthenticatePublicApi([
@@ -176,7 +176,7 @@ final class PublicApiServiceProvider extends ServiceProvider
             $app->make(WebhookSigner::class),
             $app->make(EventBus::class),
             $app->make(WebhookUrlGuard::class),
-            (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks', []),
+            $this->webhookConfig(),
         ));
 
         // The context middleware needs config scalars — bind it explicitly.
@@ -209,5 +209,23 @@ final class PublicApiServiceProvider extends ServiceProvider
         /** @var array<string, string> $map */
         $map = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks.events', []);
         (new DomainEventSubscriber($this->app->make(Dispatcher::class), $map))->register();
+    }
+
+    /** @return array{access_ttl: int, refresh_ttl: int, code_ttl: int, access_prefix: string, refresh_prefix: string, code_prefix: string} */
+    private function oauthConfig(): array
+    {
+        /** @var array{access_ttl: int, refresh_ttl: int, code_ttl: int, access_prefix: string, refresh_prefix: string, code_prefix: string} $config */
+        $config = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.oauth', []);
+
+        return $config;
+    }
+
+    /** @return array{signature_header: string, timestamp_header: string, id_header: string, max_attempts: int, backoff_base_seconds: int, timeout_seconds: int} */
+    private function webhookConfig(): array
+    {
+        /** @var array{signature_header: string, timestamp_header: string, id_header: string, max_attempts: int, backoff_base_seconds: int, timeout_seconds: int} $config */
+        $config = (array) $this->app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks', []);
+
+        return $config;
     }
 }

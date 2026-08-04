@@ -51,10 +51,10 @@ final readonly class EloquentRecipeRepository implements RecipeRepository
     public function search(RecipeSearchCriteria $criteria, int $page, int $perPage): Paginated
     {
         $query = RecipeModel::query()
-            ->when($criteria->status, fn (Builder $q) => $q->where('status', $criteria->status->value))
+            ->when($criteria->status, fn (Builder $q) => $q->where('status', $criteria->status?->value))
             ->when($criteria->foodId, fn (Builder $q) => $q->where('food_id', $criteria->foodId))
             ->when($criteria->authorId, fn (Builder $q) => $q->where('author_id', $criteria->authorId))
-            ->when($criteria->difficulty, fn (Builder $q) => $q->where('difficulty', $criteria->difficulty->value))
+            ->when($criteria->difficulty, fn (Builder $q) => $q->where('difficulty', $criteria->difficulty?->value))
             ->when($criteria->tag, fn (Builder $q) => $q->whereJsonContains('tags', $criteria->tag))
             ->when($criteria->term, fn (Builder $q) => $q->whereRaw(
                 'LOWER(title) LIKE ?',

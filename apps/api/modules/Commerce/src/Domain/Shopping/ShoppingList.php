@@ -67,8 +67,7 @@ final class ShoppingList
 
     public function removeLine(int $index): void
     {
-        unset($this->lines[$index]);
-        $this->lines = array_values($this->lines);
+        array_splice($this->lines, $index, 1);
     }
 
     public function id(): string

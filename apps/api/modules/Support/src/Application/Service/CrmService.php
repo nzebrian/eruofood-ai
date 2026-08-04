@@ -71,6 +71,7 @@ final readonly class CrmService
         $this->appendInteraction($userId, $kind, $summary, $ref, 'event', $now);
     }
 
+    /** @return Paginated<\EruoFood\Support\Domain\Crm\Interaction> */
     public function timeline(string $userId, int $page, int $perPage): Paginated
     {
         return $this->interactions->forUser($userId, $page, $perPage);

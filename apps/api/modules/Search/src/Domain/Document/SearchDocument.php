@@ -20,6 +20,7 @@ use EruoFood\Search\Domain\ValueObject\GeoPoint;
  */
 final class SearchDocument
 {
+    /** @param list<string> $keywords */
     private function __construct(
         private readonly string $id,
         private readonly SearchType $type,
@@ -161,7 +162,7 @@ final class SearchDocument
     /** @return list<string> */
     public function keywords(): array
     {
-        return array_values($this->keywords);
+        return $this->keywords;
     }
 
     public function url(): ?string

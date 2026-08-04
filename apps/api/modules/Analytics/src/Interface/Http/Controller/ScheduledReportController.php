@@ -44,7 +44,7 @@ final readonly class ScheduledReportController
             (string) $data['report_key'],
             ReportCadence::from((string) $data['cadence']),
             ExportFormat::from((string) $data['format']),
-            array_map('strval', $data['recipients']),
+            array_values(array_map('strval', $data['recipients'])),
         );
 
         return $this->data($this->presenter->scheduledReport($report), 201);

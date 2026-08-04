@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace EruoFood\Analytics\Infrastructure\Persistence\Eloquent\Model;
 
-use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
  * @property string $id
  * @property string $metric
  * @property string $category
- * @property DateTimeInterface $bucket_date
+ * @property string $bucket_date
  * @property string|null $dimension_key
  * @property string|null $dimension_value
  * @property int $count

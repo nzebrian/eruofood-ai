@@ -33,7 +33,6 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
 
     public function __construct(
         private readonly Ranker $ranker,
-        private readonly float $lexicalWeight,
         private readonly int $candidatePool,
         private readonly bool $usePgvector,
     ) {
@@ -204,6 +203,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
 
     // ---- internals -------------------------------------------------------
 
+    /** @param Builder<SearchDocumentModel> $builder */
     private function applyScalarFilters(Builder $builder, SearchQuery $query): void
     {
         $f = $query->filters;
@@ -245,6 +245,10 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
     /**
      * @param list<string> $terms
      */
+    /**
+     * @param Builder<SearchDocumentModel> $builder
+     * @param list<string> $terms
+     */
     private function applyLexicalPrefilter(Builder $builder, array $terms): void
     {
         if ($terms === []) {
@@ -257,6 +261,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         });
     }
 
+    /** @param Builder<SearchDocumentModel> $builder */
     private function applyCandidateOrder(Builder $builder, ?Embedding $embedding): void
     {
         if ($this->pgvectorEnabled() && $embedding !== null && ! $embedding->isEmpty()) {
@@ -270,6 +275,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
     /**
      * @param list<string> $terms
      */
+    /** @param list<string> $terms */
     private function lexicalScore(string $searchText, string $title, array $terms): float
     {
         if ($terms === []) {
@@ -316,6 +322,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
     /**
      * @param list<string> $terms
      */
+    /** @param list<string> $terms */
     private function highlight(string $description, array $terms): ?string
     {
         $snippet = mb_substr($description, 0, 160);

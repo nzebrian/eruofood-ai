@@ -141,7 +141,7 @@ final readonly class EloquentRefreshTokenManager implements RefreshTokenManager
     {
         $parts = explode('.', $plaintext, 2);
 
-        return [$parts[0] ?? null, $parts[1] ?? null];
+        return [$parts[0], $parts[1] ?? null];
     }
 
     private function hash(string $secret): string

@@ -111,7 +111,7 @@ final readonly class KnowledgeBaseService
     /** @return list<string> */
     public function categories(): array
     {
-        return array_values($this->articles->categories());
+        return $this->articles->categories();
     }
 
     private function require(string $id): Article

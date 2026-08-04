@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property DateTimeInterface|null $last_used_at
  * @property DateTimeInterface $created_at
  * @property DateTimeInterface|null $revoked_at
+ * @property string|null $subject_user_id
  */
 final class ApiKeyModel extends Model
 {

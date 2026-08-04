@@ -35,6 +35,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property array<array-key, mixed> $embedding
  * @property DateTimeInterface $created_at
  * @property DateTimeInterface $updated_at
+ * @property mixed $embedding_vec
  */
 final class SearchDocumentModel extends Model
 {

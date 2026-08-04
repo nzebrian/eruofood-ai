@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Search\Infrastructure\Cache;
 
+use Closure;
 use EruoFood\Search\Application\Port\SearchCache;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 
@@ -20,7 +21,7 @@ final readonly class LaravelSearchCache implements SearchCache
 
     public function remember(string $key, int $ttlSeconds, callable $resolver): mixed
     {
-        return $this->cache->remember($key, $ttlSeconds, $resolver);
+        return $this->cache->remember($key, $ttlSeconds, Closure::fromCallable($resolver));
     }
 
     public function forget(string $key): void

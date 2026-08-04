@@ -18,7 +18,6 @@ use RuntimeException;
 final readonly class AppleAuthenticator implements SocialAuthenticator
 {
     public function __construct(
-        private ?string $clientId,
         private bool $enabled,
     ) {
     }

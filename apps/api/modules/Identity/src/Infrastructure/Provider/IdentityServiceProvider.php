@@ -114,7 +114,7 @@ final class IdentityServiceProvider extends ServiceProvider
         $this->app->bind(AuthNotifier::class, fn (Application $app): LaravelAuthNotifier
             => new LaravelAuthNotifier(
                 $app->make('mailer'),
-                (string) ($config->get('app.frontend_url') ?? env('FRONTEND_URL', 'http://localhost:5173')),
+                (string) ($config->get('app.frontend_url') ?? 'http://localhost:5173'),
             ));
 
         $this->app->bind(AuditRecorder::class, fn (Application $app): DatabaseAuditRecorder
@@ -185,7 +185,6 @@ final class IdentityServiceProvider extends ServiceProvider
                 (bool) $config->get('identity.providers.google.enabled'),
             ),
             'apple' => new AppleAuthenticator(
-                $config->get('identity.providers.apple.client_id'),
                 (bool) $config->get('identity.providers.apple.enabled'),
             ),
         ];

@@ -52,10 +52,10 @@ final class EloquentShoppingListRepository implements ShoppingListRepository
         $lines = [];
         foreach ($m->lines ?? [] as $line) {
             $lines[] = [
-                'name' => (string) ($line['name'] ?? ''),
-                'quantity' => (int) ($line['quantity'] ?? 1),
+                'name' => (string) $line['name'],
+                'quantity' => (int) $line['quantity'],
                 'product_id' => isset($line['product_id']) ? (string) $line['product_id'] : null,
-                'bought' => (bool) ($line['bought'] ?? false),
+                'bought' => (bool) $line['bought'],
             ];
         }
 

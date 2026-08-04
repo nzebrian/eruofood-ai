@@ -51,9 +51,9 @@ final readonly class EloquentFoodRepository implements FoodRepository
     public function search(FoodSearchCriteria $criteria, int $page, int $perPage): Paginated
     {
         $query = FoodModel::query()
-            ->when($criteria->status, fn (Builder $q) => $q->where('status', $criteria->status->value))
+            ->when($criteria->status, fn (Builder $q) => $q->where('status', $criteria->status?->value))
             ->when($criteria->categoryId, fn (Builder $q) => $q->where('category_id', $criteria->categoryId))
-            ->when($criteria->region, fn (Builder $q) => $q->where('region', $criteria->region->value))
+            ->when($criteria->region, fn (Builder $q) => $q->where('region', $criteria->region?->value))
             ->when($criteria->term, fn (Builder $q) => $q->whereRaw(
                 'LOWER(name) LIKE ?',
                 ['%'.strtolower((string) $criteria->term).'%'],

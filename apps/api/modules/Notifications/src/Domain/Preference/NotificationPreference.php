@@ -78,10 +78,10 @@ final class NotificationPreference
      */
     public function setCategoryChannels(NotificationCategory $category, array $channels): void
     {
-        $this->channelsByCategory[$category->value] = array_values(array_map(
+        $this->channelsByCategory[$category->value] = array_map(
             static fn (NotificationChannel $c): string => $c->value,
             $channels,
-        ));
+        );
     }
 
     public function setQuietHours(QuietHours $quietHours): void

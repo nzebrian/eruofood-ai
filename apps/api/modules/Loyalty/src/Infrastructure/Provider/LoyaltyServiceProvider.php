@@ -137,7 +137,7 @@ final class LoyaltyServiceProvider extends ServiceProvider
             $out[$event] = [
                 'reason' => (string) ($rule['reason'] ?? 'earn'),
                 'user_field' => (string) ($rule['user_field'] ?? 'userId'),
-                'amount_field' => isset($rule['amount_field']) && $rule['amount_field'] !== null ? (string) $rule['amount_field'] : null,
+                'amount_field' => isset($rule['amount_field']) ? (string) $rule['amount_field'] : null,
                 'per_minor' => (float) ($rule['per_minor'] ?? 0.0),
                 'points' => (int) ($rule['points'] ?? 0),
             ];
