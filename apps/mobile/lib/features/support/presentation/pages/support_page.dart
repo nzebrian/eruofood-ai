@@ -188,7 +188,7 @@ class _NewTicketSheetState extends State<_NewTicketSheet> {
             children: <Widget>[
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _category,
+                  initialValue: _category,
                   decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
                   items: const <String>['general', 'billing', 'orders', 'account']
                       .map((c) => DropdownMenuItem<String>(value: c, child: Text(c)))
@@ -199,7 +199,7 @@ class _NewTicketSheetState extends State<_NewTicketSheet> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _priority,
+                  initialValue: _priority,
                   decoration: const InputDecoration(labelText: 'Priority', border: OutlineInputBorder()),
                   items: const <String>['low', 'normal', 'high', 'urgent']
                       .map((p) => DropdownMenuItem<String>(value: p, child: Text(p)))

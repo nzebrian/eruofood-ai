@@ -15,23 +15,23 @@ class AiHubPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          _HubTile(
+          const _HubTile(
             icon: Icons.auto_awesome,
             title: 'AI Recipe Generator',
             subtitle: 'Draft an authentic Nigerian recipe from a brief.',
-            page: const AiRecipeGeneratorPage(),
+            page: AiRecipeGeneratorPage(),
           ),
-          _HubTile(
+          const _HubTile(
             icon: Icons.chat_bubble_outline,
             title: 'Cooking Assistant',
             subtitle: 'Chat about recipes, techniques and substitutions.',
-            page: const CookingAssistantPage(),
+            page: CookingAssistantPage(),
           ),
-          _HubTile(
+          const _HubTile(
             icon: Icons.history,
             title: 'Chat history',
             subtitle: 'Revisit your past conversations.',
-            page: const AiChatHistoryPage(),
+            page: AiChatHistoryPage(),
           ),
         ],
       ),

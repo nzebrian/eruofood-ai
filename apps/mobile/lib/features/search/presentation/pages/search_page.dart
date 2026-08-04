@@ -20,7 +20,7 @@ class _SearchPageState extends State<SearchPage> {
   final TextEditingController _controller = TextEditingController();
 
   String _type = 'global';
-  String _sort = 'relevance';
+  final String _sort = 'relevance';
   SearchFiltersView _filters = const SearchFiltersView();
 
   SearchResultsView? _results;
@@ -249,7 +249,7 @@ class _FilterSheetState extends State<_FilterSheet> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: _difficulty,
+            initialValue: _difficulty,
             decoration: const InputDecoration(labelText: 'Difficulty', border: OutlineInputBorder()),
             items: const <String>['easy', 'medium', 'hard']
                 .map((d) => DropdownMenuItem<String>(value: d, child: Text(d)))

@@ -116,7 +116,7 @@ class _HealthProfilePageState extends State<HealthProfilePage> {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: DropdownButtonFormField<String>(
-        value: value,
+        initialValue: value,
         decoration: InputDecoration(labelText: label),
         items: options
             .map((o) => DropdownMenuItem<String>(value: o, child: Text(o.replaceAll('_', ' '))))

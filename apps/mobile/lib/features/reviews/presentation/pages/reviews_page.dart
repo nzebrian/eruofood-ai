@@ -267,7 +267,7 @@ class _WriteReviewSheetState extends State<_WriteReviewSheet> {
           Text('Write a review', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           DropdownButtonFormField<int>(
-            value: _rating,
+            initialValue: _rating,
             decoration: const InputDecoration(labelText: 'Rating'),
             items: <int>[5, 4, 3, 2, 1]
                 .map((int n) => DropdownMenuItem<int>(value: n, child: Text('$n star${n == 1 ? '' : 's'}')))
