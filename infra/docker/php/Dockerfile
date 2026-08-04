@@ -33,11 +33,22 @@ COPY infra/docker/php/www.conf /usr/local/etc/php-fpm.d/www.conf
 WORKDIR /var/www/html
 
 # ---- Stage 2: vendor dependencies -------------------------------------------
+# Install production dependencies from the committed composer.lock. We defer the
+# autoloader (--no-autoloader) because the optimized classmap needs the app
+# source (app/, database/, routes/), which is copied in the runtime stage. Fail
+# loudly — no "|| true": a broken vendor tree must break the build, not ship a
+# half-populated image that only explodes at `artisan` runtime.
 FROM base AS vendor
-COPY apps/api/composer.json apps/api/composer.lock* ./
+COPY apps/api/composer.json apps/api/composer.lock ./
 RUN --mount=type=cache,target=/tmp/composer-cache \
     COMPOSER_CACHE_DIR=/tmp/composer-cache \
-    composer install --no-dev --no-scripts --no-autoloader --prefer-dist || true
+    composer install \
+        --no-dev \
+        --no-scripts \
+        --no-autoloader \
+        --prefer-dist \
+        --no-interaction \
+        --no-progress
 
 # ---- Stage 3: runtime -------------------------------------------------------
 FROM base AS runtime
@@ -48,11 +59,18 @@ ARG GID=1000
 RUN addgroup -g ${GID} app 2>/dev/null || true \
     && adduser -D -u ${UID} -G app app 2>/dev/null || true
 
+# Bring in the resolved dependency tree, then the application source.
 COPY --from=vendor /var/www/html/vendor ./vendor
 COPY apps/api ./
 
-RUN composer dump-autoload --optimize --no-dev || true \
-    && mkdir -p storage/framework/{cache,sessions,views} storage/logs bootstrap/cache \
+# Generate the optimized, authoritative classmap now that both vendor/ and the
+# app source are present. --no-scripts keeps the build hermetic (package:discover
+# boots artisan, which needs runtime env); Laravel rediscovers packages from
+# vendor/composer/installed.json at boot. No "|| true": a failed dump must fail
+# the build. Verify the autoloader exists before the image is allowed to finish.
+RUN composer dump-autoload --optimize --no-dev --no-scripts \
+    && test -f /var/www/html/vendor/autoload.php \
+    && mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chown -R app:app /var/www/html
 
 USER app

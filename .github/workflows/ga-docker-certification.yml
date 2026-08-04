@@ -15,6 +15,7 @@ on:
     branches: [main, develop]
     paths:
       - "docker-compose.yml"
+      - "docker-compose.ci.yml"
       - "docker-compose.override.yml"
       - "infra/**"
       - "apps/api/**"
@@ -35,6 +36,11 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: gacert
       NGINX_HTTP_PORT: "8080"
+      # Compose the production-shaped base + CI overlay EXPLICITLY (no dev
+      # override auto-load, so the image's baked vendor/ is never shadowed by a
+      # bind mount). Runtime env (incl. a throwaway APP_KEY) comes from the CI
+      # overlay, so no host .env and no in-container key:generate are needed.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - uses: actions/checkout@v4
 
@@ -51,12 +57,6 @@ jobs:
 
       - name: Build ALL images from a clean context
         run: docker compose build --no-cache
-
-      - name: Prepare API environment (no committed secrets)
-        run: |
-          cp apps/api/.env.example apps/api/.env
-          # a throwaway CI key; never a production secret
-          docker compose run --rm --no-deps api php artisan key:generate --force || true
 
       - name: Boot the full stack (fresh PostgreSQL + Redis + MinIO)
         run: docker compose up -d --wait --wait-timeout 180

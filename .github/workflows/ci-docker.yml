@@ -10,6 +10,7 @@ on:
     branches: [main, develop]
     paths:
       - "docker-compose.yml"
+      - "docker-compose.ci.yml"
       - "infra/**"
       - "apps/api/**"
       - "apps/web/**"
@@ -17,6 +18,7 @@ on:
   pull_request:
     paths:
       - "docker-compose.yml"
+      - "docker-compose.ci.yml"
       - "infra/**"
       - ".github/workflows/ci-docker.yml"
 
@@ -24,6 +26,12 @@ jobs:
   boot:
     name: Build · Boot · Migrate · Healthcheck
     runs-on: ubuntu-latest
+    # Compose the production-shaped base + CI overlay EXPLICITLY. Setting
+    # COMPOSE_FILE pins the exact files for every `docker compose` call below and
+    # suppresses auto-loading of docker-compose.override.yml, whose dev bind mount
+    # would otherwise shadow the image's baked vendor/ with an empty host dir.
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +43,6 @@ jobs:
 
       - name: Boot the full stack
         run: |
-          cp apps/api/.env.example apps/api/.env
           docker compose up -d
           echo "Waiting for services to become healthy..."
 
