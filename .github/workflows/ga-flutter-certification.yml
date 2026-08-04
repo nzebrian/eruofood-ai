@@ -1,0 +1,87 @@
+name: GA Flutter Certification
+
+# Executes the REAL Flutter toolchain (absent from the Claude sandbox) on a
+# GitHub-hosted runner: doctor → pub get → analyze → test → build apk, plus a
+# prepared iOS build-validation job on a macOS runner. Fails if analyze, tests,
+# or required builds fail. READY TO EXECUTE; not run inside the sandbox.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, develop]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/ga-flutter-certification.yml"
+  workflow_call: {}
+
+concurrency:
+  group: ga-flutter-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/mobile
+
+jobs:
+  android:
+    name: Android · doctor · analyze · test · build apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: flutter doctor
+        run: flutter doctor -v
+
+      - name: Prepare env asset
+        run: cp .env.example .env || true
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze — MANDATORY (fails on any issue)
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: flutter test — MANDATORY
+        run: flutter test --coverage
+
+      - name: flutter build apk (release) — MANDATORY
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eruofood-release-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS · analyze · test · build (no codesign)
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - name: flutter doctor
+        run: flutter doctor -v
+      - name: Prepare env asset
+        run: cp .env.example .env || true
+      - name: flutter pub get
+        run: flutter pub get
+      - name: flutter analyze — MANDATORY
+        run: flutter analyze --fatal-infos --fatal-warnings
+      - name: flutter test — MANDATORY
+        run: flutter test
+      - name: flutter build ios (no codesign) — build validation
+        run: flutter build ios --release --no-codesign

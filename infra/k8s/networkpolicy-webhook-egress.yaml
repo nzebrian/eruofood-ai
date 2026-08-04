@@ -1,0 +1,38 @@
+# EruoFood AI — webhook-worker egress NetworkPolicy (deployment-ready).
+# Denies all internal ranges + the cloud metadata IP for the webhook workers,
+# allowing only DNS to the cluster resolver and public HTTPS. Apply to the
+# namespace running the webhook-delivery workers. Requires a CNI that enforces
+# egress policy (Cilium / Calico). This is the INFRASTRUCTURE half of the SSRF
+# defence-in-depth; the APPLICATION half (NetworkWebhookUrlGuard) is already
+# EXECUTED — PASSED. See docs/INFRA_EGRESS_POLICY.md.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: webhook-worker-egress
+  namespace: eruofood
+  labels: { app.kubernetes.io/part-of: eruofood, control: ssrf-egress }
+spec:
+  podSelector:
+    matchLabels: { app: webhook-worker }
+  policyTypes: [Egress]
+  egress:
+    # 1) DNS to the in-cluster resolver only
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # 2) Public HTTPS only, with ALL internal ranges + the metadata IP excluded
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 127.0.0.0/8        # loopback
+              - 10.0.0.0/8         # RFC1918
+              - 172.16.0.0/12      # RFC1918
+              - 192.168.0.0/16     # RFC1918
+              - 169.254.0.0/16     # link-local incl. 169.254.169.254 (cloud metadata)
+              - 100.64.0.0/10      # CGNAT
+      ports:
+        - { protocol: TCP, port: 443 }

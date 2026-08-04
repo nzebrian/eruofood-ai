@@ -374,3 +374,33 @@ EXECUTED — FAILED / STATIC VALIDATION ONLY / NOT VALIDATED.
 - Flutter analyze/test/build (toolchain absent).
 - Infrastructure egress enforcement (provider-dependent).
 - External penetration test (independent third party — not simulated).
+
+---
+
+# Milestone 22 — External/Staging Execution & Release Certification
+
+This milestone authored the **executable workflows** to validate the five remaining
+blockers OUTSIDE the sandbox. Creating them is **READY TO EXECUTE**, not
+EXECUTED — PASSED. No blocker was flipped to PASSED by authoring a workflow.
+
+## READY TO EXECUTE (authored this milestone; run on GitHub/staging/cloud)
+| Blocker | Artifact | Runs where |
+|---|---|---|
+| Full Docker clean-boot | `.github/workflows/ga-docker-certification.yml` | GitHub runner |
+| Flutter analyze/test/build | `.github/workflows/ga-flutter-certification.yml` | GitHub (Ubuntu+macOS) |
+| Staging deploy | `.github/workflows/staging-deploy.yml` | GitHub → staging (secrets) |
+| Performance certification (k6) | `.github/workflows/performance-certification.yml` | GitHub → staging |
+| Consolidated GA gate | `.github/workflows/ga-release-certification.yml` | GitHub |
+| Infra egress enforcement | `infra/k8s/networkpolicy-webhook-egress.yaml` + provider steps | cluster/cloud |
+
+## NOT VALIDATED — EXTERNAL REQUIREMENT
+- Independent external penetration test — handoff package `docs/PENETRATION_TEST_HANDOFF.md`
+  (+ `PENETRATION_TEST_PLAN.md`); not simulated, not self-attested.
+
+## Operator guide
+`docs/GA_EXECUTION_GUIDE.md` explains exactly what to run, in order, outside the
+sandbox, and what evidence constitutes final production GO
+(`docs/PRODUCTION_RELEASE_CHECKLIST.md`).
+
+No application code changed in Milestone 22; the executed-green status of the code
+gates (338/338 both engines, PHPStan L8 = 0, Pint) is unchanged from Milestone 21.

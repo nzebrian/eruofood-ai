@@ -1,0 +1,127 @@
+name: Performance Certification (k6 · staging)
+
+# Runs the k6 profile matrix against a DEPLOYED, production-like STAGING target and
+# fails on threshold breach. Requires staging to already be up (see
+# staging-deploy.yml) — it does NOT run against the Claude sandbox and does NOT
+# fabricate numbers. All target config comes from GitHub Environment secrets.
+#
+# Required (Environment: staging):
+#   secrets.STAGING_BASE_URL   e.g. https://staging.api.eruofood.ai
+#   secrets.STAGING_API_KEY    a staging Public API key (efk_live_...)
+#   secrets.STAGING_OAUTH_CLIENT_ID / STAGING_OAUTH_CLIENT_SECRET (optional)
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: "Comma-separated scenarios to run"
+        default: "baseline,load,stress,spike,soak"
+      soak:
+        description: "Include the 2h soak profile?"
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      scenarios:
+        type: string
+        default: "baseline,load,stress,spike"
+
+concurrency:
+  group: perf-cert-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  k6:
+    name: k6 ${{ matrix.scenario }} · ${{ matrix.script }}
+    runs-on: ubuntu-latest
+    environment: staging
+    strategy:
+      fail-fast: false
+      matrix:
+        script: [public-api, critical-flows]
+        scenario: [baseline, load, stress, spike]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
+
+      - name: Guard — staging target must be configured
+        run: |
+          test -n "${{ secrets.STAGING_BASE_URL }}" || { echo "::error::STAGING_BASE_URL secret missing"; exit 1; }
+
+      - name: Run k6 (${{ matrix.script }} / ${{ matrix.scenario }})
+        env:
+          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          API_KEY: ${{ secrets.STAGING_API_KEY }}
+          OAUTH_CLIENT_ID: ${{ secrets.STAGING_OAUTH_CLIENT_ID }}
+          OAUTH_CLIENT_SECRET: ${{ secrets.STAGING_OAUTH_CLIENT_SECRET }}
+          SCENARIO: ${{ matrix.scenario }}
+        # k6 exits non-zero when a threshold (p95<400ms, p99<800ms, error<1%) is
+        # breached, which fails this job — that IS the pass/fail gate.
+        run: |
+          mkdir -p perf-results
+          k6 run \
+            --summary-export "perf-results/${{ matrix.script }}-${{ matrix.scenario }}.summary.json" \
+            --out "json=perf-results/${{ matrix.script }}-${{ matrix.scenario }}.raw.json" \
+            "load/${{ matrix.script }}.k6.js"
+
+      - name: Human-readable report row
+        if: always()
+        run: |
+          f="perf-results/${{ matrix.script }}-${{ matrix.scenario }}.summary.json"
+          if [ -f "$f" ]; then
+            echo "### ${{ matrix.script }} / ${{ matrix.scenario }}" >> "$GITHUB_STEP_SUMMARY"
+            node -e '
+              const s=require("./"+process.argv[1]);
+              const m=s.metrics||{};
+              const d=m.http_req_duration?.values||{};
+              const r=m.http_reqs?.values||{};
+              const e=m.http_req_failed?.values||{};
+              console.log("| metric | value |\n|---|---|");
+              console.log("| p50 | "+(d["p(50)"]??"—")+" ms |");
+              console.log("| p95 | "+(d["p(95)"]??"—")+" ms |");
+              console.log("| p99 | "+(d["p(99)"]??"—")+" ms |");
+              console.log("| req/s | "+(r.rate?.toFixed?.(1)??"—")+" |");
+              console.log("| error rate | "+((e.rate??0)*100).toFixed(2)+"% |");
+            ' "$f" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload machine-readable results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-${{ matrix.script }}-${{ matrix.scenario }}
+          path: perf-results/
+
+  soak:
+    name: k6 soak (2h) · optional
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.soak }}
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install k6
+        run: |
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
+      - name: Run soak
+        env:
+          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          API_KEY: ${{ secrets.STAGING_API_KEY }}
+          SCENARIO: soak
+        run: |
+          mkdir -p perf-results
+          k6 run --summary-export perf-results/public-api-soak.summary.json load/public-api.k6.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: perf-soak, path: perf-results/ }
