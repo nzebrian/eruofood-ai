@@ -21,7 +21,7 @@ dependencies:
   # Functional error handling in the domain/application layers.
   dartz: ^0.10.1
   # Runtime configuration from a bundled .env file.
-  flutter_dotenv: ^5.1.0
+  flutter_dotenv: ^6.0.1
   # Secure token storage (Keychain / Keystore).
   flutter_secure_storage: ^9.2.2
 
