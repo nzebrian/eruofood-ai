@@ -1,0 +1,22 @@
+# =============================================================================
+# Gitleaks — reviewed false positives (fingerprint allowlist).
+#
+# Each line below is a single Gitleaks finding fingerprint
+# (commit:file:rule:startline) that has been manually reviewed and confirmed to
+# contain NO real credential. This is the narrowest possible suppression: it
+# targets one exact finding and nothing else. Gitleaks' full default ruleset
+# stays active — no rule is disabled, no path is broadly excluded, and CI is
+# unchanged.
+#
+# -----------------------------------------------------------------------------
+# apps/api/.env.example — generic-api-key — line 62 (`JWT_SECRET=`)
+#
+# apps/api/.env.example is a committed configuration TEMPLATE that ships no real
+# secrets. Its `JWT_SECRET=` value is EMPTY (the app falls back to APP_KEY when
+# unset). Gitleaks' generic-api-key heuristic triggers on the word "SECRET" in
+# `JWT_SECRET=`; because the assignment is empty it reads across the newline and
+# reports the following line — the next variable declaration, `JWT_ALGO=HS256` —
+# as the "secret". That is an env-var name, not a credential. Nothing here is or
+# was a live secret, so there is nothing to revoke or rotate.
+# -----------------------------------------------------------------------------
+bc824fa1e7c8aa218896c19a0a570bb696ccfbff:apps/api/.env.example:generic-api-key:62
