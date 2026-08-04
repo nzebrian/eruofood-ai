@@ -121,7 +121,10 @@ services:
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-eruofood}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-secret}
+      # MinIO refuses to start (exit 1 → crash-restart loop) if the root password
+      # is shorter than 8 characters. The old default "secret" (6) flapped the
+      # container, churning Docker's IPAM. Keep the default at/above the minimum.
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-eruofoodminio}
     volumes:
       - miniodata:/data
     healthcheck:
