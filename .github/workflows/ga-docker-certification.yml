@@ -115,8 +115,25 @@ jobs:
       - name: Restart-recovery (workers/scheduler/api reconnect)
         run: |
           docker compose restart worker scheduler api
-          sleep 10
-          curl -fsS http://localhost:8080/api/v1/health
+
+          # After the restart, nginx's php_fpm upstream returns 502 until php-fpm
+          # inside the api container finishes booting. Poll health until it
+          # recovers rather than guessing a fixed sleep; the bound keeps a genuine
+          # restart failure fatal, and the on-timeout dump distinguishes a real
+          # failure from a startup race. (Full logs are also captured by the
+          # failure step below.)
+          deadline=$((SECONDS + 120))
+          until curl -fsS http://localhost:8080/api/v1/health -o /tmp/health-recover.json; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::API did not recover within 120s after restart"
+              docker compose ps
+              docker compose logs --no-color --tail=120 api nginx worker scheduler
+              exit 1
+            fi
+            echo "waiting for API to recover after restart... (${SECONDS}s elapsed)"
+            sleep 3
+          done
+          echo "API recovered after restart:"; cat /tmp/health-recover.json
 
       - name: Capture container logs on failure
         if: failure()
