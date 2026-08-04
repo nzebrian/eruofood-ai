@@ -110,8 +110,8 @@ final class PaymentsServiceProvider extends ServiceProvider
         ] as $needsCurrency) {
             $this->app->when($needsCurrency)->needs('$currency')->give($currency);
         }
-        $this->app->when(PaymentService::class)->needs('$escrowEnabled')->give($escrow);
-        $this->app->when(WalletService::class)->needs('$lowBalanceThreshold')->give($lowBalance);
+        $this->app->when(PaymentService::class)->needs('$escrowEnabled')->give(fn () => $escrow);
+        $this->app->when(WalletService::class)->needs('$lowBalanceThreshold')->give(fn () => $lowBalance);
     }
 
     public function boot(): void

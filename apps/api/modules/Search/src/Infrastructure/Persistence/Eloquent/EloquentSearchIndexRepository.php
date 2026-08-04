@@ -366,6 +366,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         if ($this->pgvector !== null) {
             return $this->pgvector;
         }
+        /** @var \Illuminate\Database\Connection $connection */
         $connection = SearchDocumentModel::query()->getConnection();
         $this->pgvector = $this->usePgvector
             && $connection->getDriverName() === 'pgsql'

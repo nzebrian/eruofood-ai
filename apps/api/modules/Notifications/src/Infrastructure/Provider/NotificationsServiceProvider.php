@@ -125,7 +125,7 @@ final class NotificationsServiceProvider extends ServiceProvider
             // binding is never consulted for a class-typed parameter).
             $this->app->when($needs)->needs(QuietHours::class)->give(fn (): QuietHours => $quietHours);
         }
-        $this->app->when(NotificationService::class)->needs('$maxAttempts')->give($maxAttempts);
+        $this->app->when(NotificationService::class)->needs('$maxAttempts')->give(fn () => $maxAttempts);
     }
 
     public function boot(): void

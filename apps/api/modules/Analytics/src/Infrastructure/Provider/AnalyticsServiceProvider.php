@@ -55,7 +55,7 @@ final class AnalyticsServiceProvider extends ServiceProvider
 
         $defaultDays = (int) $config->get('analytics.dashboard.default_days', 30);
         foreach ([DashboardController::class, ReportController::class] as $controller) {
-            $this->app->when($controller)->needs('$defaultDays')->give($defaultDays);
+            $this->app->when($controller)->needs('$defaultDays')->give(fn () => $defaultDays);
         }
     }
 

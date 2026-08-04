@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Loyalty\Infrastructure\Event;
 
 use EruoFood\Loyalty\Application\Service\EventTranslator;
+use EruoFood\Shared\Domain\DomainEvent;
 use Illuminate\Contracts\Events\Dispatcher;
 
 /**
@@ -29,7 +30,9 @@ final readonly class DomainEventSubscriber
     {
         foreach (array_unique($this->eventNames) as $eventName) {
             $this->dispatcher->listen($eventName, function (object $event): void {
-                app(EventTranslator::class)->handle($event);
+                if ($event instanceof DomainEvent) {
+                    app(EventTranslator::class)->handle($event);
+                }
             });
         }
     }

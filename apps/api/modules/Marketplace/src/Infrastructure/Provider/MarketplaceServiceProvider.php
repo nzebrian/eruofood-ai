@@ -77,7 +77,7 @@ final class MarketplaceServiceProvider extends ServiceProvider
             MenuManagementController::class] as $needsCurrency) {
             $this->app->when($needsCurrency)->needs('$currency')->give($currency);
         }
-        $this->app->when(VendorService::class)->needs('$requireVerification')->give($requireVerification);
+        $this->app->when(VendorService::class)->needs('$requireVerification')->give(fn () => $requireVerification);
     }
 
     public function boot(): void

@@ -161,7 +161,7 @@ final class SearchDocument
     /** @return list<string> */
     public function keywords(): array
     {
-        return $this->keywords;
+        return array_values($this->keywords);
     }
 
     public function url(): ?string

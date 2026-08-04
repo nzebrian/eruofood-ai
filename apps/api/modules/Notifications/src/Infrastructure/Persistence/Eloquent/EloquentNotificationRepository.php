@@ -134,7 +134,7 @@ final class EloquentNotificationRepository implements NotificationRepository, De
             attempts: (int) $m->attempts,
             scheduledFor: $m->scheduled_for !== null ? DateTimeImmutable::createFromInterface($m->scheduled_for) : null,
             readAt: $m->read_at !== null ? DateTimeImmutable::createFromInterface($m->read_at) : null,
-            timeline: $m->timeline ?? [],
+            timeline: array_values($m->timeline ?? []),
             createdAt: DateTimeImmutable::createFromInterface($m->created_at),
         );
     }

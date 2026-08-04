@@ -7,7 +7,7 @@ namespace EruoFood\Admin\Infrastructure\Directory;
 use EruoFood\Admin\Application\DTO\VendorSummary;
 use EruoFood\Admin\Application\Port\VendorDirectory;
 use EruoFood\Shared\Domain\Paginated;
-use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Connection;
 
 /**
  * Read-only adapter over the Marketplace vendors table. A soft reference so the
@@ -18,7 +18,7 @@ final readonly class MarketplaceVendorDirectory implements VendorDirectory
 {
     private const TABLE = 'marketplace_vendors';
 
-    public function __construct(private ConnectionInterface $db)
+    public function __construct(private Connection $db)
     {
     }
 

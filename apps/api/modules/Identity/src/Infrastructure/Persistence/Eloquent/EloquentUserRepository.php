@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Identity\Infrastructure\Persistence\Eloquent;
 
+use DateTimeImmutable;
 use EruoFood\Identity\Domain\Role\Role;
 use EruoFood\Identity\Domain\User\TwoFactorSettings;
 use EruoFood\Identity\Domain\User\User;
@@ -109,14 +110,14 @@ final readonly class EloquentUserRepository implements UserRepository
             password: $m->password !== null ? new HashedPassword($m->password) : null,
             phone: $m->phone !== null ? new PhoneNumber($m->phone) : null,
             status: UserStatus::from($m->status),
-            emailVerifiedAt: $m->email_verified_at?->toDateTimeImmutable(),
+            emailVerifiedAt: $m->email_verified_at !== null ? DateTimeImmutable::createFromInterface($m->email_verified_at) : null,
             avatarPath: $m->avatar_path,
-            roles: array_map(static fn (string $r): Role => Role::from($r), $m->roles ?? []),
+            roles: array_values(array_map(static fn (string $r): Role => Role::from($r), $m->roles ?? [])),
             preferences: $m->preferences ?? [],
             twoFactor: new TwoFactorSettings(
                 secret: $m->two_factor_secret,
                 confirmed: $m->two_factor_confirmed_at !== null,
-                recoveryCodes: $m->two_factor_recovery_codes ?? [],
+                recoveryCodes: array_values($m->two_factor_recovery_codes ?? []),
             ),
         );
     }

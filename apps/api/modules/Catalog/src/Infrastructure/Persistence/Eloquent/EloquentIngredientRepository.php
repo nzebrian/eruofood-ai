@@ -71,10 +71,10 @@ final class EloquentIngredientRepository implements IngredientRepository
             name: $m->name,
             slug: new Slug($m->slug),
             description: $m->description,
-            localNames: array_map(
+            localNames: array_values(array_map(
                 static fn (array $l): LocalName => LocalName::fromArray($l),
                 $m->local_names ?? [],
-            ),
+            )),
             nutritionPer100g: $m->nutrition !== null ? NutritionalInfo::fromArray($m->nutrition) : null,
         );
     }

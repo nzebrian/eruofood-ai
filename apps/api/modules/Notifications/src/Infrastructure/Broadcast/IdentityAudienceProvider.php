@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Notifications\Infrastructure\Broadcast;
 
 use EruoFood\Notifications\Domain\Broadcast\AudienceProvider;
-use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Connection;
 
 /**
  * Resolves a broadcast segment to recipient user ids. Segments:
@@ -16,7 +16,7 @@ use Illuminate\Database\ConnectionInterface;
  */
 final readonly class IdentityAudienceProvider implements AudienceProvider
 {
-    public function __construct(private ConnectionInterface $db)
+    public function __construct(private Connection $db)
     {
     }
 

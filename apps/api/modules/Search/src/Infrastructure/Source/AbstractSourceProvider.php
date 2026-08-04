@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Search\Infrastructure\Source;
 
 use EruoFood\Search\Application\Port\SourceDocumentProvider;
-use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Connection;
 
 /**
  * Base for the read-only source adapters. Each reads one other context's table
@@ -15,7 +15,7 @@ use Illuminate\Database\ConnectionInterface;
  */
 abstract class AbstractSourceProvider implements SourceDocumentProvider
 {
-    public function __construct(protected readonly ConnectionInterface $db)
+    public function __construct(protected readonly Connection $db)
     {
     }
 

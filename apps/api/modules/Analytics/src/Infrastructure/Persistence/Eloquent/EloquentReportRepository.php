@@ -61,8 +61,8 @@ final class EloquentReportRepository implements ReportRepository
             key: $m->key,
             title: $m->title,
             range: new DateRange(new DateTimeImmutable((string) $m->range_from), new DateTimeImmutable((string) $m->range_to)),
-            columns: array_map('strval', $m->columns ?? []),
-            rows: $m->rows ?? [],
+            columns: array_values(array_map('strval', $m->columns ?? [])),
+            rows: array_values($m->rows ?? []),
             status: ReportStatus::from($m->status),
             generatedAt: DateTimeImmutable::createFromInterface($m->generated_at),
         );

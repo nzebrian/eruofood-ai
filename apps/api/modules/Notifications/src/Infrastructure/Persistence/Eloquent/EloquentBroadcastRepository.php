@@ -61,7 +61,7 @@ final class EloquentBroadcastRepository implements BroadcastRepository
             title: $m->title,
             body: $m->body,
             category: NotificationCategory::from($m->category),
-            channels: array_map('strval', $m->channels ?? []),
+            channels: array_values(array_map('strval', $m->channels ?? [])),
             segment: $m->segment,
             scheduledFor: $m->scheduled_for !== null ? DateTimeImmutable::createFromInterface($m->scheduled_for) : null,
             sent: $m->sent,

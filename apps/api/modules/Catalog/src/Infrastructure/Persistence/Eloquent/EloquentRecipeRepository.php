@@ -87,11 +87,11 @@ final readonly class EloquentRecipeRepository implements RecipeRepository
             return [];
         }
 
-        return RecipeModel::query()
+        return array_values(RecipeModel::query()
             ->whereIn('id', $ids)
             ->get()
             ->map(fn (RecipeModel $m): Recipe => $this->toDomain($m))
-            ->all();
+            ->all());
     }
 
     public function save(Recipe $recipe): void
@@ -139,14 +139,14 @@ final readonly class EloquentRecipeRepository implements RecipeRepository
             cookTimeMinutes: $m->cook_time_minutes,
             difficulty: Difficulty::from($m->difficulty),
             servingSize: $m->serving_size,
-            ingredients: array_map(
+            ingredients: array_values(array_map(
                 static fn (array $i): RecipeIngredient => RecipeIngredient::fromArray($i),
                 $m->ingredients ?? [],
-            ),
-            steps: array_map(static fn (array $s): CookingStep => CookingStep::fromArray($s), $m->steps ?? []),
-            tips: $m->tips ?? [],
-            tags: $m->tags ?? [],
-            relatedRecipeIds: $m->related_recipe_ids ?? [],
+            )),
+            steps: array_values(array_map(static fn (array $s): CookingStep => CookingStep::fromArray($s), $m->steps ?? [])),
+            tips: array_values($m->tips ?? []),
+            tags: array_values($m->tags ?? []),
+            relatedRecipeIds: array_values($m->related_recipe_ids ?? []),
             status: ContentStatus::from($m->status),
             version: $m->version,
             ratingAverage: (float) $m->rating_average,

@@ -39,13 +39,13 @@ final class EloquentCategoryRepository implements CategoryRepository
 
     public function all(bool $onlyActive = true): array
     {
-        return CategoryModel::query()
+        return array_values(CategoryModel::query()
             ->when($onlyActive, fn ($q) => $q->where('active', true))
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
             ->map(fn (CategoryModel $m): Category => $this->toDomain($m))
-            ->all();
+            ->all());
     }
 
     public function save(Category $category): void

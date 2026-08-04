@@ -111,12 +111,12 @@ final readonly class EloquentFoodRepository implements FoodRepository
             description: $m->description,
             categoryId: $m->category_id,
             region: FoodRegion::from($m->region),
-            states: $m->states ?? [],
-            localNames: array_map(static fn (array $l): LocalName => LocalName::fromArray($l), $m->local_names ?? []),
+            states: array_values($m->states ?? []),
+            localNames: array_values(array_map(static fn (array $l): LocalName => LocalName::fromArray($l), $m->local_names ?? [])),
             nutrition: $m->nutrition !== null ? NutritionalInfo::fromArray($m->nutrition) : null,
-            images: $m->images ?? [],
+            images: array_values($m->images ?? []),
             videoUrl: $m->video_url,
-            tags: $m->tags ?? [],
+            tags: array_values($m->tags ?? []),
             status: ContentStatus::from($m->status),
         );
     }

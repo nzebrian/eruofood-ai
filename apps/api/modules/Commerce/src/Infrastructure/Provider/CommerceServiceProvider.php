@@ -118,9 +118,9 @@ final class CommerceServiceProvider extends ServiceProvider
         }
 
         // Verification policy + inventory defaults.
-        $this->app->when(StoreService::class)->needs('$requireVerification')->give($requireVerification);
-        $this->app->when(ProductService::class)->needs('$requireVerification')->give($requireVerification);
-        $this->app->when(InventoryService::class)->needs('$defaultLowStockThreshold')->give($lowStock);
+        $this->app->when(StoreService::class)->needs('$requireVerification')->give(fn () => $requireVerification);
+        $this->app->when(ProductService::class)->needs('$requireVerification')->give(fn () => $requireVerification);
+        $this->app->when(InventoryService::class)->needs('$defaultLowStockThreshold')->give(fn () => $lowStock);
     }
 
     public function boot(): void

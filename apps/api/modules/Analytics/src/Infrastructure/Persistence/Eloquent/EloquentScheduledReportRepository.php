@@ -67,7 +67,7 @@ final class EloquentScheduledReportRepository implements ScheduledReportReposito
             reportKey: $m->report_key,
             cadence: ReportCadence::from($m->cadence),
             format: ExportFormat::from($m->format),
-            recipients: array_map('strval', $m->recipients ?? []),
+            recipients: array_values(array_map('strval', $m->recipients ?? [])),
             active: $m->active,
             nextRunAt: DateTimeImmutable::createFromInterface($m->next_run_at),
             lastRunAt: $m->last_run_at !== null ? DateTimeImmutable::createFromInterface($m->last_run_at) : null,

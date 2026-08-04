@@ -148,9 +148,9 @@ final class EloquentPaymentRepository implements PaymentRepository
             methodType: PaymentMethodType::from($m->method_type),
             providerReference: $providerRef,
             idempotencyKey: $m->idempotency_key,
-            splits: array_map(fn (array $s): PaymentSplit => PaymentSplit::fromArray($s, $currency), $m->splits ?? []),
+            splits: array_values(array_map(fn (array $s): PaymentSplit => PaymentSplit::fromArray($s, $currency), $m->splits ?? [])),
             failureReason: $m->failure_reason,
-            timeline: $m->timeline ?? [],
+            timeline: array_values($m->timeline ?? []),
             createdAt: DateTimeImmutable::createFromInterface($m->created_at),
         );
     }

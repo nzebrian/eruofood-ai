@@ -20,7 +20,7 @@ final class EloquentRecipeVersionRepository implements RecipeVersionRepository
 
     public function history(string $recipeId): array
     {
-        return RecipeVersionModel::query()
+        return array_values(RecipeVersionModel::query()
             ->where('recipe_id', $recipeId)
             ->orderByDesc('version')
             ->get()
@@ -29,6 +29,6 @@ final class EloquentRecipeVersionRepository implements RecipeVersionRepository
                 'snapshot' => $m->snapshot,
                 'created_at' => $m->created_at->toAtomString(),
             ])
-            ->all();
+            ->all());
     }
 }

@@ -68,7 +68,7 @@ final class EloquentShoppingListRepository implements ShoppingListRepository
             id: $m->id,
             userId: $m->user_id,
             name: $m->name,
-            lines: $this->normaliseLines($m),
+            lines: array_values($this->normaliseLines($m)),
         );
     }
 }

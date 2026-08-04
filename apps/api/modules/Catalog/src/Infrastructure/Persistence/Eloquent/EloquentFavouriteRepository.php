@@ -72,10 +72,10 @@ final readonly class EloquentFavouriteRepository implements FavouriteRepository
             return [];
         }
 
-        return FavouriteModel::query()
+        return array_values(FavouriteModel::query()
             ->where('user_id', $userId)
             ->whereIn('recipe_id', $recipeIds)
             ->pluck('recipe_id')
-            ->all();
+            ->all());
     }
 }

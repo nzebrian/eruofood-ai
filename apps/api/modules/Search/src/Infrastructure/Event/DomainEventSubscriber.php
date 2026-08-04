@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Search\Infrastructure\Event;
 
 use EruoFood\Search\Application\Service\EventIndexTranslator;
+use EruoFood\Shared\Domain\DomainEvent;
 use Illuminate\Contracts\Events\Dispatcher;
 
 /**
@@ -29,7 +30,9 @@ final readonly class DomainEventSubscriber
     {
         foreach (array_keys($this->eventMap) as $eventName) {
             $this->dispatcher->listen($eventName, function (object $event): void {
-                app(EventIndexTranslator::class)->handle($event);
+                if ($event instanceof DomainEvent) {
+                    app(EventIndexTranslator::class)->handle($event);
+                }
             });
         }
     }

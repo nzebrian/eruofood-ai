@@ -68,8 +68,8 @@ final class EloquentMessageRepository implements MessageRepository
             senderId: $m->sender_id,
             type: MessageType::from($m->type),
             body: $m->body,
-            attachments: array_map(static fn (array $a): Attachment => Attachment::fromArray($a), $m->attachments ?? []),
-            readBy: array_map('strval', $m->read_by ?? []),
+            attachments: array_values(array_map(static fn (array $a): Attachment => Attachment::fromArray($a), $m->attachments ?? [])),
+            readBy: array_values(array_map('strval', $m->read_by ?? [])),
             createdAt: DateTimeImmutable::createFromInterface($m->created_at),
         );
     }

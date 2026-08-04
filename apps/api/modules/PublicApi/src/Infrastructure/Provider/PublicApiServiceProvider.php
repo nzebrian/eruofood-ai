@@ -81,9 +81,9 @@ final class PublicApiServiceProvider extends ServiceProvider
             $sec = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('publicapi.webhooks.security', []);
 
             return new NetworkWebhookUrlGuard(
-                allowedSchemes: array_map('strtolower', (array) ($sec['allowed_schemes'] ?? ['https'])),
+                allowedSchemes: array_values(array_map('strtolower', (array) ($sec['allowed_schemes'] ?? ['https']))),
                 enforceHttps: (bool) ($sec['enforce_https'] ?? true),
-                allowedPorts: array_map('intval', (array) ($sec['allowed_ports'] ?? [443, 80])),
+                allowedPorts: array_values(array_map('intval', (array) ($sec['allowed_ports'] ?? [443, 80]))),
                 blockPrivateNetworks: (bool) ($sec['block_private_networks'] ?? true),
                 allowedHosts: (array) ($sec['allowed_hosts'] ?? []),
             );

@@ -52,7 +52,7 @@ final class EloquentConversationRepository implements ConversationRepository
         return Conversation::reconstitute(
             id: $m->id,
             type: ConversationType::from($m->type),
-            participantIds: array_map('strval', $m->participant_ids ?? []),
+            participantIds: array_values(array_map('strval', $m->participant_ids ?? [])),
             subject: $m->subject,
             contextRef: $m->context_ref,
             lastMessageAt: DateTimeImmutable::createFromInterface($m->last_message_at),

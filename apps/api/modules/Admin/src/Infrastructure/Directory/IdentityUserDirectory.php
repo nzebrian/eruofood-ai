@@ -8,7 +8,7 @@ use DateTimeImmutable;
 use EruoFood\Admin\Application\DTO\UserSummary;
 use EruoFood\Admin\Application\Port\UserDirectory;
 use EruoFood\Shared\Domain\Paginated;
-use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Connection;
 
 /**
  * Read-only adapter over the Identity context's users table. A soft reference —
@@ -20,7 +20,7 @@ final readonly class IdentityUserDirectory implements UserDirectory
 {
     private const TABLE = 'identity_users';
 
-    public function __construct(private ConnectionInterface $db)
+    public function __construct(private Connection $db)
     {
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Identity\Infrastructure\Auth;
 
 use Carbon\CarbonImmutable;
+use DateTimeImmutable;
 use EruoFood\Identity\Application\DTO\IssuedRefreshToken;
 use EruoFood\Identity\Application\DTO\SessionMetadata;
 use EruoFood\Identity\Application\DTO\SessionView;
@@ -99,7 +100,7 @@ final readonly class EloquentRefreshTokenManager implements RefreshTokenManager
 
     public function listSessions(UserId $userId): array
     {
-        return RefreshTokenModel::query()
+        return array_values(RefreshTokenModel::query()
             ->where('user_id', $userId->value())
             ->whereNull('revoked_at')
             ->where('expires_at', '>', now())
@@ -109,10 +110,10 @@ final readonly class EloquentRefreshTokenManager implements RefreshTokenManager
                 sessionId: $m->id,
                 ipAddress: $m->ip_address,
                 userAgent: $m->user_agent,
-                createdAt: $m->created_at->toDateTimeImmutable(),
-                lastUsedAt: $m->last_used_at?->toDateTimeImmutable(),
+                createdAt: DateTimeImmutable::createFromInterface($m->created_at),
+                lastUsedAt: $m->last_used_at !== null ? DateTimeImmutable::createFromInterface($m->last_used_at) : null,
             ))
-            ->all();
+            ->all());
     }
 
     private function findValid(string $plaintext): ?RefreshTokenModel
