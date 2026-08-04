@@ -162,3 +162,21 @@ staging deployment:
 - **Secret rotation** procedure documented in `docs/INCIDENT_RESPONSE.md` §5.
 - **Release security gate:** `release.yml` runs Gitleaks + `composer audit` +
   `npm audit` as mandatory gates; production tag blocked on High/Critical.
+
+---
+
+# Milestone 21 update
+
+- **Rate-limit resilience (EXECUTED — PASSED):** the Public API rate limiter now
+  **fails closed** when the Redis backend is unavailable — it denies with a
+  deterministic reset and logs, never surfacing a 500 and never allowing unlimited
+  traffic. Security rate limiting was **not** weakened for availability.
+  Regression: `RateLimiterResilienceTest`. See `docs/REDIS_RESILIENCE.md`.
+- **Correlation IDs (EXECUTED — PASSED):** `X-Request-Id` per request for traceable
+  security investigation.
+- **Alerting:** `AuthFailureSpike` (credential-stuffing signal) plus infra alerts
+  in `infra/monitoring/alert-rules.yaml`.
+- **Application security controls re-verified:** 338/338 on both engines; OAuth2
+  18/18; SSRF guard 25/25.
+- **External penetration test:** still **NOT VALIDATED / NOT PERFORMED** — external
+  requirement (`docs/PENETRATION_TEST_PLAN.md`).

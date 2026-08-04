@@ -135,3 +135,15 @@ SCENARIO=soak   k6 run --out json=soak.json   load/public-api.k6.js
   is still unmeasured. The functional latency floor from Milestone 19 stands
   (warm p50 26.5 / p95 31.9 / p99 35.1 ms; Redis ~0.043 ms/op). No numbers are
   fabricated.
+
+---
+
+## Milestone 21 update
+
+Performance **certification remains NOT VALIDATED** — no scaled, network-isolated
+staging cluster exists in this sandbox, so the multi-worker production baseline is
+still unmeasured. The k6 suite (`load/public-api.k6.js`, `load/critical-flows.k6.js`,
+`load/run.sh`) and profiles (baseline/load/stress/spike/soak) are ready to run on
+staging; the functional latency floor from M19 stands (p50 26.5 / p95 31.9 / p99
+35.1 ms; Redis 0.043 ms/op). No numbers are fabricated. This is item #2 of the
+remaining requirements in `docs/FINAL_GA_REPORT.md`.

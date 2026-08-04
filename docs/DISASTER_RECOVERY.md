@@ -69,3 +69,13 @@ platform-wide compromise. Builds on `docs/BACKUP_RESTORE.md`.
 
 - Status page updated within 15 min of a declared incident.
 - Stakeholder + customer comms per severity (`INCIDENT_RESPONSE.md`).
+
+---
+
+## Milestone 21 — backup/restore drill executed
+
+The database backup/restore leg of DR was **executed** (see `BACKUP_RESTORE.md` →
+"Executed backup/restore drill"): `pg_dump -Fc` → `DROP DATABASE` → `pg_restore`
+round-tripped **105 tables / 406 indexes / all rows** identically on PostgreSQL 16,
+with the migration head intact — **EXECUTED — PASSED**. Region-failover (Tier 2)
+and PITR remain deployment-time validations against managed infrastructure.

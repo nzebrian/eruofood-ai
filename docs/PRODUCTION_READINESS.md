@@ -169,3 +169,23 @@ a GO, none of which are core-functionality defects:
   blocked in-session; runs in CI), infra egress enforcement, external pentest.
 
 Full GO/NO-GO in `docs/GA_CERTIFICATION.md`.
+
+---
+
+# Milestone 21 update — Staging Certification & Cutover Readiness
+
+- **PHPStan Level 8: EXECUTED — PASSED, 0 errors** (from 162 residual → 0; genuine
+  fixes only). CI/production-tag hard gate now satisfied by the code itself.
+- **Runtime suite: 338/338 on SQLite and PostgreSQL 16** (added a Redis-resilience
+  regression test). Pint green.
+- **Backup/restore: EXECUTED — PASSED** (pg_dump→drop→pg_restore round-trip on PG16).
+- **Redis resilience: EXECUTED — PASSED** — rate limiter fails **closed** on outage
+  (no bypass); readiness gating; HA spec (`docs/REDIS_RESILIENCE.md`).
+- **Observability**: correlation IDs + health/readiness executed; alert rules
+  authored (`infra/monitoring/alert-rules.yaml`, `docs/OBSERVABILITY.md`).
+- **New runbooks**: `PRODUCTION_CUTOVER.md`, `STAGING_CERTIFICATION.md`;
+  `BACKUP_RESTORE.md`/`DISASTER_RECOVERY.md` updated with the executed drill.
+- **Still NOT VALIDATED** (deployment/external): performance certification, full
+  Docker clean-boot, Flutter execution, infra egress enforcement, external pentest.
+
+Formal decision: **CONDITIONAL GO to staging** — see `docs/FINAL_GA_REPORT.md`.

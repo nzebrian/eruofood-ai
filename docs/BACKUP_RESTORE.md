@@ -72,3 +72,23 @@ correctness. On loss:
 | Table-level corruption | Logical restore of affected tables | RTO ≤ 60 min |
 | Full DB loss | Restore latest base backup + WAL replay | RTO ≤ 60 min, RPO ≤ 5 min |
 | Region loss | See `docs/DISASTER_RECOVERY.md` | RTO per DR tier |
+
+---
+
+## Executed backup/restore drill (Milestone 21) — EXECUTED — PASSED
+
+A real PostgreSQL backup → simulated-loss → restore drill was performed against
+PostgreSQL 16 (the production engine):
+
+| Step | Command | Result |
+|---|---|---|
+| Schema + data | `artisan migrate` + seed marker rows | 104 migration tables + a 2-row marker table = **105 tables, 406 indexes** |
+| Backup | `pg_dump -Fc -f eruofood.dump` | 242 KB custom-format dump in **0.12 s** |
+| Simulate loss | `DROP DATABASE` + `CREATE DATABASE` (empty) | database recreated empty |
+| Restore | `pg_restore --no-owner eruofood.dump` | completed in **0.60 s** |
+| Verify | table/index/row counts + data value + `migrate:status` | **105 tables, 406 indexes, marker rows intact, note value identical, migration head present** |
+
+**Result: PASS** — schema, indexes, and data round-tripped identically; the
+migration head was intact after restore. This validates the `pg_dump`/`pg_restore`
+procedure end-to-end. Production adds PITR (WAL replay) on top for the ≤5 min RPO
+(managed-instance feature, not exercisable in this sandbox).

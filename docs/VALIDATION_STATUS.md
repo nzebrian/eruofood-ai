@@ -341,3 +341,36 @@ EXECUTED — FAILED / STATIC VALIDATION ONLY / NOT VALIDATED**.
 | Flutter certification | Toolchain absent in-session; `ci-mobile.yml` + `release.yml` run `analyze`/`test` in CI. |
 | Infrastructure egress enforcement | Provider-dependent; deployment-ready spec in `docs/INFRA_EGRESS_POLICY.md`. |
 | External penetration test | Independent external requirement; scope/severity/release-policy in `docs/PENETRATION_TEST_PLAN.md`. Not simulated. |
+
+---
+
+# Milestone 21 — Staging Certification & Production Cutover Readiness
+
+Every executable check re-run this milestone. Verdicts: EXECUTED — PASSED /
+EXECUTED — FAILED / STATIC VALIDATION ONLY / NOT VALIDATED.
+
+## EXECUTED — PASSED
+| Check | Command | Result |
+|---|---|---|
+| PHPStan Level 8 (production code) | `composer run analyse` | **0 errors** (1885 → 0; genuine fixes, no suppression/baseline) |
+| Full Pest suite (SQLite) | `vendor/bin/pest` | **338 passed / 0 failed** (1321 assertions) |
+| Full Pest suite (PostgreSQL 16) | `DB_CONNECTION=pgsql vendor/bin/pest` | **338 passed / 0 failed** |
+| Coding standards | `composer run lint` | PASS |
+| Migrate from empty PostgreSQL | `artisan migrate` | 104 tables |
+| **Backup/restore drill** | `pg_dump -Fc` → drop → `pg_restore` | **PASS** — 105 tables / 406 indexes / rows identical, migration head intact |
+| Redis primitives | `scripts/redis_validation.php` | **9/9** |
+| Redis outage → limiter fails closed | `RateLimiterResilienceTest` | **PASS** (deny, no bypass) |
+| OAuth2 DB-backed security | `scripts/oauth_db_validation.php` | **18/18** |
+| Web typecheck / tests / build | `tsc` / `vitest` / `vite build` | 0 / **51 passed** / clean |
+| Correlation IDs + health/readiness | feature tests | `X-Request-Id`; `/api/v1/health`+`/api/v1/ready` |
+
+## STATIC VALIDATION ONLY
+- OpenAPI contract (redocly): spec parses (~273 paths); CLI install network-blocked; runs in CI.
+- Docker clean-boot: compose validates 9 services; image pulls 403-blocked in-session (`ci-docker.yml` runs it in CI).
+- Observability alert rules: authored/deployment-ready (`infra/monitoring/alert-rules.yaml`).
+
+## NOT VALIDATED (environment / external)
+- Production performance certification (k6 on scaled staging).
+- Flutter analyze/test/build (toolchain absent).
+- Infrastructure egress enforcement (provider-dependent).
+- External penetration test (independent third party — not simulated).

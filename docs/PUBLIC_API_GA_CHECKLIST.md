@@ -129,3 +129,23 @@ analyze/test, and the infra egress + external pen-test.
 **Public API surface:** functionally GA-ready and green end-to-end. Full-platform
 GA is **NO-GO** pending the items in `docs/GA_DECISION.md` (PHPStan gate,
 production perf baseline, Docker boot, Flutter, infra egress, external pentest).
+
+---
+
+## Milestone 21 update — final pre-production status
+
+| Item | Status |
+|---|---|
+| PHPStan Level 8 | **EXECUTED — PASSED (0 errors)** |
+| Full Pest suite (SQLite + PostgreSQL 16) | **EXECUTED — PASSED (338/338)** |
+| Redis rate limit / quota / idempotency | **EXECUTED — PASSED** (9/9) + fails **closed** on outage |
+| DB-backed OAuth2 | **EXECUTED — PASSED** (18/18) |
+| Backup / restore | **EXECUTED — PASSED** (drill) |
+| Correlation IDs + health/readiness | **EXECUTED — PASSED** |
+| Performance certification | **NOT VALIDATED** (needs scaled staging) |
+| Docker clean-boot | **STATIC** (registry-blocked in-session; CI-ready) |
+| Infra egress enforcement | **NOT VALIDATED** (provider-dependent) |
+| External penetration test | **NOT VALIDATED** (external requirement) |
+
+Public API surface is functionally GA-ready and green end-to-end. Overall
+decision: **CONDITIONAL GO to staging** — `docs/FINAL_GA_REPORT.md`.
