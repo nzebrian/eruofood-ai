@@ -101,7 +101,7 @@ final class PublicApiServiceProvider extends ServiceProvider
         });
 
         $storeName = (string) $config->get('publicapi.counter_store', 'array');
-        $this->app->singleton(RateLimiter::class, fn ($app): RateLimiter => new CacheRateLimiter($app['cache']->store($storeName)));
+        $this->app->singleton(RateLimiter::class, fn ($app): RateLimiter => new CacheRateLimiter($app['cache']->store($storeName), $app->make(\Psr\Log\LoggerInterface::class)));
         $this->app->singleton(QuotaStore::class, fn ($app): QuotaStore => new CacheQuotaStore($app['cache']->store($storeName)));
 
         // Read façade over Catalog (the one sanctioned cross-context read seam).
