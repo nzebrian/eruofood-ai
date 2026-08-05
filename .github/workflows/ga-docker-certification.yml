@@ -88,8 +88,15 @@ jobs:
           grep -q '"status":"ok"'    /tmp/health.json
           grep -q '"status":"ready"' /tmp/ready.json
 
-      - name: Backend runtime tests (inside the container, on PostgreSQL)
-        run: docker compose exec -T api vendor/bin/pest --no-coverage
+      # The Pest unit/feature suite is intentionally NOT run inside the container.
+      # This job certifies the PRODUCTION image, built with `composer install
+      # --no-dev` (Pest is a require-dev package and is absent by design — shipping
+      # dev tooling to prod would be the real defect). The full suite is already a
+      # blocking gate on the host, with dev dependencies installed, in ci-api.yml
+      # (every PR, on PostgreSQL 16 + Redis 7) and release.yml (on a version tag).
+      # What this cert proves instead is that the built artifact BOOTS and SERVES:
+      # migrations from zero, PostgreSQL + Redis integration, OpenAPI, health/
+      # readiness, public-API smoke, and restart-recovery — all below.
 
       - name: PostgreSQL integration — fresh migrate/rollback/re-migrate
         run: |
