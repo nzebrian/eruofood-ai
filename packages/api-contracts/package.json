@@ -10,7 +10,7 @@
     "preview": "redocly preview-docs openapi.yaml"
   },
   "devDependencies": {
-    "@redocly/cli": "^1.25.0",
+    "@redocly/cli": "^2.44.2",
     "openapi-typescript": "^7.4.1"
   }
 }
