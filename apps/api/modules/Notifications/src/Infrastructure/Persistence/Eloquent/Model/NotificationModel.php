@@ -22,6 +22,10 @@ use Illuminate\Database\Eloquent\Model;
  * @property DateTimeInterface|null $scheduled_for
  * @property DateTimeInterface|null $read_at
  * @property array<array-key, mixed> $timeline
+ * @property string|null $provider_message_id
+ * @property string|null $correlation_id
+ * @property string $notification_class
+ * @property bool $retryable
  * @property DateTimeInterface $created_at
  */
 final class NotificationModel extends Model
@@ -44,6 +48,7 @@ final class NotificationModel extends Model
             'scheduled_for' => 'datetime',
             'read_at' => 'datetime',
             'timeline' => 'array',
+            'retryable' => 'boolean',
             'created_at' => 'datetime',
         ];
     }

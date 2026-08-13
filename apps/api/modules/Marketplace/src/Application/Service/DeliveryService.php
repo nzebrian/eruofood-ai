@@ -8,11 +8,13 @@ use EruoFood\Marketplace\Domain\Delivery\Delivery;
 use EruoFood\Marketplace\Domain\Delivery\DeliveryRepository;
 use EruoFood\Marketplace\Domain\Enum\DeliveryStatus;
 use EruoFood\Marketplace\Domain\Enum\RiderStatus;
+use EruoFood\Marketplace\Domain\Exception\MarketplaceInvalidState;
 use EruoFood\Marketplace\Domain\Exception\MarketplaceNotFound;
 use EruoFood\Marketplace\Domain\Exception\NotVendorOwner;
 use EruoFood\Marketplace\Domain\Rider\RiderRepository;
 use EruoFood\Marketplace\Domain\ValueObject\GeoLocation;
 use EruoFood\Shared\Domain\Clock;
+use EruoFood\Verification\Contracts\VerificationStatusQuery;
 
 /**
  * Delivery assignment and live tracking. Vendors (or admins) assign a rider to
@@ -27,6 +29,7 @@ final readonly class DeliveryService
         private VendorService $vendors,
         private OrderService $orders,
         private Clock $clock,
+        private VerificationStatusQuery $verification,
     ) {
     }
 
@@ -45,6 +48,15 @@ final readonly class DeliveryService
         $this->vendors->manageable($userId, $isAdmin, $delivery->vendorId());
 
         $rider = $this->riders->findById($riderId) ?? throw MarketplaceNotFound::of('rider', $riderId);
+
+        // M24: an unverified rider cannot be given a delivery. Checked at the
+        // moment of assignment rather than at onboarding, so a rider whose
+        // verification later lapsed or was revoked stops receiving work without
+        // anyone having to remember to unassign them.
+        if ($this->verification->blocksSubject('rider', $rider->userId())) {
+            throw new MarketplaceInvalidState('This rider has not completed identity verification and cannot be assigned deliveries.');
+        }
+
         $now = $this->clock->now();
 
         $delivery->assignRider($rider->id(), $now);

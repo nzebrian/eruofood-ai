@@ -16,6 +16,7 @@ use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\Paginated;
 use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Domain\ValueObject\Money;
+use EruoFood\Verification\Contracts\StepUpGuard;
 
 /**
  * Wallets for every account type: balances, credits/debits, top-ups (credited
@@ -38,6 +39,7 @@ final readonly class WalletService
         private WalletRepository $wallets,
         private EventBus $events,
         private TransactionManager $transactions,
+        private StepUpGuard $stepUp,
         private string $currency,
         private int $lowBalanceThreshold,
     ) {
@@ -105,6 +107,15 @@ final readonly class WalletService
     {
         if ($amountMinor <= 0) {
             throw new PaymentsInvalidState('Transfer amount must be positive.');
+        }
+
+        // M24: a large transfer out of a customer wallet is where a throwaway
+        // account becomes expensive, so it is the point progressive
+        // verification asks for more. Checked before anything is locked or
+        // moved, and the threshold lives in configuration rather than here —
+        // Payments asks whether this is gated, it does not decide.
+        if ($fromType === WalletOwnerType::Customer) {
+            $this->stepUp->assert('wallet.transfer', $fromId, $amountMinor);
         }
 
         $from = $this->getOrOpen($fromType, $fromId);

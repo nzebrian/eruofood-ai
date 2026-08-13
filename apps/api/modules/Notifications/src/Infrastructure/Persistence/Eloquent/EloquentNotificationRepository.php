@@ -7,6 +7,7 @@ namespace EruoFood\Notifications\Infrastructure\Persistence\Eloquent;
 use DateTimeImmutable;
 use EruoFood\Notifications\Domain\Enum\NotificationCategory;
 use EruoFood\Notifications\Domain\Enum\NotificationChannel;
+use EruoFood\Notifications\Domain\Enum\NotificationClass;
 use EruoFood\Notifications\Domain\Enum\NotificationStatus;
 use EruoFood\Notifications\Domain\Enum\Priority;
 use EruoFood\Notifications\Domain\Notification\DeliveryStatsRepository;
@@ -70,6 +71,9 @@ final class EloquentNotificationRepository implements NotificationRepository, De
         return array_values(array_map(
             fn (NotificationModel $m): Notification => $this->toDomain($m),
             NotificationModel::query()->where('status', NotificationStatus::Failed->value)
+                // A permanent failure is excluded at the query, so the retry
+                // loop never spends a cycle loading something it cannot send.
+                ->where('retryable', true)
                 ->where('attempts', '<', $maxAttempts)->orderBy('created_at')->limit($limit)->get()->all(),
         ));
     }
@@ -97,6 +101,10 @@ final class EloquentNotificationRepository implements NotificationRepository, De
         $model->read_at = $notification->readAt();
         $model->timeline = $notification->timeline();
         $model->created_at = $notification->createdAt();
+        $model->notification_class = $notification->class()->value;
+        $model->correlation_id = $notification->correlationId();
+        $model->provider_message_id = $notification->providerMessageId();
+        $model->retryable = $notification->isRetryable();
         $model->save();
     }
 
@@ -135,6 +143,10 @@ final class EloquentNotificationRepository implements NotificationRepository, De
             readAt: $m->read_at !== null ? DateTimeImmutable::createFromInterface($m->read_at) : null,
             timeline: array_values($m->timeline ?? []),
             createdAt: DateTimeImmutable::createFromInterface($m->created_at),
+            class: NotificationClass::tryFrom((string) $m->notification_class),
+            correlationId: $m->correlation_id,
+            providerMessageId: $m->provider_message_id,
+            retryable: (bool) $m->retryable,
         );
     }
 }

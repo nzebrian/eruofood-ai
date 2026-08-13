@@ -22,6 +22,7 @@ use EruoFood\Commerce\Domain\Promotion\CouponRepository;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Domain\ValueObject\Money;
+use EruoFood\Verification\Contracts\VerificationStatusQuery;
 
 /**
  * Checkout — the single place that turns a cart into a placed order. It resolves
@@ -42,6 +43,7 @@ final readonly class CheckoutService
         private ShippingCalculator $shipping,
         private EventBus $events,
         private TransactionManager $transactions,
+        private VerificationStatusQuery $verification,
         private string $currency,
     ) {
     }
@@ -72,6 +74,21 @@ final readonly class CheckoutService
             $cart = $this->carts->forUser($userId) ?? Cart::forUser($userId, $this->currency);
             if ($cart->isEmpty()) {
                 throw new CommerceInvalidState('Your cart is empty.');
+            }
+
+            /*
+             * M24: an unverified grocery cannot take orders.
+             *
+             * Note this check did not exist at all before M24 — only *publishing*
+             * a product required a verified store, so a store suspended after its
+             * products went live kept receiving orders. Checking every distinct
+             * store on the cart closes that, and does it at the moment the order
+             * would be created.
+             */
+            foreach ($this->storeIdsOn($cart) as $storeId) {
+                if ($this->verification->blocksSubject('business', $storeId, 'grocery')) {
+                    throw new CommerceInvalidState('One of the stores in your cart has not completed business verification.');
+                }
             }
 
             $discount = $this->discounts->evaluate($cart);
@@ -143,6 +160,21 @@ final readonly class CheckoutService
         }
 
         return $order;
+    }
+
+    /**
+     * The distinct stores a cart draws from.
+     *
+     * @return list<string>
+     */
+    private function storeIdsOn(Cart $cart): array
+    {
+        $ids = [];
+        foreach ($cart->items() as $item) {
+            $ids[$item->storeId] = true;
+        }
+
+        return array_keys($ids);
     }
 
     private function breakdown(Cart $cart, bool $pickup, DiscountResult $discount): PriceBreakdown

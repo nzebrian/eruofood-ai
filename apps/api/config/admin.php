@@ -59,5 +59,16 @@ return [
         'identity.email_verified' => 'user.email_verified',
         'payments.payment_failed' => 'security.payment_failed',
         'marketplace.vendor_verified' => 'ops.vendor_verified',
+
+        /*
+         * KYC / KYB (M24). The first entry is the one that matters for
+         * compliance: every read of regulated identity data lands in the
+         * append-only trail, granted or denied, whoever made it — a SuperAdmin
+         * keeps the permission, not the ability to look unobserved.
+         */
+        'verification.sensitive_data_accessed' => 'security.verification_pii_accessed',
+        'verification.subject_verified' => 'ops.verification_subject_verified',
+        'verification.subject_rejected' => 'ops.verification_subject_rejected',
+        'verification.subject_expired' => 'ops.verification_subject_expired',
     ],
 ];

@@ -31,10 +31,49 @@ final readonly class PreferenceController
         return $this->data($this->presenter->preference($this->preferences->get($this->currentUserId($request))));
     }
 
+    /**
+     * Opt in or out of marketing.
+     *
+     * Its own endpoint rather than a field on the general preferences update,
+     * because consent is a decision with a timestamp and an audit trail behind
+     * it, not a setting that can be toggled as a side effect of saving
+     * something else.
+     */
+    public function setMarketing(Request $request): JsonResponse
+    {
+        $data = $request->validate(['opt_in' => ['required', 'boolean']]);
+        $userId = $this->currentUserId($request);
+
+        $preference = (bool) $data['opt_in']
+            ? $this->preferences->optIntoMarketing($userId)
+            : $this->preferences->optOutOfMarketing($userId);
+
+        return $this->data($this->presenter->preference($preference));
+    }
+
+    /**
+     * Honour an unsubscribe link.
+     *
+     * Public by necessity — it is clicked from an email client with no session,
+     * and the token is what stands in for one. The answer is the same whether
+     * the token was real, so the endpoint cannot be used to test tokens.
+     */
+    public function unsubscribe(Request $request, string $token): JsonResponse
+    {
+        $this->preferences->unsubscribeByToken($token);
+
+        return $this->data([
+            'unsubscribed' => true,
+            // Said plainly, because people reasonably fear that unsubscribing
+            // from marketing will also stop the messages they actually need.
+            'note' => 'You will no longer receive marketing email. Security and transactional messages about your account will continue.',
+        ]);
+    }
+
     public function setChannels(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'category' => ['required', 'in:account,order,payment,wallet,delivery,promotional,ai,nutrition,admin'],
+            'category' => ['required', 'in:account,order,payment,wallet,delivery,promotional,ai,nutrition,admin,verification'],
             'channels' => ['array'],
             'channels.*' => ['in:email,sms,push,in_app,whatsapp,telegram'],
         ]);

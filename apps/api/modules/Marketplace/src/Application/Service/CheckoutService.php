@@ -18,6 +18,7 @@ use EruoFood\Shared\Domain\Clock;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Domain\ValueObject\Money;
+use EruoFood\Verification\Contracts\VerificationStatusQuery;
 
 /**
  * Checkout: turns a user's cart into a placed order (and a delivery job for
@@ -46,6 +47,7 @@ final readonly class CheckoutService
         private EventBus $events,
         private Clock $clock,
         private TransactionManager $transactions,
+        private VerificationStatusQuery $verification,
         private string $currency,
     ) {
     }
@@ -61,6 +63,15 @@ final readonly class CheckoutService
             $vendor = $this->vendors->get($cart->vendorId());
             if (! $vendor->canTrade()) {
                 throw new MarketplaceInvalidState('This vendor is not currently accepting orders.');
+            }
+
+            // M24: an unverified restaurant cannot take orders. Enforced here, on
+            // the server, at the moment the order would be created — a client
+            // flag or a stale menu cannot get past it. Whether an unverified
+            // vendor is actually blocked is Verification's call, not ours, so
+            // the rollout switch lives in one place.
+            if ($this->verification->blocksSubject('business', $vendor->id(), 'restaurant')) {
+                throw new MarketplaceInvalidState('This vendor has not completed business verification and cannot accept orders.');
             }
 
             // Lock every menu item up front, in a stable order, before any of

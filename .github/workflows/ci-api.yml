@@ -15,8 +15,70 @@ defaults:
   run:
     working-directory: apps/api
 
+# Two required gates, deliberately on different engines.
+#
+# `sqlite` is the engine developers run locally, so it has to stay green or the
+# fast feedback loop stops being trustworthy.
+#
+# `quality` runs the same suite on PostgreSQL 16 — the engine production
+# actually uses. M24 made the case for this being automated rather than manual:
+# several real defects (a uuid column that could not hold a system actor name, a
+# transaction aborted by a constraint violation, a unique index that never
+# fired) passed cleanly on SQLite and failed only on PostgreSQL. A gate that a
+# person has to remember to run is not a gate.
 jobs:
+  sqlite:
+    name: Tests · SQLite
+    runs-on: ubuntu-latest
+
+    env:
+      # Explicit rather than inherited from phpunit.xml. An exported
+      # DB_CONNECTION takes precedence over the <env> block there, so stating it
+      # here is what makes this job's engine a fact rather than a side effect.
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_sqlite, sqlite3, intl, zip, bcmath, pcntl
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: apps/api/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Copy environment
+        run: cp .env.example .env && php artisan key:generate
+
+      - name: Confirm this job is running on SQLite
+        run: |
+          ENGINE=$(php artisan tinker --execute="echo DB::connection()->getDriverName();" | tr -d '[:space:]')
+          echo "Database engine: ${ENGINE}"
+          if [ "${ENGINE}" != "sqlite" ]; then
+            echo "::error::Expected sqlite, got '${ENGINE}'. This job must exercise the fast local engine."
+            exit 1
+          fi
+
+      - name: Tests (Pest) on SQLite
+        run: vendor/bin/pest
+
   quality:
+    # Name deliberately unchanged. GitHub matches required status checks on this
+    # string, so renaming it would silently detach an existing branch-protection
+    # rule — which is a worse outcome than a name that undersells what the job
+    # does. The engine is enforced by the guard step below, not by the label.
     name: Lint · Analyse · Test
     runs-on: ubuntu-latest
 
@@ -80,7 +142,27 @@ jobs:
       - name: Static analysis (PHPStan/Larastan)
         run: composer run analyse
 
-      - name: Tests (Pest) with coverage
+      # The guard that makes this a real gate. The Pest run picks up its engine
+      # from the exported DB_CONNECTION above, which silently overrides the
+      # sqlite setting in phpunit.xml. If that env block were ever removed or
+      # renamed, the suite would quietly fall back to SQLite and keep passing —
+      # and the PostgreSQL-only defects this job exists to catch would be
+      # invisible again. Failing loudly here is cheaper than trusting it.
+      - name: Confirm the suite will run against PostgreSQL 16
+        run: |
+          ENGINE=$(php artisan tinker --execute="echo DB::connection()->getDriverName();" | tr -d '[:space:]')
+          VERSION=$(php artisan tinker --execute="echo DB::connection()->getPdo()->getAttribute(PDO::ATTR_SERVER_VERSION);" | tr -d '[:space:]')
+          echo "Database engine: ${ENGINE} ${VERSION}"
+          if [ "${ENGINE}" != "pgsql" ]; then
+            echo "::error::Expected pgsql, got '${ENGINE}'. The PostgreSQL gate is not actually testing PostgreSQL."
+            exit 1
+          fi
+          case "${VERSION}" in
+            16.*) ;;
+            *) echo "::error::Expected PostgreSQL 16, got '${VERSION}'."; exit 1 ;;
+          esac
+
+      - name: Tests (Pest) on PostgreSQL with coverage
         run: vendor/bin/pest --coverage --coverage-clover=coverage.xml
 
       - name: Database — migrate from an empty PostgreSQL database

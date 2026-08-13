@@ -7,6 +7,9 @@ namespace EruoFood\Notifications\Domain\Enum;
 /**
  * The category a notification belongs to. Users can enable/disable channels per
  * category (preferences), and promotional/admin categories drive campaigns.
+ *
+ * A category also determines the notification's {@see NotificationClass}, which
+ * is what decides consent, unsubscribe handling and suppression.
  */
 enum NotificationCategory: string
 {
@@ -19,6 +22,7 @@ enum NotificationCategory: string
     case Ai = 'ai';                   // recommendations
     case Nutrition = 'nutrition';     // meal/nutrition reminders
     case Admin = 'admin';             // broadcasts
+    case Verification = 'verification'; // KYC / KYB identity verification (M24)
 
     /** Whether this category is subject to quiet hours (transactional ones are not). */
     public function respectsQuietHours(): bool

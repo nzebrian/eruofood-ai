@@ -39,13 +39,17 @@ return Application::configure(basePath: dirname(__DIR__))
             // Map on the stable machine-readable code so the app shell stays
             // decoupled from any specific module's exception classes.
             $status = match ($e->errorCode()) {
-                'INVALID_CREDENTIALS', 'INVALID_TWO_FACTOR_CODE', 'PUBLICAPI_UNAUTHENTICATED' => 401,
+                'INVALID_CREDENTIALS', 'INVALID_TWO_FACTOR_CODE', 'PUBLICAPI_UNAUTHENTICATED',
+                // An unsigned, forged or replayed provider callback. The
+                // webhook controller normally answers this itself; the
+                // mapping is here so an escape cannot downgrade it to 400.
+                'VERIFICATION_WEBHOOK_REJECTED' => 401,
                 'ACCOUNT_SUSPENDED', 'NOT_AUTHORIZED' => 403,
                 'USER_NOT_FOUND', 'CATALOG_RESOURCE_NOT_FOUND',
                 'AI_PROMPT_NOT_FOUND', 'AI_CONVERSATION_NOT_FOUND',
                 'NUTRITION_RESOURCE_NOT_FOUND', 'MARKETPLACE_RESOURCE_NOT_FOUND',
                 'COMMERCE_RESOURCE_NOT_FOUND', 'PAYMENTS_RESOURCE_NOT_FOUND',
-                'NOTIFICATIONS_RESOURCE_NOT_FOUND',
+                'NOTIFICATIONS_RESOURCE_NOT_FOUND', 'VERIFICATION_RESOURCE_NOT_FOUND',
                 'ANALYTICS_RESOURCE_NOT_FOUND', 'ADMIN_RESOURCE_NOT_FOUND',
                 'SEARCH_RESOURCE_NOT_FOUND', 'SUPPORT_RESOURCE_NOT_FOUND',
                 'REVIEWS_RESOURCE_NOT_FOUND', 'LOYALTY_RESOURCE_NOT_FOUND',
@@ -57,7 +61,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 'EMAIL_ALREADY_REGISTERED', 'DUPLICATE_SLUG', 'ALREADY_REVIEWED',
                 'MARKETPLACE_CONFLICT', 'COMMERCE_CONFLICT', 'PAYMENTS_CONFLICT',
                 'NOTIFICATIONS_CONFLICT', 'ADMIN_CONFLICT', 'SEARCH_CONFLICT',
-                'SUPPORT_CONFLICT', 'REVIEWS_CONFLICT', 'LOYALTY_CONFLICT',
+                'SUPPORT_CONFLICT', 'REVIEWS_CONFLICT', 'LOYALTY_CONFLICT', 'VERIFICATION_CONFLICT',
                 'PUBLICAPI_CONFLICT' => 409,
                 // The key was already spent on a different payload. Retrying will
                 // not help — the client must use a fresh key.
@@ -68,16 +72,22 @@ return Application::configure(basePath: dirname(__DIR__))
                 'ANALYTICS_NOT_AUTHORIZED', 'ADMIN_NOT_AUTHORIZED',
                 'SEARCH_NOT_AUTHORIZED', 'SUPPORT_NOT_AUTHORIZED',
                 'REVIEWS_NOT_AUTHORIZED', 'LOYALTY_NOT_AUTHORIZED',
+                'VERIFICATION_NOT_AUTHORIZED',
+                // Step-up is a 403 with a machine-readable next step: the
+                // caller is not forbidden, they are not yet verified enough,
+                // and the error body names the level to obtain.
+                'VERIFICATION_STEP_UP_REQUIRED',
                 'PUBLICAPI_FORBIDDEN' => 403,
                 'MARKETPLACE_INVALID_STATE', 'COMMERCE_INVALID_STATE',
                 'PAYMENTS_INVALID_STATE', 'NOTIFICATIONS_INVALID_STATE',
                 'ANALYTICS_INVALID_STATE', 'ADMIN_INVALID_STATE',
                 'SEARCH_INVALID_QUERY', 'SUPPORT_INVALID_STATE',
                 'REVIEWS_INVALID_STATE', 'LOYALTY_INVALID_STATE',
+                'VERIFICATION_INVALID_STATE', 'VERIFICATION_INVALID_TRANSITION',
                 'PUBLICAPI_INVALID_STATE' => 422,
                 'AI_RATE_LIMIT_EXCEEDED', 'PUBLICAPI_RATE_LIMITED', 'PUBLICAPI_QUOTA_EXCEEDED' => 429,
                 'AI_GENERATION_FAILED', 'PAYMENTS_PROVIDER_ERROR' => 502,
-                'AI_PROVIDER_UNAVAILABLE' => 503,
+                'AI_PROVIDER_UNAVAILABLE', 'VERIFICATION_PROVIDER_UNAVAILABLE' => 503,
                 default => 400,
             };
 

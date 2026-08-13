@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Notifications\Infrastructure\Persistence\Eloquent\Model;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -12,6 +13,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property array<array-key, mixed> $quiet_hours
  * @property string $language
  * @property int $max_per_day
+ * @property bool $marketing_opt_in
+ * @property DateTimeInterface|null $marketing_opt_in_at
+ * @property string|null $unsubscribe_token
  */
 final class NotificationPreferenceModel extends Model
 {
@@ -33,6 +37,8 @@ final class NotificationPreferenceModel extends Model
             'channels_by_category' => 'array',
             'quiet_hours' => 'array',
             'max_per_day' => 'integer',
+            'marketing_opt_in' => 'boolean',
+            'marketing_opt_in_at' => 'datetime',
         ];
     }
 }
