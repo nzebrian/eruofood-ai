@@ -5419,9 +5419,10 @@ paths:
                     properties:
                       status: { $ref: "#/components/schemas/VerificationStatus" }
                       case:
-                        oneOf:
+                        type: object
+                        nullable: true
+                        allOf:
                           - $ref: "#/components/schemas/VerificationCase"
-                          - type: "null"
   /v1/verification/start:
     post:
       tags: [Verification]
@@ -5543,7 +5544,7 @@ paths:
                     properties:
                       verified: { type: boolean }
                       level: { $ref: "#/components/schemas/VerificationLevel" }
-        "422": { description: Wrong, expired, or out of attempts. }
+        "422": { description: "Wrong, expired, or out of attempts." }
   /v1/verification/rider/start:
     post:
       tags: [Verification]
@@ -5592,9 +5593,10 @@ paths:
                       status: { $ref: "#/components/schemas/VerificationStatus" }
                       eligible_for_delivery: { type: boolean }
                       case:
-                        oneOf:
+                        type: object
+                        nullable: true
+                        allOf:
                           - $ref: "#/components/schemas/VerificationCase"
-                          - type: "null"
   /v1/verification/business/profiles:
     post:
       tags: [Verification]
@@ -5725,7 +5727,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, description: Provider-specific payload, parsed only inside that provider's adapter. }
+            schema: { type: object, description: "Provider-specific payload, parsed only inside that provider's adapter." }
       responses:
         "200":
           description: Received. `applied` is false for a redelivery of an event already processed.
@@ -6081,23 +6083,6 @@ components:
               data: { $ref: "#/components/schemas/NutritionAdvicePayload" }
 
   schemas:
-    NotificationPreference:
-      type: object
-      description: >-
-        Per-user delivery preferences. `marketing_opt_in` governs the marketing
-        class only; security notifications are never suppressed by any
-        preference, because an account whose owner has silenced its security
-        alerts has lost its only warning that it is being tampered with.
-      properties:
-        user_id: { type: string, format: uuid }
-        channels_by_category:
-          type: object
-          additionalProperties: { type: array, items: { type: string, enum: [email, sms, push, in_app, whatsapp, telegram] } }
-        quiet_hours: { type: object }
-        language: { type: string, example: en }
-        max_per_day: { type: integer }
-        marketing_opt_in: { type: boolean }
-        marketing_opt_in_at: { type: string, format: date-time, nullable: true }
     VerificationStatus:
       type: string
       description: >-
@@ -6205,7 +6190,7 @@ components:
         authority: { type: string, example: "CAC" }
         found: { type: boolean }
         active: { type: boolean }
-        matched: { type: boolean, description: Whether the claimed name matches the registered one, allowing for suffix variation (Limited/Ltd/PLC). }
+        matched: { type: boolean, description: "Whether the claimed name matches the registered one, allowing for suffix variation (Limited/Ltd/PLC)." }
         requires_manual_review: { type: boolean, description: True when the registry is unconfigured or unreachable — never treated as "assumed valid". }
         registered_name: { type: string, nullable: true }
         note: { type: string, nullable: true }
@@ -7520,19 +7505,29 @@ components:
         created_at: { type: string, format: date-time }
     NotificationPreference:
       type: object
+      description: >-
+        Per-user delivery preferences. `marketing_opt_in` governs the marketing
+        class only; security notifications are never suppressed by any
+        preference, because an account whose owner has silenced its security
+        alerts has lost its only warning that it is being tampered with.
+
+        The unsubscribe token is deliberately absent: it is a bearer secret that
+        belongs in an emailed link, not in an API response.
       properties:
         user_id: { type: string, format: uuid }
         channels_by_category:
           type: object
-          additionalProperties: { type: array, items: { type: string } }
+          additionalProperties: { type: array, items: { type: string, enum: [email, sms, push, in_app, whatsapp, telegram] } }
         quiet_hours:
           type: object
           properties:
             enabled: { type: boolean }
             start: { type: string }
             end: { type: string }
-        language: { type: string }
+        language: { type: string, example: en }
         max_per_day: { type: integer }
+        marketing_opt_in: { type: boolean }
+        marketing_opt_in_at: { type: string, format: date-time, nullable: true }
     MessagingConversation:
       type: object
       properties:

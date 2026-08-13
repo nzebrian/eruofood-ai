@@ -15,6 +15,7 @@ use EruoFood\Verification\Infrastructure\Persistence\Eloquent\Model\Verification
 use EruoFood\Verification\Infrastructure\Persistence\Eloquent\Model\VerificationEventModel;
 use EruoFood\Verification\Infrastructure\Persistence\Eloquent\Model\VerificationWebhookEventModel;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -74,6 +75,10 @@ it('enforces the single-open-case rule in the database, not just in the service'
 
     // A second row claiming the same slot — what a racing request would try to
     // write — is refused by the unique index regardless of what the service did.
+    //
+    // Asserted as a *unique* violation, not merely "a database error". This test
+    // previously named a column that does not exist, so the insert failed on the
+    // schema before it ever reached the index: green, and proving nothing.
     expect(fn () => DB::table('verification_cases')->insert([
         'id' => (string) Str::uuid(),
         'subject_type' => 'rider',
@@ -81,12 +86,12 @@ it('enforces the single-open-case rule in the database, not just in the service'
         'case_type' => 'identity',
         'country_code' => 'NG',
         'status' => 'not_started',
-        'required_level' => 'identity',
+        'requested_level' => 'identity',
         'open_key' => $openKey,
         'version' => 1,
         'created_at' => now(),
         'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    ]))->toThrow(UniqueConstraintViolationException::class);
 });
 
 it('frees the slot once a case closes so a reverification can open a new one', function (): void {
@@ -136,9 +141,8 @@ it('refuses two attempts sharing one provider reference', function (): void {
         'provider' => 'mock',
         'provider_reference' => $reference,
         'status' => 'pending',
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+        'started_at' => now(),
+    ]))->toThrow(UniqueConstraintViolationException::class);
 });
 
 it('refuses two webhook rows for one provider event', function (): void {
@@ -157,7 +161,7 @@ it('refuses two webhook rows for one provider event', function (): void {
         'provider_event_id' => 'evt_dupe',
         'signature_scheme' => 'mock',
         'received_at' => now(),
-    ]))->toThrow(QueryException::class);
+    ]))->toThrow(UniqueConstraintViolationException::class);
 });
 
 it('lets two providers use the same event id', function (): void {
@@ -221,15 +225,18 @@ it('keeps a status change for every transition', function (): void {
 it('will not let anyone edit the verification trail', function (): void {
     $caseId = openRiderCase();
 
+    // Matched on the trigger's own message, not merely on "a database error":
+    // a mistyped table name would raise a QueryException too, and this test
+    // would then pass without the trigger ever firing.
     expect(fn () => DB::table('verification_events')->where('case_id', $caseId)->update(['to_status' => 'verified']))
-        ->toThrow(QueryException::class);
+        ->toThrow(QueryException::class, 'verification_events is append-only');
 })->skip(fn (): bool => ! pgOnly(), 'Append-only triggers are a PostgreSQL object; verified on the production engine.');
 
 it('will not let anyone delete the verification trail', function (): void {
     $caseId = openRiderCase();
 
     expect(fn () => DB::table('verification_events')->where('case_id', $caseId)->delete())
-        ->toThrow(QueryException::class);
+        ->toThrow(QueryException::class, 'verification_events is append-only');
 })->skip(fn (): bool => ! pgOnly(), 'Append-only triggers are a PostgreSQL object; verified on the production engine.');
 
 it('will not let a privileged reader erase the record that they looked', function (): void {
@@ -245,7 +252,7 @@ it('will not let a privileged reader erase the record that they looked', functio
     // The whole point of auditing privileged access: an actor who can delete
     // the evidence has not been audited at all.
     expect(fn () => DB::table('admin_audit_log')->where('category', 'security')->delete())
-        ->toThrow(QueryException::class);
+        ->toThrow(QueryException::class, 'admin_audit_log is append-only');
 })->skip(fn (): bool => ! pgOnly(), 'Append-only triggers are a PostgreSQL object; verified on the production engine.');
 
 // ------------------------------------------------------------- reconciliation --

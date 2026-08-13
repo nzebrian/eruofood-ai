@@ -174,14 +174,17 @@ it('stops accepting guesses once the attempt budget is spent', function (): void
 
     $phones = app(PhoneVerificationService::class);
 
-    // Five wrong codes exhausts the configured budget.
+    // Five wrong codes exhausts the configured budget. Each must be *rejected*,
+    // not merely fail: a bug that threw before spending an attempt would leave
+    // the counter at zero and still satisfy the assertion below.
     foreach (range(1, 5) as $attempt) {
-        try {
-            $phones->confirm((string) $userId, str_pad((string) $attempt, 6, '0', STR_PAD_LEFT));
-        } catch (Throwable) {
-            // A guess may legitimately be refused; what matters is the sixth.
-        }
+        expect($phones->confirm((string) $userId, str_pad((string) $attempt, 6, '0', STR_PAD_LEFT)))
+            ->toBeFalse();
     }
+
+    // The counter genuinely moved — the budget was spent, not skipped.
+    expect((int) VerificationPhoneChallengeModel::query()->where('user_id', $userId)->value('attempts'))
+        ->toBe(5);
 
     // The limit lives on the row, so it survives a cache flush — which is
     // exactly when an attacker would want it to reset.

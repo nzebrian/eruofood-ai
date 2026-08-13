@@ -31,12 +31,26 @@ jobs:
     name: Tests · SQLite
     runs-on: ubuntu-latest
 
+    # SQLite replaces the *database*, not every backing service. The readiness
+    # endpoint reports on each dependency it can reach, and Redis is one of
+    # them, so the suite needs a real Redis here too. Stubbing or skipping that
+    # test would remove the only check that the readiness probe tells the truth.
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+
     env:
       # Explicit rather than inherited from phpunit.xml. An exported
       # DB_CONNECTION takes precedence over the <env> block there, so stating it
       # here is what makes this job's engine a fact rather than a side effect.
       DB_CONNECTION: sqlite
       DB_DATABASE: ":memory:"
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
 
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +59,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: pdo_sqlite, sqlite3, intl, zip, bcmath, pcntl
+          extensions: pdo_sqlite, sqlite3, redis, intl, zip, bcmath, pcntl
           coverage: none
           tools: composer:v2
 
