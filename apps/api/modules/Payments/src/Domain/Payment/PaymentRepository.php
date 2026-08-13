@@ -16,6 +16,16 @@ interface PaymentRepository
 
     public function findById(string $id): ?Payment;
 
+    /**
+     * Read the payment holding an exclusive row lock until the surrounding
+     * transaction ends.
+     *
+     * Used wherever a decision is made from the payment's own totals and then
+     * written back — refunding, capturing — so two concurrent requests cannot
+     * both read the same refundable balance and both act on it.
+     */
+    public function findByIdForUpdate(string $id): ?Payment;
+
     public function findByReference(string $reference): ?Payment;
 
     public function findByIdempotencyKey(string $key): ?Payment;

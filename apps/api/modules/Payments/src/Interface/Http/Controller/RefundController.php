@@ -9,6 +9,8 @@ use EruoFood\Payments\Application\Service\RefundService;
 use EruoFood\Payments\Domain\Payment\Refund;
 use EruoFood\Payments\Interface\Http\Concerns\ResolvesAuthUser;
 use EruoFood\Payments\Interface\Http\Concerns\RespondsWithData;
+use EruoFood\Shared\Domain\Idempotency\IdempotencyStore;
+use EruoFood\Shared\Interface\Http\Concerns\UsesIdempotencyKey;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,13 +19,22 @@ final readonly class RefundController
 {
     use RespondsWithData;
     use ResolvesAuthUser;
+    use UsesIdempotencyKey;
 
     public function __construct(
         private RefundService $refunds,
         private PaymentsPresenter $presenter,
+        private IdempotencyStore $idempotency,
     ) {
     }
 
+    /**
+     * Request a refund.
+     *
+     * A refund sends real money, so a client that retries after a timeout must
+     * not trigger a second one. With an `Idempotency-Key` header the retry
+     * replays the original refund (200); without one the old behaviour applies.
+     */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -31,15 +42,28 @@ final readonly class RefundController
             'amount_minor' => ['nullable', 'integer', 'min:1'],
             'reason' => ['required', 'string', 'max:500'],
         ]);
-        $refund = $this->refunds->request(
-            (string) $data['payment_id'],
-            isset($data['amount_minor']) ? (int) $data['amount_minor'] : null,
-            (string) $data['reason'],
-            $this->currentUserId($request),
-            $this->actorIsAdmin($request),
+
+        $userId = $this->currentUserId($request);
+        $isAdmin = $this->actorIsAdmin($request);
+
+        $result = $this->idempotency->execute(
+            'payments.refund',
+            $this->idempotencyKey($request),
+            $this->requestFingerprint($data + ['actor' => $userId]),
+            function () use ($data, $userId, $isAdmin): array {
+                $refund = $this->refunds->request(
+                    (string) $data['payment_id'],
+                    isset($data['amount_minor']) ? (int) $data['amount_minor'] : null,
+                    (string) $data['reason'],
+                    $userId,
+                    $isAdmin,
+                );
+
+                return $this->presenter->refund($refund);
+            },
         );
 
-        return $this->data($this->presenter->refund($refund), 201);
+        return $this->data($result->value, $result->replayed ? 200 : 201);
     }
 
     public function forPayment(Request $request, string $paymentId): JsonResponse

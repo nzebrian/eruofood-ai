@@ -77,6 +77,44 @@ final class EloquentLedgerRepository implements LedgerRepository
         ));
     }
 
+    public function correlationCount(): int
+    {
+        return (int) LedgerEntryModel::query()->distinct()->count('correlation_id');
+    }
+
+    public function netMinor(): int
+    {
+        return $this->signedSum(LedgerEntryModel::query());
+    }
+
+    public function unbalancedCorrelations(): array
+    {
+        // One grouped pass rather than a query per correlation: the signed sum is
+        // expressed as (credits − debits) so the database does the arithmetic and
+        // returns only the offenders.
+        $rows = LedgerEntryModel::query()
+            ->selectRaw('correlation_id')
+            ->groupBy('correlation_id')
+            ->havingRaw(
+                'COALESCE(SUM(CASE WHEN direction = ? THEN amount_minor ELSE 0 END), 0)'
+                .' - COALESCE(SUM(CASE WHEN direction = ? THEN amount_minor ELSE 0 END), 0) <> 0',
+                [TransactionDirection::Credit->value, TransactionDirection::Debit->value],
+            )
+            ->pluck('correlation_id')
+            ->all();
+
+        return array_values(array_map(static fn (mixed $id): string => (string) $id, $rows));
+    }
+
+    /** @param \Illuminate\Database\Eloquent\Builder<LedgerEntryModel> $query */
+    private function signedSum(\Illuminate\Database\Eloquent\Builder $query): int
+    {
+        $credit = (int) (clone $query)->where('direction', TransactionDirection::Credit->value)->sum('amount_minor');
+        $debit = (int) (clone $query)->where('direction', TransactionDirection::Debit->value)->sum('amount_minor');
+
+        return $credit - $debit;
+    }
+
     private function toDomain(LedgerEntryModel $m): LedgerEntry
     {
         return new LedgerEntry(

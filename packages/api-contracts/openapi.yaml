@@ -1812,6 +1812,8 @@ paths:
       tags: [Marketplace]
       operationId: checkout
       summary: Check out the cart into an order
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1823,6 +1825,14 @@ paths:
           content:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+        "200":
+          description: >
+            Replay of an earlier identical request (same Idempotency-Key and
+            body). No new work was performed.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
         "422": { $ref: "#/components/responses/Error" }
   /orders:
     get:
@@ -2231,6 +2241,8 @@ paths:
       tags: [Commerce]
       summary: Place an order
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2248,6 +2260,14 @@ paths:
           content:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceOrder" } } }
+        "200":
+          description: >
+            Replay of an earlier identical request (same Idempotency-Key and
+            body). No new work was performed.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceOrder" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
         "422": { $ref: "#/components/responses/Error" }
   /v1/commerce/orders:
     get:
@@ -2529,6 +2549,8 @@ paths:
       tags: [Payments]
       summary: Refund a captured payment (full or partial)
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2578,6 +2600,8 @@ paths:
       tags: [Payments]
       summary: Top up the wallet (takes a payment, credits on capture)
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2595,11 +2619,21 @@ paths:
           content:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/PaymentIntent" } } }
+        "200":
+          description: >
+            Replay of an earlier identical request (same Idempotency-Key and
+            body). No new work was performed.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PaymentIntent" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
   /v1/payments/wallet/transfer:
     post:
       tags: [Payments]
       summary: Transfer funds to another user's wallet
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -5391,9 +5425,33 @@ components:
             "nutrition:read": Read nutrition information.
             "search:read": Query the public search index.
 
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >
+        A client-generated key that makes this request safe to retry. The first
+        request under a given key is executed and its response stored; any later
+        request with the same key and the same body returns that stored response
+        with status 200 instead of performing the operation again. Reusing a key
+        with a different body is rejected with 422. A duplicate that arrives
+        while the first is still running is rejected with 409 and may be retried.
+        Keys expire after 24 hours. Omitting the header preserves the previous
+        at-least-once behaviour.
+      schema: { type: string, maxLength: 255 }
+      example: "6f1a2c4e-9b3d-4a71-8f2e-5c7d9a0b1e33"
+
   responses:
     Error:
       description: Error envelope.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    IdempotencyInFlight:
+      description: >
+        A request carrying this idempotency key is still being processed, or the
+        resource was modified concurrently. Nothing was changed — retry shortly.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

@@ -39,6 +39,14 @@ final class EloquentRefundRepository implements RefundRepository
         ));
     }
 
+    public function reservedMinorFor(string $paymentId): int
+    {
+        return (int) RefundModel::query()
+            ->where('payment_id', $paymentId)
+            ->whereIn('status', [RefundStatus::Pending->value, RefundStatus::Completed->value])
+            ->sum('amount_minor');
+    }
+
     public function all(int $page, int $perPage): Paginated
     {
         $paginator = RefundModel::query()->orderByDesc('created_at')->paginate(perPage: $perPage, page: $page);

@@ -14,6 +14,13 @@ interface RewardRepository
     public function findById(string $id): ?Reward;
 
     /**
+     * Read the reward holding an exclusive row lock until the surrounding
+     * transaction ends. Required before consuming finite stock, so a reward with
+     * one unit left cannot be issued to two members at once.
+     */
+    public function findByIdForUpdate(string $id): ?Reward;
+
+    /**
      * The catalogue. When `$activeOnly` is true, only currently-redeemable
      * rewards are returned (for the customer storefront).
      *

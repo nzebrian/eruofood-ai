@@ -50,11 +50,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 'SEARCH_RESOURCE_NOT_FOUND', 'SUPPORT_RESOURCE_NOT_FOUND',
                 'REVIEWS_RESOURCE_NOT_FOUND', 'LOYALTY_RESOURCE_NOT_FOUND',
                 'PUBLICAPI_RESOURCE_NOT_FOUND' => 404,
+                // A concurrent writer won, or a duplicate request is still in
+                // flight. Nothing was changed either way, so the client may
+                // safely retry — 409 says exactly that.
+                'CONCURRENCY_CONFLICT', 'IDEMPOTENCY_IN_FLIGHT' => 409,
                 'EMAIL_ALREADY_REGISTERED', 'DUPLICATE_SLUG', 'ALREADY_REVIEWED',
                 'MARKETPLACE_CONFLICT', 'COMMERCE_CONFLICT', 'PAYMENTS_CONFLICT',
                 'NOTIFICATIONS_CONFLICT', 'ADMIN_CONFLICT', 'SEARCH_CONFLICT',
                 'SUPPORT_CONFLICT', 'REVIEWS_CONFLICT', 'LOYALTY_CONFLICT',
                 'PUBLICAPI_CONFLICT' => 409,
+                // The key was already spent on a different payload. Retrying will
+                // not help — the client must use a fresh key.
+                'IDEMPOTENCY_KEY_REUSED',
                 'INVALID_ARGUMENT', 'NUTRITION_PROFILE_INCOMPLETE' => 422,
                 'MARKETPLACE_NOT_AUTHORIZED', 'COMMERCE_NOT_AUTHORIZED',
                 'PAYMENTS_NOT_AUTHORIZED', 'NOTIFICATIONS_NOT_AUTHORIZED',

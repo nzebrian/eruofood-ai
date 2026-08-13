@@ -14,6 +14,14 @@ interface MenuItemRepository
     public function findById(string $id): ?MenuItem;
 
     /**
+     * Read the item holding an exclusive row lock until the surrounding
+     * transaction ends. Used at checkout, where the stock read decides whether
+     * the order can be placed and is then written back — an unlocked read lets
+     * two customers buy the same last portion.
+     */
+    public function findByIdForUpdate(string $id): ?MenuItem;
+
+    /**
      * @param list<string> $ids
      * @return array<string, MenuItem> keyed by id
      */

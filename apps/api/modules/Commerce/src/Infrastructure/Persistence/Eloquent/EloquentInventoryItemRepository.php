@@ -34,6 +34,15 @@ final class EloquentInventoryItemRepository implements InventoryItemRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findForProductForUpdate(string $productId, ?string $variantSku): ?InventoryItem
+    {
+        $query = InventoryItemModel::query()->where('product_id', $productId);
+        $variantSku === null ? $query->whereNull('variant_sku') : $query->where('variant_sku', $variantSku);
+        $m = $query->lockForUpdate()->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function forProduct(string $productId): array
     {
         return array_values(array_map(

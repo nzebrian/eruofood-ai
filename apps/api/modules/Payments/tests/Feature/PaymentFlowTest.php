@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-use EruoFood\Identity\Infrastructure\Persistence\Eloquent\Model\UserModel;
+use EruoFood\Admin\Domain\Enum\AdminRole;
+use EruoFood\Admin\Domain\Rbac\AdminAccount;
+use EruoFood\Admin\Domain\Rbac\AdminAccountRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 
@@ -20,16 +22,26 @@ function payUserToken(object $test, string $email = 'payer@example.com'): string
     ])->assertCreated()->json('data.tokens.access_token');
 }
 
+/**
+ * A back-office user who genuinely holds finance access.
+ *
+ * The finance endpoints are gated on the `finance.read` permission, so the token
+ * needs a real admin account carrying a role that grants it — the coarse
+ * Identity `admin` role no longer implies back-office authority (M23).
+ */
 function payAdminToken(object $test, string $email = 'payadmin@example.com'): string
 {
     Mail::fake();
-    $test->postJson('/api/v1/auth/register', [
+    $userId = $test->postJson('/api/v1/auth/register', [
         'name' => 'Pay Admin',
         'email' => $email,
         'password' => 'Password123',
         'password_confirmation' => 'Password123',
-    ])->assertCreated();
-    UserModel::query()->where('email', $email)->update(['roles' => ['admin']]);
+    ])->assertCreated()->json('data.user.id');
+
+    app(AdminAccountRepository::class)->save(
+        AdminAccount::grant($userId, [AdminRole::FinanceManager], new DateTimeImmutable()),
+    );
 
     return $test->postJson('/api/v1/auth/login', ['email' => $email, 'password' => 'Password123'])
         ->json('data.tokens.access_token');

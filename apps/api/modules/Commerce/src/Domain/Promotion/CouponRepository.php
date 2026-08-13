@@ -13,6 +13,14 @@ interface CouponRepository
 
     public function findByCode(string $code): ?Coupon;
 
+    /**
+     * Read the coupon holding an exclusive row lock until the surrounding
+     * transaction ends. A usage-limited coupon increments a counter, so the
+     * read that authorises redemption must be locked or a limited-run code can
+     * be redeemed past its cap by simultaneous checkouts.
+     */
+    public function findByCodeForUpdate(string $code): ?Coupon;
+
     public function codeExists(string $code): bool;
 
     /** @return list<Coupon> */

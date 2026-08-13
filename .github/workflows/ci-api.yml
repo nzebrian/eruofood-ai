@@ -92,6 +92,14 @@ jobs:
       - name: Redis — validate rate limiting, quotas, counters, cache
         run: php scripts/redis_validation.php
 
+      # M23. Real OS processes racing on real PostgreSQL rows. The Pest suite
+      # cannot cover this: RefreshDatabase wraps each test in a transaction, so
+      # no second connection ever sees the contention.
+      - name: Financial concurrency — locking, atomicity and idempotency
+        run: |
+          php artisan migrate:fresh --force
+          php scripts/financial_concurrency_validation.php
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

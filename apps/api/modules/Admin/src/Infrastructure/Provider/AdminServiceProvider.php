@@ -32,7 +32,9 @@ use EruoFood\Admin\Infrastructure\Persistence\Eloquent\EloquentFeatureFlagReposi
 use EruoFood\Admin\Infrastructure\Persistence\Eloquent\EloquentImpersonationRepository;
 use EruoFood\Admin\Infrastructure\Persistence\Eloquent\EloquentSettingRepository;
 use EruoFood\Admin\Infrastructure\Persistence\Eloquent\EloquentTicketRepository;
+use EruoFood\Admin\Interface\Http\Middleware\EnsurePermission;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -90,6 +92,11 @@ final class AdminServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Published so any bounded context can gate a route on a real
+        // back-office permission (`permission:finance.read`) rather than the
+        // coarse Identity `role:admin` check.
+        $this->app->make(Router::class)->aliasMiddleware('permission', EnsurePermission::class);
+
         Route::prefix('api')
             ->middleware('api')
             ->group(__DIR__.'/../../Interface/Http/routes.php');

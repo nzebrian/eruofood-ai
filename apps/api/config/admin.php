@@ -16,8 +16,22 @@ return [
     // User ids always treated as super administrators (comma-separated env).
     'bootstrap_super_admins' => array_values(array_filter(explode(',', (string) env('ADMIN_SUPER_ADMINS', '')))),
 
-    // Treat any Identity `admin`-role user as a super administrator (bootstrap).
-    'identity_admin_is_super' => (bool) env('ADMIN_IDENTITY_ADMIN_IS_SUPER', true),
+    /*
+    | Treat any Identity `admin`-role user as a super administrator.
+    |
+    | Defaults to FALSE. The Identity role model has three coarse roles
+    | (admin/moderator/user) while the back office has nine, each mapped to a
+    | specific permission set. Letting the coarse role imply SuperAdmin collapses
+    | that model: every holder of an `admin` JWT would gain finance access,
+    | impersonation and RBAC management regardless of the roles actually granted
+    | to them, and there would be no separation of duties to enforce.
+    |
+    | Back-office access therefore requires an explicit `admin_accounts` grant,
+    | or an id listed in `bootstrap_super_admins` for the very first operator.
+    | The flag remains available so an existing deployment can enable it for one
+    | release while real admin accounts are provisioned.
+    */
+    'identity_admin_is_super' => (bool) env('ADMIN_IDENTITY_ADMIN_IS_SUPER', false),
 
     // Maintenance mode (also togglable at runtime via a setting).
     'maintenance' => [

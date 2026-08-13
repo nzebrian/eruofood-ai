@@ -18,6 +18,7 @@ use EruoFood\Loyalty\Domain\Reward\RewardRepository;
 use EruoFood\Loyalty\Domain\ValueObject\Points;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\Paginated;
+use EruoFood\Shared\Domain\TransactionManager;
 
 /**
  * Redeeming points for a reward. It debits the member's points, decrements the
@@ -34,38 +35,52 @@ final readonly class RedemptionService
         private LoyaltyAccountRepository $accounts,
         private LoyaltyService $loyalty,
         private EventBus $events,
+        private TransactionManager $transactions,
     ) {
     }
 
+    /**
+     * Spend points on a reward.
+     *
+     * Points and stock are both finite, so the whole redemption runs in one
+     * transaction with both rows locked. Without it, two requests can each read
+     * a balance of 500 against a 500-point reward and both succeed, or two
+     * members can claim the last unit in stock.
+     */
     public function redeem(string $userId, string $rewardId): Redemption
     {
-        $reward = $this->rewards->findById($rewardId) ?? throw LoyaltyNotFound::of('reward', $rewardId);
-        $now = new DateTimeImmutable();
-        if (! $reward->isRedeemableAt($now)) {
-            throw new LoyaltyInvalidState('This reward is not currently available.');
-        }
+        [$redemption, $reward, $balanceAfter] = $this->transactions->atomic(function () use ($userId, $rewardId): array {
+            $now = new DateTimeImmutable();
 
-        $account = $this->loyalty->accountFor($userId);
-        // Debit points (throws LoyaltyInvalidState if the balance can't cover it).
-        $account->redeem(new Points($reward->pointsCost()), 'redemption', $reward->id(), $this->accounts->nextEntryIdentity(), $now);
-        $reward->consumeStock();
+            $reward = $this->rewards->findByIdForUpdate($rewardId) ?? throw LoyaltyNotFound::of('reward', $rewardId);
+            if (! $reward->isRedeemableAt($now)) {
+                throw new LoyaltyInvalidState('This reward is not currently available.');
+            }
 
-        $redemption = Redemption::issue(
-            $this->redemptions->nextIdentity(),
-            $reward->id(),
-            $userId,
-            $this->redemptions->nextCode(),
-            $reward->pointsCost(),
-            $reward->benefitType(),
-            $reward->benefitValue(),
-            $now,
-        );
+            $account = $this->loyalty->lockedAccountFor($userId);
+            // Debit points (throws LoyaltyInvalidState if the balance can't cover it).
+            $account->redeem(new Points($reward->pointsCost()), 'redemption', $reward->id(), $this->accounts->nextEntryIdentity(), $now);
+            $reward->consumeStock();
 
-        $this->accounts->save($account);
-        $this->rewards->save($reward);
-        $this->redemptions->save($redemption);
+            $redemption = Redemption::issue(
+                $this->redemptions->nextIdentity(),
+                $reward->id(),
+                $userId,
+                $this->redemptions->nextCode(),
+                $reward->pointsCost(),
+                $reward->benefitType(),
+                $reward->benefitValue(),
+                $now,
+            );
 
-        $this->events->publish(new PointsRedeemed($userId, $reward->pointsCost(), $account->balance(), $reward->id()));
+            $this->accounts->save($account);
+            $this->rewards->save($reward);
+            $this->redemptions->save($redemption);
+
+            return [$redemption, $reward, $account->balance()];
+        });
+
+        $this->events->publish(new PointsRedeemed($userId, $reward->pointsCost(), $balanceAfter, $reward->id()));
         $this->events->publish(new RewardRedeemed(
             $redemption->id(),
             $userId,
@@ -89,27 +104,31 @@ final readonly class RedemptionService
 
     public function cancel(string $redemptionId, string $userId): Redemption
     {
-        $redemption = $this->redemptions->findById($redemptionId) ?? throw LoyaltyNotFound::of('redemption', $redemptionId);
-        if (! $redemption->isOwnedBy($userId)) {
-            throw new LoyaltyNotAuthorized('You may only cancel your own redemption.');
-        }
-        $now = new DateTimeImmutable();
-        $redemption->cancel($now);
+        // Cancelling gives points back and returns a unit of stock — the mirror
+        // image of redeem(), and atomic for the same reasons.
+        return $this->transactions->atomic(function () use ($redemptionId, $userId): Redemption {
+            $redemption = $this->redemptions->findById($redemptionId) ?? throw LoyaltyNotFound::of('redemption', $redemptionId);
+            if (! $redemption->isOwnedBy($userId)) {
+                throw new LoyaltyNotAuthorized('You may only cancel your own redemption.');
+            }
+            $now = new DateTimeImmutable();
+            $redemption->cancel($now);
 
-        // Refund the points and restock the reward.
-        $account = $this->loyalty->accountFor($userId);
-        $account->adjust($redemption->pointsSpent(), 'redemption_refund', $this->accounts->nextEntryIdentity(), $now);
-        $this->accounts->save($account);
+            // Refund the points and restock the reward.
+            $account = $this->loyalty->lockedAccountFor($userId);
+            $account->adjust($redemption->pointsSpent(), 'redemption_refund', $this->accounts->nextEntryIdentity(), $now);
+            $this->accounts->save($account);
 
-        $reward = $this->rewards->findById($redemption->rewardId());
-        if ($reward instanceof Reward) {
-            $reward->restock();
-            $this->rewards->save($reward);
-        }
+            $reward = $this->rewards->findByIdForUpdate($redemption->rewardId());
+            if ($reward instanceof Reward) {
+                $reward->restock();
+                $this->rewards->save($reward);
+            }
 
-        $this->redemptions->save($redemption);
+            $this->redemptions->save($redemption);
 
-        return $redemption;
+            return $redemption;
+        });
     }
 
     /**

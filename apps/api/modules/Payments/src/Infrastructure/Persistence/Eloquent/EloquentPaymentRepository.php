@@ -40,6 +40,13 @@ final class EloquentPaymentRepository implements PaymentRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findByIdForUpdate(string $id): ?Payment
+    {
+        $m = PaymentModel::query()->whereKey($id)->lockForUpdate()->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function findByReference(string $reference): ?Payment
     {
         $m = PaymentModel::query()->where('reference', $reference)->first();

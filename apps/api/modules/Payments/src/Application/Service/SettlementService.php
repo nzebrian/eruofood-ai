@@ -18,6 +18,7 @@ use EruoFood\Payments\Domain\Settlement\SettlementRepository;
 use EruoFood\Payments\Domain\ValueObject\BankAccount;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\Paginated;
+use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Domain\ValueObject\Money;
 
 /**
@@ -37,6 +38,7 @@ final readonly class SettlementService
         private LedgerService $ledger,
         private PaymentNotifier $notifier,
         private EventBus $events,
+        private TransactionManager $transactions,
         private string $currency,
     ) {
     }
@@ -53,47 +55,64 @@ final readonly class SettlementService
         DateTimeImmutable $periodEnd,
         ?BankAccount $bank = null,
     ): Settlement {
-        $now = new DateTimeImmutable();
-        $gross = new Money($grossMinor, $this->currency);
-        $commission = $this->commission->commissionOn($gross);
-        $fees = $this->commission->feeOn($gross);
+        // Phase 1 — open the settlement and commit it as `processing`. If the
+        // bank transfer below dies mid-flight, this row is the evidence that the
+        // attempt happened; without it a crash would leave money moved and no
+        // record of why.
+        $settlement = $this->transactions->atomic(function () use ($payeeType, $payeeId, $grossMinor, $periodStart, $periodEnd): Settlement {
+            $gross = new Money($grossMinor, $this->currency);
+            $settlement = Settlement::open(
+                $this->settlements->nextIdentity(),
+                $payeeType,
+                $payeeId,
+                $gross,
+                $this->commission->commissionOn($gross),
+                $this->commission->feeOn($gross),
+                $periodStart,
+                $periodEnd,
+                new DateTimeImmutable(),
+            );
+            $settlement->markProcessing();
+            $this->settlements->save($settlement);
 
-        $settlement = Settlement::open(
-            $this->settlements->nextIdentity(),
-            $payeeType,
-            $payeeId,
-            $gross,
-            $commission,
-            $fees,
-            $periodStart,
-            $periodEnd,
-            $now,
-        );
-        $settlement->markProcessing();
-        $this->settlements->save($settlement);
+            return $settlement;
+        });
 
         $net = $settlement->net();
-        $payoutId = null;
 
+        // Phase 2 — the provider transfer, deliberately outside any transaction.
+        $payout = null;
         if ($bank !== null) {
-            $payout = Payout::open($this->payouts->nextIdentity(), $payeeType, $payeeId, $net, $bank, $now);
+            $payout = Payout::open($this->payouts->nextIdentity(), $payeeType, $payeeId, $net, $bank, new DateTimeImmutable());
             $result = $this->gateways->default()->transfer($bank, $net, $payout->id());
             if ($result->success) {
                 $payout->markProcessing($result->providerReference);
-                $payout->markPaid($now);
+                $payout->markPaid(new DateTimeImmutable());
             } else {
                 $payout->fail();
             }
-            $this->payouts->save($payout);
-            $payoutId = $payout->id();
-        } else {
-            $wallet = $this->wallets->getOrOpen($this->walletOwnerType($payeeType), $payeeId);
-            $this->wallets->credit($wallet, $net->minorUnits, TransactionType::Settlement, $settlement->id(), 'Settlement payout');
         }
 
-        $settlement->complete($payoutId ?? $settlement->id(), $now);
-        $this->ledger->recordSettlement($settlement->id(), $settlement->id(), $net);
-        $this->settlements->save($settlement);
+        // Phase 3 — record the outcome: payout row, wallet credit and ledger all
+        // commit together or not at all.
+        $this->transactions->atomic(function () use ($settlement, $payout, $payeeType, $payeeId, $net, $bank): void {
+            $payoutId = null;
+
+            if ($payout !== null) {
+                $this->payouts->save($payout);
+                $payoutId = $payout->id();
+            }
+
+            if ($bank === null) {
+                $wallet = $this->wallets->getOrOpen($this->walletOwnerType($payeeType), $payeeId);
+                $this->wallets->credit($wallet, $net->minorUnits, TransactionType::Settlement, $settlement->id(), 'Settlement payout');
+            }
+
+            $settlement->complete($payoutId ?? $settlement->id(), new DateTimeImmutable());
+            $this->ledger->recordSettlement($settlement->id(), $settlement->id(), $net);
+            $this->settlements->save($settlement);
+        });
+
         foreach ($settlement->releaseEvents() as $event) {
             $this->events->publish($event);
         }

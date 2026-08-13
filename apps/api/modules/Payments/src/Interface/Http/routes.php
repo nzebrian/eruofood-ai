@@ -56,7 +56,15 @@ Route::prefix('v1/payments')->group(function (): void {
     });
 
     // ---- Admin (RBAC) ----
-    Route::middleware(['auth.jwt', 'role:admin'])->prefix('admin')->group(function (): void {
+    // Gated on the back-office `finance.read` permission rather than the coarse
+    // Identity `admin` role: these endpoints expose platform-wide money and move
+    // funds to bank accounts, so they must be reachable only by an account the
+    // nine-role admin model actually grants finance access to.
+    //
+    // The permission is named as a string, not imported from the Admin module —
+    // the `permission:` middleware alias is the published contract between the
+    // contexts, so Payments takes no compile-time dependency on Admin.
+    Route::middleware(['auth.jwt', 'permission:finance.read'])->prefix('admin')->group(function (): void {
         Route::get('payments', [FinanceAdminController::class, 'payments']);
         Route::get('refunds', [FinanceAdminController::class, 'refunds']);
         Route::get('report', [FinanceAdminController::class, 'report']);

@@ -28,6 +28,13 @@ final class EloquentMenuItemRepository implements MenuItemRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findByIdForUpdate(string $id): ?MenuItem
+    {
+        $m = MenuItemModel::query()->whereKey($id)->lockForUpdate()->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function findMany(array $ids): array
     {
         $out = [];

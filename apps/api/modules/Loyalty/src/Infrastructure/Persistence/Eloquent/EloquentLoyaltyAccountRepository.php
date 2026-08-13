@@ -42,6 +42,13 @@ final class EloquentLoyaltyAccountRepository implements LoyaltyAccountRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findByUserForUpdate(string $userId): ?LoyaltyAccount
+    {
+        $m = AccountModel::query()->where('user_id', $userId)->lockForUpdate()->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function ledger(LedgerQuery $query): Paginated
     {
         $builder = LedgerEntryModel::query()->where('account_id', $query->accountId);

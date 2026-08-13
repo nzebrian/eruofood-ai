@@ -13,6 +13,8 @@ use EruoFood\Payments\Domain\Enum\WalletOwnerType;
 use EruoFood\Payments\Domain\Wallet\WalletTransaction;
 use EruoFood\Payments\Interface\Http\Concerns\ResolvesAuthUser;
 use EruoFood\Payments\Interface\Http\Concerns\RespondsWithData;
+use EruoFood\Shared\Domain\Idempotency\IdempotencyStore;
+use EruoFood\Shared\Interface\Http\Concerns\UsesIdempotencyKey;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -21,11 +23,13 @@ final readonly class WalletController
 {
     use RespondsWithData;
     use ResolvesAuthUser;
+    use UsesIdempotencyKey;
 
     public function __construct(
         private WalletService $wallets,
         private PaymentService $payments,
         private PaymentsPresenter $presenter,
+        private IdempotencyStore $idempotency,
         private string $currency,
     ) {
     }
@@ -55,23 +59,38 @@ final readonly class WalletController
         ]);
         $userId = $this->currentUserId($request);
 
-        $opened = $this->payments->open(InitiatePaymentInput::fromArray([
-            'payer_user_id' => $userId,
-            'customer_email' => (string) $data['customer_email'],
-            'amount_minor' => (int) $data['amount_minor'],
-            'method_type' => 'card',
-            'provider' => $data['provider'] ?? null,
-        ], $this->currency), (string) $request->ip());
+        $result = $this->idempotency->execute(
+            'payments.wallet.topup',
+            $this->idempotencyKey($request),
+            $this->requestFingerprint($data + ['actor' => $userId]),
+            function () use ($data, $userId, $request): array {
+                $opened = $this->payments->open(InitiatePaymentInput::fromArray([
+                    'payer_user_id' => $userId,
+                    'customer_email' => (string) $data['customer_email'],
+                    'amount_minor' => (int) $data['amount_minor'],
+                    'method_type' => 'card',
+                    'provider' => $data['provider'] ?? null,
+                ], $this->currency), (string) $request->ip());
 
-        // When the provider captures immediately (e.g. mock/wallet), credit now.
-        if ($opened->payment->status()->isCaptured()) {
-            $wallet = $this->wallets->getOrOpen(WalletOwnerType::Customer, $userId);
-            $this->wallets->credit($wallet, (int) $data['amount_minor'], TransactionType::Topup, $opened->payment->reference(), 'Wallet top-up');
-        }
+                // When the provider captures immediately (e.g. mock/wallet), credit now.
+                if ($opened->payment->status()->isCaptured()) {
+                    $wallet = $this->wallets->getOrOpen(WalletOwnerType::Customer, $userId);
+                    $this->wallets->credit($wallet, (int) $data['amount_minor'], TransactionType::Topup, $opened->payment->reference(), 'Wallet top-up');
+                }
 
-        return $this->data($this->presenter->paymentIntent($opened->payment, $opened->authorizationUrl), 201);
+                return $this->presenter->paymentIntent($opened->payment, $opened->authorizationUrl);
+            },
+        );
+
+        return $this->data($result->value, $result->replayed ? 200 : 201);
     }
 
+    /**
+     * Move funds to another customer's wallet.
+     *
+     * Retry-safe when the caller sends an `Idempotency-Key`: a repeat returns the
+     * original outcome instead of transferring the amount a second time.
+     */
     public function transfer(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -79,16 +98,28 @@ final readonly class WalletController
             'amount_minor' => ['required', 'integer', 'min:1'],
             'note' => ['nullable', 'string', 'max:200'],
         ]);
-        $this->wallets->transfer(
-            WalletOwnerType::Customer,
-            $this->currentUserId($request),
-            WalletOwnerType::Customer,
-            (string) $data['to_user_id'],
-            (int) $data['amount_minor'],
-            isset($data['note']) ? (string) $data['note'] : null,
-        );
-        $wallet = $this->wallets->getOrOpen(WalletOwnerType::Customer, $this->currentUserId($request));
+        $userId = $this->currentUserId($request);
 
-        return $this->data($this->presenter->wallet($wallet));
+        $result = $this->idempotency->execute(
+            'payments.wallet.transfer',
+            $this->idempotencyKey($request),
+            $this->requestFingerprint($data + ['actor' => $userId]),
+            function () use ($data, $userId): array {
+                $this->wallets->transfer(
+                    WalletOwnerType::Customer,
+                    $userId,
+                    WalletOwnerType::Customer,
+                    (string) $data['to_user_id'],
+                    (int) $data['amount_minor'],
+                    isset($data['note']) ? (string) $data['note'] : null,
+                );
+
+                return $this->presenter->wallet(
+                    $this->wallets->getOrOpen(WalletOwnerType::Customer, $userId),
+                );
+            },
+        );
+
+        return $this->data($result->value);
     }
 }
