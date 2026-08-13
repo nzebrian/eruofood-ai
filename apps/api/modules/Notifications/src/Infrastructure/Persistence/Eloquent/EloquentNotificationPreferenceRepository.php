@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Notifications\Infrastructure\Persistence\Eloquent;
 
+use DateTimeImmutable;
 use EruoFood\Notifications\Domain\Preference\NotificationPreference;
 use EruoFood\Notifications\Domain\Preference\NotificationPreferenceRepository;
 use EruoFood\Notifications\Domain\ValueObject\QuietHours;
@@ -27,7 +28,19 @@ final class EloquentNotificationPreferenceRepository implements NotificationPref
             quietHours: QuietHours::fromArray($m->quiet_hours ?? []),
             language: $m->language,
             maxPerDay: (int) $m->max_per_day,
+            marketingOptIn: (bool) $m->marketing_opt_in,
+            marketingOptInAt: $m->marketing_opt_in_at !== null
+                ? DateTimeImmutable::createFromInterface($m->marketing_opt_in_at)
+                : null,
+            unsubscribeToken: $m->unsubscribe_token,
         );
+    }
+
+    public function forUnsubscribeToken(string $token): ?NotificationPreference
+    {
+        $m = NotificationPreferenceModel::query()->where('unsubscribe_token', $token)->first();
+
+        return $m === null ? null : $this->forUser($m->user_id);
     }
 
     public function save(NotificationPreference $preference): void
@@ -38,6 +51,9 @@ final class EloquentNotificationPreferenceRepository implements NotificationPref
         $model->quiet_hours = $preference->quietHours()->toArray();
         $model->language = $preference->language();
         $model->max_per_day = $preference->maxPerDay();
+        $model->marketing_opt_in = $preference->marketingOptIn();
+        $model->marketing_opt_in_at = $preference->marketingOptInAt();
+        $model->unsubscribe_token = $preference->unsubscribeToken();
         $model->save();
     }
 }

@@ -12,6 +12,7 @@ use EruoFood\Loyalty\Domain\Account\LoyaltyAccountRepository;
 use EruoFood\Loyalty\Domain\Account\TierPolicy;
 use EruoFood\Loyalty\Domain\Event\PointsEarned;
 use EruoFood\Loyalty\Domain\Event\PointsExpired;
+use EruoFood\Loyalty\Domain\Exception\LoyaltyNotFound;
 use EruoFood\Loyalty\Domain\ValueObject\Points;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\Paginated;
@@ -49,6 +50,22 @@ final readonly class LoyaltyService
         $this->accounts->save($account);
 
         return $account;
+    }
+
+    /**
+     * The member's account, read under an exclusive row lock and opened first if
+     * they have none.
+     *
+     * Callers about to spend points use this rather than {@see accountFor()} so
+     * the balance they check is the balance they debit. Must run inside a
+     * {@see \EruoFood\Shared\Domain\TransactionManager::atomic()} boundary.
+     */
+    public function lockedAccountFor(string $userId): LoyaltyAccount
+    {
+        $this->accountFor($userId);
+
+        return $this->accounts->findByUserForUpdate($userId)
+            ?? throw LoyaltyNotFound::of('loyalty account', $userId);
     }
 
     /**

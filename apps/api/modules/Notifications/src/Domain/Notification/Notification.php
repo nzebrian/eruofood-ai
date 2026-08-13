@@ -7,6 +7,7 @@ namespace EruoFood\Notifications\Domain\Notification;
 use DateTimeImmutable;
 use EruoFood\Notifications\Domain\Enum\NotificationCategory;
 use EruoFood\Notifications\Domain\Enum\NotificationChannel;
+use EruoFood\Notifications\Domain\Enum\NotificationClass;
 use EruoFood\Notifications\Domain\Enum\NotificationStatus;
 use EruoFood\Notifications\Domain\Enum\Priority;
 use EruoFood\Notifications\Domain\Event\NotificationDispatched;
@@ -42,6 +43,10 @@ final class Notification extends AggregateRoot
         private ?DateTimeImmutable $readAt,
         private array $timeline,
         private readonly DateTimeImmutable $createdAt,
+        private readonly NotificationClass $class,
+        private readonly ?string $correlationId,
+        private ?string $providerMessageId,
+        private bool $retryable = true,
     ) {
     }
 
@@ -59,6 +64,7 @@ final class Notification extends AggregateRoot
         Priority $priority,
         ?DateTimeImmutable $scheduledFor,
         DateTimeImmutable $now,
+        ?string $correlationId = null,
     ): self {
         return new self(
             $id,
@@ -75,6 +81,12 @@ final class Notification extends AggregateRoot
             null,
             [['status' => NotificationStatus::Pending->value, 'at' => $now->format(DATE_ATOM), 'detail' => null]],
             $now,
+            // Derived from the category so a new category cannot arrive
+            // unclassified, and stored so a consent audit sees what the message
+            // *was* when it was sent.
+            NotificationClass::forCategory($category),
+            $correlationId,
+            null,
         );
     }
 
@@ -97,6 +109,10 @@ final class Notification extends AggregateRoot
         ?DateTimeImmutable $readAt,
         array $timeline,
         DateTimeImmutable $createdAt,
+        ?NotificationClass $class = null,
+        ?string $correlationId = null,
+        ?string $providerMessageId = null,
+        bool $retryable = true,
     ): self {
         return new self(
             $id,
@@ -113,6 +129,10 @@ final class Notification extends AggregateRoot
             $readAt,
             $timeline,
             $createdAt,
+            $class ?? NotificationClass::forCategory($category),
+            $correlationId,
+            $providerMessageId,
+            $retryable,
         );
     }
 
@@ -121,9 +141,10 @@ final class Notification extends AggregateRoot
         $this->transition(NotificationStatus::Queued, $at, null);
     }
 
-    public function markSent(DateTimeImmutable $at): void
+    public function markSent(DateTimeImmutable $at, ?string $providerMessageId = null): void
     {
         $this->attempts++;
+        $this->providerMessageId = $providerMessageId ?? $this->providerMessageId;
         $this->transition(NotificationStatus::Sent, $at, null);
         $this->recordThat(new NotificationDispatched($this->id, $this->userId, $this->channel->value, $this->category->value));
     }
@@ -133,16 +154,25 @@ final class Notification extends AggregateRoot
         $this->transition(NotificationStatus::Delivered, $at, null);
     }
 
-    public function markFailed(string $reason, DateTimeImmutable $at): void
+    public function markFailed(string $reason, DateTimeImmutable $at, bool $retryable = true): void
     {
         $this->attempts++;
+        $this->retryable = $retryable;
         $this->transition(NotificationStatus::Failed, $at, $reason);
     }
 
-    /** Whether a failed notification may be retried under the given cap. */
+    /**
+     * Whether a failed notification may be retried under the given cap.
+     *
+     * A permanent failure — an address that does not exist, a recipient with no
+     * email at all — is never retried. Re-attempting it until the cap is reached
+     * burns quota and sender reputation on something that cannot succeed.
+     */
     public function canRetry(int $maxAttempts): bool
     {
-        return $this->status === NotificationStatus::Failed && $this->attempts < $maxAttempts;
+        return $this->status === NotificationStatus::Failed
+            && $this->retryable
+            && $this->attempts < $maxAttempts;
     }
 
     public function markRead(DateTimeImmutable $at): void
@@ -239,6 +269,26 @@ final class Notification extends AggregateRoot
     public function timeline(): array
     {
         return $this->timeline;
+    }
+
+    public function class(): NotificationClass
+    {
+        return $this->class;
+    }
+
+    public function correlationId(): ?string
+    {
+        return $this->correlationId;
+    }
+
+    public function providerMessageId(): ?string
+    {
+        return $this->providerMessageId;
+    }
+
+    public function isRetryable(): bool
+    {
+        return $this->retryable;
     }
 
     public function createdAt(): DateTimeImmutable

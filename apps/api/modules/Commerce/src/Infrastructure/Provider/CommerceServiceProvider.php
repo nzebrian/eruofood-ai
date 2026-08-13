@@ -31,6 +31,7 @@ use EruoFood\Commerce\Domain\Shopping\ShoppingListRepository;
 use EruoFood\Commerce\Domain\Shopping\WishlistRepository;
 use EruoFood\Commerce\Domain\Store\StoreRepository;
 use EruoFood\Commerce\Infrastructure\Ai\AiCommerceAdvisor;
+use EruoFood\Commerce\Infrastructure\Event\VerificationProjectionSubscriber;
 use EruoFood\Commerce\Infrastructure\Invoice\OrderInvoiceGenerator;
 use EruoFood\Commerce\Infrastructure\Persistence\Eloquent\EloquentCartRepository;
 use EruoFood\Commerce\Infrastructure\Persistence\Eloquent\EloquentCategoryRepository;
@@ -50,6 +51,7 @@ use EruoFood\Commerce\Infrastructure\Pricing\CataloguePricingStrategy;
 use EruoFood\Commerce\Infrastructure\Pricing\CouponDiscountEngine;
 use EruoFood\Commerce\Infrastructure\Pricing\FlatRateShippingCalculator;
 use EruoFood\Commerce\Infrastructure\Pricing\VatTaxCalculator;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -130,5 +132,9 @@ final class CommerceServiceProvider extends ServiceProvider
             ->group(__DIR__.'/../../Interface/Http/routes.php');
 
         $this->loadMigrationsFrom(__DIR__.'/../Persistence/Migration');
+
+        // Keep the local eligibility projection in step with Verification. One-way,
+        // by event name — this module never queries the Verification context.
+        (new VerificationProjectionSubscriber())->register($this->app->make(Dispatcher::class));
     }
 }

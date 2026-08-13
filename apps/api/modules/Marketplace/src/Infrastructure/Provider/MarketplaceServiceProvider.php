@@ -22,6 +22,7 @@ use EruoFood\Marketplace\Domain\Vendor\VendorReviewRepository;
 use EruoFood\Marketplace\Infrastructure\Ai\AiMenuDescriber;
 use EruoFood\Marketplace\Infrastructure\Delivery\NearestFirstRouteOptimizer;
 use EruoFood\Marketplace\Infrastructure\Delivery\ZoneDeliveryFeeCalculator;
+use EruoFood\Marketplace\Infrastructure\Event\VerificationProjectionSubscriber;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentCartRepository;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentDeliveryRepository;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentMenuCategoryRepository;
@@ -31,6 +32,7 @@ use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentRiderReposi
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentVendorRepository;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentVendorReviewRepository;
 use EruoFood\Marketplace\Interface\Http\Controller\MenuManagementController;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -87,5 +89,9 @@ final class MarketplaceServiceProvider extends ServiceProvider
             ->group(__DIR__.'/../../Interface/Http/routes.php');
 
         $this->loadMigrationsFrom(__DIR__.'/../Persistence/Migration');
+
+        // Keep the local eligibility projection in step with Verification. One-way,
+        // by event name — this module never queries the Verification context.
+        (new VerificationProjectionSubscriber())->register($this->app->make(Dispatcher::class));
     }
 }

@@ -7,6 +7,8 @@ namespace EruoFood\Notifications\Infrastructure\Event;
 use EruoFood\Notifications\Application\Service\EventTranslator;
 use EruoFood\Shared\Domain\DomainEvent;
 use Illuminate\Contracts\Events\Dispatcher;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * Wires the Notifications context onto the shared event bus. It registers a
@@ -31,8 +33,21 @@ final readonly class DomainEventSubscriber
     {
         foreach (array_keys($this->eventMap) as $eventName) {
             $this->dispatcher->listen($eventName, function (object $event): void {
-                if ($event instanceof DomainEvent) {
+                if (! $event instanceof DomainEvent) {
+                    return;
+                }
+
+                try {
                     app(EventTranslator::class)->handle($event);
+                } catch (Throwable $e) {
+                    // This listener runs inline with the business operation that
+                    // published the event. A notification that cannot be built
+                    // or sent must never roll back a verification, an order or a
+                    // payment — the message is the lesser thing.
+                    app(LoggerInterface::class)->error('notifications.translate_failed', [
+                        'event' => $event->eventName(),
+                        'exception' => $e::class,
+                    ]);
                 }
             });
         }

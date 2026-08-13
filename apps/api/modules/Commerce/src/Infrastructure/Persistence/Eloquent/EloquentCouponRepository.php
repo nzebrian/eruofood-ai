@@ -32,6 +32,13 @@ final class EloquentCouponRepository implements CouponRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findByCodeForUpdate(string $code): ?Coupon
+    {
+        $m = CouponModel::query()->where('code', strtoupper(trim($code)))->lockForUpdate()->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function codeExists(string $code): bool
     {
         return CouponModel::query()->where('code', strtoupper(trim($code)))->exists();

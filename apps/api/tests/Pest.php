@@ -18,6 +18,7 @@ use Tests\TestCase;
 
 uses(TestCase::class)->in('Feature');
 uses(TestCase::class)->in(
+    __DIR__.'/../modules/Shared/tests/Feature',
     __DIR__.'/../modules/Platform/tests/Feature',
     __DIR__.'/../modules/Identity/tests/Feature',
     __DIR__.'/../modules/Catalog/tests/Feature',
@@ -34,4 +35,5 @@ uses(TestCase::class)->in(
     __DIR__.'/../modules/Reviews/tests/Feature',
     __DIR__.'/../modules/Loyalty/tests/Feature',
     __DIR__.'/../modules/PublicApi/tests/Feature',
+    __DIR__.'/../modules/Verification/tests/Feature',
 );

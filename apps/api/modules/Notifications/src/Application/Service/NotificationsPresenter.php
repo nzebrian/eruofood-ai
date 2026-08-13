@@ -43,6 +43,11 @@ final readonly class NotificationsPresenter
             'quiet_hours' => $p->quietHours()->toArray(),
             'language' => $p->language(),
             'max_per_day' => $p->maxPerDay(),
+            'marketing_opt_in' => $p->marketingOptIn(),
+            'marketing_opt_in_at' => $p->marketingOptInAt()?->format(DATE_ATOM),
+            // The token itself is never returned: it is a bearer secret that
+            // belongs in an email link, not in an API response that a browser
+            // extension or a shared screenshot could carry away.
         ];
     }
 

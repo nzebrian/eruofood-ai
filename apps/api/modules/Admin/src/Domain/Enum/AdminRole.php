@@ -22,6 +22,15 @@ enum AdminRole: string
     case VendorManager = 'vendor_manager';
     case OperationsManager = 'operations_manager';
 
+    /**
+     * Identity and business verification review.
+     *
+     * Deliberately its own role rather than a bundle added to Admin: reading a
+     * rider's identity document is a materially different power from running the
+     * back office, and separating them is what makes least privilege real here.
+     */
+    case ComplianceOfficer = 'compliance_officer';
+
     public function isSuper(): bool
     {
         return $this === self::SuperAdmin;

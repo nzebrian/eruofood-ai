@@ -22,6 +22,17 @@ interface LoyaltyAccountRepository
     public function findByUser(string $userId): ?LoyaltyAccount;
 
     /**
+     * Read the account holding an exclusive row lock until the surrounding
+     * transaction ends.
+     *
+     * Points are spendable value, so a balance that is about to be debited must
+     * be read this way. Two concurrent redemptions that both read an unlocked
+     * balance both find it sufficient, and the member spends the same points
+     * twice.
+     */
+    public function findByUserForUpdate(string $userId): ?LoyaltyAccount;
+
+    /**
      * @return Paginated<LedgerEntry>
      */
     public function ledger(LedgerQuery $query): Paginated;

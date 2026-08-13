@@ -28,4 +28,21 @@ interface LedgerRepository
 
     /** @return list<LedgerEntry> */
     public function forCorrelation(string $correlationId): array;
+
+    /** How many distinct financial events the ledger holds. */
+    public function correlationCount(): int;
+
+    /**
+     * Signed sum of every entry in the ledger. Must be zero: each posting is
+     * balanced, so the whole book is too.
+     */
+    public function netMinor(): int;
+
+    /**
+     * Correlation ids whose entries do not net to zero — i.e. postings that
+     * reached storage without their counterpart. Empty in a healthy ledger.
+     *
+     * @return list<string>
+     */
+    public function unbalancedCorrelations(): array;
 }

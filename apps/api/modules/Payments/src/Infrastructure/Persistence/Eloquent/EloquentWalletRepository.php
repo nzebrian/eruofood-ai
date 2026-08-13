@@ -11,6 +11,7 @@ use EruoFood\Payments\Domain\Wallet\WalletRepository;
 use EruoFood\Payments\Domain\Wallet\WalletTransaction;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\WalletModel;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\WalletTransactionModel;
+use EruoFood\Shared\Domain\Exception\ConcurrencyConflict;
 use EruoFood\Shared\Domain\Paginated;
 use EruoFood\Shared\Domain\ValueObject\Money;
 use Illuminate\Support\Facades\DB;
@@ -46,17 +47,28 @@ final class EloquentWalletRepository implements WalletRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findByIdForUpdate(string $id): ?Wallet
+    {
+        $m = WalletModel::query()->whereKey($id)->lockForUpdate()->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
+    public function findForOwnerForUpdate(WalletOwnerType $ownerType, string $ownerId): ?Wallet
+    {
+        $m = WalletModel::query()
+            ->where('owner_type', $ownerType->value)
+            ->where('owner_id', $ownerId)
+            ->lockForUpdate()
+            ->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function save(Wallet $wallet): void
     {
         DB::transaction(function () use ($wallet): void {
-            $model = WalletModel::query()->find($wallet->id()) ?? new WalletModel();
-            $model->id = $wallet->id();
-            $model->owner_type = $wallet->ownerType()->value;
-            $model->owner_id = $wallet->ownerId();
-            $model->balance_minor = $wallet->balance()->minorUnits;
-            $model->currency = $wallet->currency();
-            $model->created_at = $wallet->createdAt();
-            $model->save();
+            $this->persistWallet($wallet);
 
             foreach ($wallet->releaseNewTransactions() as $txn) {
                 $row = new WalletTransactionModel();
@@ -73,6 +85,45 @@ final class EloquentWalletRepository implements WalletRepository
                 $row->save();
             }
         });
+    }
+
+    /**
+     * Insert a new wallet, or update an existing one only if nobody else has
+     * written it since we read it.
+     *
+     * The UPDATE carries the loaded version in its WHERE clause. A concurrent
+     * writer that already committed has bumped the version, so this statement
+     * matches zero rows — which is how a lost update is detected instead of
+     * silently winning.
+     */
+    private function persistWallet(Wallet $wallet): void
+    {
+        $attributes = [
+            'owner_type' => $wallet->ownerType()->value,
+            'owner_id' => $wallet->ownerId(),
+            'balance_minor' => $wallet->balance()->minorUnits,
+            'currency' => $wallet->currency(),
+            'created_at' => $wallet->createdAt(),
+        ];
+
+        $exists = WalletModel::query()->whereKey($wallet->id())->exists();
+
+        if (! $exists) {
+            // low_balance_threshold is omitted so the column default applies,
+            // matching the behaviour this repository has always had.
+            WalletModel::query()->insert($attributes + ['id' => $wallet->id(), 'version' => 1]);
+
+            return;
+        }
+
+        $updated = WalletModel::query()
+            ->whereKey($wallet->id())
+            ->where('version', $wallet->version())
+            ->update($attributes + ['version' => $wallet->version() + 1]);
+
+        if ($updated === 0) {
+            throw ConcurrencyConflict::on('wallet', $wallet->id());
+        }
     }
 
     public function statement(string $walletId, int $page, int $perPage): Paginated
@@ -110,6 +161,7 @@ final class EloquentWalletRepository implements WalletRepository
             currency: $m->currency ?: $this->currency,
             lowBalanceThreshold: (int) $m->low_balance_threshold,
             createdAt: DateTimeImmutable::createFromInterface($m->created_at),
+            version: (int) $m->version,
         );
     }
 }

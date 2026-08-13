@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace EruoFood\Notifications\Domain\Preference;
 
+use DateTimeImmutable;
 use EruoFood\Notifications\Domain\Enum\NotificationCategory;
 use EruoFood\Notifications\Domain\Enum\NotificationChannel;
+use EruoFood\Notifications\Domain\Enum\NotificationClass;
 use EruoFood\Notifications\Domain\ValueObject\QuietHours;
 
 /**
@@ -25,12 +27,18 @@ final class NotificationPreference
         private QuietHours $quietHours,
         private string $language,
         private int $maxPerDay,
+        private bool $marketingOptIn = false,
+        private ?DateTimeImmutable $marketingOptInAt = null,
+        private ?string $unsubscribeToken = null,
     ) {
     }
 
     public static function defaults(string $userId, string $language, QuietHours $quietHours): self
     {
-        return new self($userId, [], $quietHours, $language, 0);
+        // Marketing defaults to off. A positive choice is what makes it consent;
+        // defaulting an existing user base to opted-in because a column was
+        // added would manufacture agreement nobody gave.
+        return new self($userId, [], $quietHours, $language, 0, marketingOptIn: false);
     }
 
     /**
@@ -42,8 +50,20 @@ final class NotificationPreference
         QuietHours $quietHours,
         string $language,
         int $maxPerDay,
+        bool $marketingOptIn = false,
+        ?DateTimeImmutable $marketingOptInAt = null,
+        ?string $unsubscribeToken = null,
     ): self {
-        return new self($userId, $channelsByCategory, $quietHours, $language, $maxPerDay);
+        return new self(
+            $userId,
+            $channelsByCategory,
+            $quietHours,
+            $language,
+            $maxPerDay,
+            $marketingOptIn,
+            $marketingOptInAt,
+            $unsubscribeToken,
+        );
     }
 
     /**
@@ -97,6 +117,68 @@ final class NotificationPreference
     public function setMaxPerDay(int $maxPerDay): void
     {
         $this->maxPerDay = max(0, $maxPerDay);
+    }
+
+    /**
+     * Whether a message of this class may be sent at all.
+     *
+     * Security messages are never suppressed. A user who "unsubscribed" from
+     * password-reset and verification notices has not been served, they have
+     * been abandoned — and an attacker who can silence those has removed the
+     * platform's only way of telling somebody their account is under attack.
+     */
+    public function permits(NotificationClass $class): bool
+    {
+        if ($class === NotificationClass::Security) {
+            return true;
+        }
+
+        return ! $class->requiresOptIn() || $this->marketingOptIn;
+    }
+
+    /** Record an explicit opt-in, with the moment a consent audit will ask about. */
+    public function optIntoMarketing(DateTimeImmutable $at): void
+    {
+        $this->marketingOptIn = true;
+        $this->marketingOptInAt = $at;
+    }
+
+    /**
+     * Withdraw marketing consent.
+     *
+     * Deliberately does not touch any other category: an unsubscribe link in a
+     * campaign must not also stop delivery receipts or security alerts.
+     */
+    public function optOutOfMarketing(): void
+    {
+        $this->marketingOptIn = false;
+        $this->marketingOptInAt = null;
+    }
+
+    /**
+     * The token that makes an unsubscribe link work from an email client with no
+     * session — the one request the platform must honour without normal
+     * authentication. Random and revocable, so a leaked link costs a regenerated
+     * token rather than an account.
+     */
+    public function unsubscribeToken(): ?string
+    {
+        return $this->unsubscribeToken;
+    }
+
+    public function assignUnsubscribeToken(string $token): void
+    {
+        $this->unsubscribeToken ??= $token;
+    }
+
+    public function marketingOptIn(): bool
+    {
+        return $this->marketingOptIn;
+    }
+
+    public function marketingOptInAt(): ?DateTimeImmutable
+    {
+        return $this->marketingOptInAt;
     }
 
     public function userId(): string

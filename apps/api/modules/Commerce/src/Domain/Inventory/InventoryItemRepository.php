@@ -15,6 +15,13 @@ interface InventoryItemRepository
 
     public function findForProduct(string $productId, ?string $variantSku): ?InventoryItem;
 
+    /**
+     * Read the stock row holding an exclusive row lock until the surrounding
+     * transaction ends. Required wherever availability is checked and then
+     * deducted, so concurrent checkouts cannot oversell the same units.
+     */
+    public function findForProductForUpdate(string $productId, ?string $variantSku): ?InventoryItem;
+
     /** @return list<InventoryItem> */
     public function forProduct(string $productId): array;
 

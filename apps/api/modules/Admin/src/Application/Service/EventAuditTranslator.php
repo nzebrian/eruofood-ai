@@ -34,16 +34,49 @@ final readonly class EventAuditTranslator
         }
 
         $vars = $this->scalarVars($event);
-        $subjectId = $this->firstOf($vars, ['userId', 'user_id', 'vendorId', 'vendor_id', 'paymentId', 'payment_id', 'id']);
+        [$subjectType, $subjectId] = $this->subjectOf($vars);
 
         $this->audit->record(
-            actorId: null, // system-originated: no admin actor
+            // Most published events are system-originated and carry no actor.
+            // Some — a privileged read of identity data, for one — name the
+            // person responsible, and an audit entry that discards that name is
+            // useless for the review it exists to serve.
+            actorId: $this->firstOf($vars, ['actorId', 'actor_id']),
             category: $this->categoryFor($action),
             action: $action,
-            subjectType: $subjectId === null ? null : 'external',
+            subjectType: $subjectType,
             subjectId: $subjectId,
             context: ['event' => $event->eventName()] + $vars,
         );
+    }
+
+    /**
+     * Which entity the event is about, by convention over the event's property
+     * names. Still no imports: the translator recognises the shape of an id,
+     * not the class it came from.
+     *
+     * @param array<string, scalar|null> $vars
+     * @return array{string|null, string|null}
+     */
+    private function subjectOf(array $vars): array
+    {
+        $byType = [
+            'verification_case' => ['caseId', 'case_id'],
+            'user' => ['userId', 'user_id'],
+            'vendor' => ['vendorId', 'vendor_id'],
+            'payment' => ['paymentId', 'payment_id'],
+        ];
+
+        foreach ($byType as $type => $keys) {
+            $id = $this->firstOf($vars, $keys);
+            if ($id !== null) {
+                return [$type, $id];
+            }
+        }
+
+        $fallback = $this->firstOf($vars, ['subjectId', 'subject_id', 'id']);
+
+        return $fallback === null ? [null, null] : ['external', $fallback];
     }
 
     private function categoryFor(string $action): AuditCategory

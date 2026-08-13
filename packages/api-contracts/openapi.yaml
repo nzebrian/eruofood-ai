@@ -75,6 +75,19 @@ tags:
     description: Loyalty, Rewards & Referrals — a points ledger with a running balance, membership tiers (recomputed on change), a redeemable rewards catalogue, referral codes with fraud guards, points expiry, and admin adjustments/analytics. The one place points are awarded and computed — no business module awards or stores its own points; points are earned from published order/review events, and tiers/vouchers flow out via published events.
   - name: Public API
     description: The controlled external-facing API at /api/public/v1 — a separate surface from the internal APIs. Authenticated by API keys (not JWT), scoped, rate-limited and quota-governed, versioned, and returned through a standard envelope. It exposes transformed resources only; no internal endpoint is proxied. Adding v2 later is additive and leaves v1 untouched.
+  - name: Verification
+    description: >-
+      KYC / KYB and progressive identity assurance. Provider-abstracted: Didit is
+      the initial identity provider and Nigeria's CAC the initial business
+      registry, both behind provider-neutral ports, so a new market or provider
+      is configuration plus an adapter. Customers are never forced through KYC to
+      register or order — assurance is asked for at the operation that needs it.
+      Riders must complete identity verification; restaurants and groceries must
+      complete KYB. Enforcement of those requirements is a separate switch,
+      shipped off, so an existing population can verify before any gate closes.
+      Regulated identity data is returned by exactly one endpoint, behind its own
+      permission, and every read of it — granted or denied, whoever made it —
+      writes an immutable audit event.
   - name: Developer Platform
     description: The developer portal management API at /api/v1/developer (internal, JWT-authenticated) — developer accounts, applications (scope-grant boundary), API keys (hashed secrets, rotation, revocation, expiry), webhooks (signed, retried, idempotent) and usage. API keys are never accepted here.
 
@@ -1812,6 +1825,8 @@ paths:
       tags: [Marketplace]
       operationId: checkout
       summary: Check out the cart into an order
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1823,6 +1838,14 @@ paths:
           content:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+        "200":
+          description: >
+            Replay of an earlier identical request (same Idempotency-Key and
+            body). No new work was performed.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Order" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
         "422": { $ref: "#/components/responses/Error" }
   /orders:
     get:
@@ -2231,6 +2254,8 @@ paths:
       tags: [Commerce]
       summary: Place an order
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2248,6 +2273,14 @@ paths:
           content:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceOrder" } } }
+        "200":
+          description: >
+            Replay of an earlier identical request (same Idempotency-Key and
+            body). No new work was performed.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/CommerceOrder" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
         "422": { $ref: "#/components/responses/Error" }
   /v1/commerce/orders:
     get:
@@ -2529,6 +2562,8 @@ paths:
       tags: [Payments]
       summary: Refund a captured payment (full or partial)
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2578,6 +2613,8 @@ paths:
       tags: [Payments]
       summary: Top up the wallet (takes a payment, credits on capture)
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2595,11 +2632,21 @@ paths:
           content:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/PaymentIntent" } } }
+        "200":
+          description: >
+            Replay of an earlier identical request (same Idempotency-Key and
+            body). No new work was performed.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/PaymentIntent" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
   /v1/payments/wallet/transfer:
     post:
       tags: [Payments]
       summary: Transfer funds to another user's wallet
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -5351,6 +5398,572 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/DevUsage" } } }
 
+  /v1/verification/me:
+    get:
+      tags: [Verification]
+      summary: The caller's own identity verification status
+      description: >-
+        Status only. A subject-facing response never carries identity data, even
+        to the subject it belongs to.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The caller's status, or `not_started` if they have never begun.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { $ref: "#/components/schemas/VerificationStatus" }
+                      case:
+                        type: object
+                        nullable: true
+                        allOf:
+                          - $ref: "#/components/schemas/VerificationCase"
+  /v1/verification/start:
+    post:
+      tags: [Verification]
+      summary: Begin the caller's own identity verification
+      description: >-
+        Idempotent: a subject who taps "verify" twice gets the same case, not two
+        competing ones. Throttled harder than reads because each start creates a
+        billable provider session.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [country_code]
+              properties:
+                country_code: { type: string, minLength: 2, maxLength: 2, example: "NG" }
+      responses:
+        "201":
+          description: The case, carrying the hosted URL the subject is sent to.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+        "409": { description: Already verified. }
+        "503": { description: No verification provider is available for this country. }
+  /v1/verification/cases/{id}:
+    get:
+      tags: [Verification]
+      summary: One of the caller's own cases
+      description: >-
+        Ownership is re-checked on the loaded case rather than trusted from the
+        identifier. A case belonging to somebody else is refused without
+        revealing whether it exists.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+        "403": { description: Not the caller's case. }
+  /v1/verification/level:
+    get:
+      tags: [Verification]
+      summary: The account's current assurance level
+      description: >-
+        What a client reads to decide whether to prompt for a step-up before
+        starting a sensitive operation.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The level.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      level: { $ref: "#/components/schemas/VerificationLevel" }
+                      phone_verified: { type: boolean }
+  /v1/verification/phone/request:
+    post:
+      tags: [Verification]
+      summary: Send a confirmation code to a number
+      description: >-
+        The cheap rung of progressive verification. Re-requesting replaces the
+        outstanding code rather than adding a second valid one. The response does
+        not echo the number, and the code is never stored — only a hash.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, minLength: 7, maxLength: 32, example: "+2348030000001" }
+      responses:
+        "202":
+          description: Accepted for delivery.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: object, properties: { sent: { type: boolean } } } } }
+        "429": { description: Rate limited — each request sends an SMS. }
+  /v1/verification/phone/confirm:
+    post:
+      tags: [Verification]
+      summary: Spend an attempt against the outstanding code
+      description: >-
+        Attempts are counted on the stored row, not in a cache, so the limit
+        survives a cache flush. The response does not say how many attempts
+        remain.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, minLength: 4, maxLength: 10 }
+      responses:
+        "200":
+          description: Confirmed; the account's level has risen.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      verified: { type: boolean }
+                      level: { $ref: "#/components/schemas/VerificationLevel" }
+        "422": { description: "Wrong, expired, or out of attempts." }
+  /v1/verification/rider/start:
+    post:
+      tags: [Verification]
+      summary: Begin the calling rider's KYC
+      description: >-
+        The strictest flow the platform runs — government document, liveness and
+        face match, plus a driving licence where the vehicle requires one. The
+        case is always keyed to the authenticated user, never to an id in the
+        request.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [country_code]
+              properties:
+                country_code: { type: string, minLength: 2, maxLength: 2 }
+                requires_driving_licence:
+                  type: boolean
+                  default: true
+                  description: False for a bicycle courier, where a licence check would be a barrier with no purpose.
+      responses:
+        "201":
+          description: The rider's case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+  /v1/verification/rider/status:
+    get:
+      tags: [Verification]
+      summary: Where the calling rider's verification stands
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Status, plus dispatch eligibility spelled out so the rider app need not interpret status values itself.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { $ref: "#/components/schemas/VerificationStatus" }
+                      eligible_for_delivery: { type: boolean }
+                      case:
+                        type: object
+                        nullable: true
+                        allOf:
+                          - $ref: "#/components/schemas/VerificationCase"
+  /v1/verification/business/profiles:
+    post:
+      tags: [Verification]
+      summary: Submit a business for KYB
+      description: >-
+        Restaurants and groceries alike. The registration number is encrypted at
+        rest; which registry validates it is decided by the country.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_kind, business_id, legal_name, registration_number, country_code]
+              properties:
+                business_kind: { type: string, enum: [restaurant, grocery] }
+                business_id: { type: string, format: uuid }
+                legal_name: { type: string, example: "Mama Put Kitchen Limited" }
+                registration_number: { type: string, example: "RC1234567" }
+                country_code: { type: string, minLength: 2, maxLength: 2 }
+                registered_address: { type: string }
+      responses:
+        "201":
+          description: The business profile.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/BusinessProfile" } } }
+        "403": { description: The caller does not own this business. }
+  /v1/verification/business/profiles/{profileId}/representatives:
+    post:
+      tags: [Verification]
+      summary: Add an authorised representative
+      description: The person who can act for the business, verified as an individual in their own right.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, full_name, role]
+              properties:
+                user_id: { type: string, format: uuid }
+                full_name: { type: string }
+                role: { type: string, example: "director" }
+                is_primary: { type: boolean }
+                ownership_percentage: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        "201":
+          description: The representative.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/BusinessRepresentative" } } }
+  /v1/verification/business/profiles/{profileId}/verify-registration:
+    post:
+      tags: [Verification]
+      summary: Check the registration number against the country's registry
+      description: >-
+        Nigeria resolves to the CAC adapter, which knows the RC/BN/IT series and
+        compares the claimed name against the registered one. A market with no
+        registry integration routes to human review rather than inheriting
+        another country's registry — and an unreachable or unconfigured registry
+        also routes to review, never to "assumed valid".
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The lookup outcome and the resulting case state.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/RegistryLookup" } } }
+  /v1/verification/business/representatives/{representativeId}/verify:
+    post:
+      tags: [Verification]
+      summary: Start identity verification for a representative
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: representativeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "201":
+          description: The representative's identity case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+  /v1/verification/business/{kind}/{businessId}/status:
+    get:
+      tags: [Verification]
+      summary: A business's KYB standing
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [restaurant, grocery] } }
+        - { name: businessId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Status and whether it currently blocks trading.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { $ref: "#/components/schemas/VerificationStatus" }
+                      blocked: { type: boolean, description: True only when the business is unverified *and* enforcement applies to its kind. }
+  /v1/verification/webhooks/{provider}:
+    post:
+      tags: [Verification]
+      summary: Provider callback (public, signed)
+      description: >-
+        Unauthenticated by necessity — the provider's signature is the
+        authentication, verified before the body is trusted as a result. A
+        forgery, a replay outside the tolerance window, an unknown session
+        reference and an unknown provider all return an identical bare 401, so
+        the endpoint cannot be used to refine an attack. Application is
+        exactly-once: the event id is claimed before the decision is applied, so
+        a redelivery is a no-op.
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, example: didit } }
+        - { name: X-Signature, in: header, required: false, schema: { type: string }, description: HMAC-SHA256 over the raw body. }
+        - { name: X-Timestamp, in: header, required: false, schema: { type: string }, description: Unix seconds; outside the tolerance window the callback is treated as a replay. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: "Provider-specific payload, parsed only inside that provider's adapter." }
+      responses:
+        "200":
+          description: Received. `applied` is false for a redelivery of an event already processed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean }
+                  applied: { type: boolean }
+        "401": { description: Rejected. Deliberately uniform and uninformative. }
+  /v1/verification/admin/queue:
+    get:
+      tags: [Verification]
+      summary: Cases awaiting a human
+      description: >-
+        Requires `verification.read`. Returns cases only — no identity data is
+        loaded, so clearing a verification backlog never involves opening
+        anybody's documents.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: array, items: { $ref: "#/components/schemas/VerificationStatus" } } }
+        - { name: subject_type, in: query, schema: { type: string, enum: [customer, rider, business] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of cases.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/VerificationCase" } }
+                  meta: { type: object }
+        "403": { description: Missing `verification.read`. }
+  /v1/verification/admin/reason-codes:
+    get:
+      tags: [Verification]
+      summary: The rejection-reason catalogue
+      description: So a reviewer picks from the same vocabulary the providers map onto.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Reason codes, with whether each is retryable by the subject.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        value: { type: string }
+                        label: { type: string }
+                        retryable: { type: boolean }
+  /v1/verification/admin/cases/{id}:
+    get:
+      tags: [Verification]
+      summary: A case, as a reviewer sees it
+      description: Requires `verification.read`. Carries no identity data.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+  /v1/verification/admin/cases/{id}/history:
+    get:
+      tags: [Verification]
+      summary: Every transition on a case
+      description: >-
+        Who decided what, when and why. Append-only in the database: a correction
+        is made by appending a further transition, never by rewriting history.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The transition history, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/VerificationStatusChange" } }
+  /v1/verification/admin/cases/{id}/approve:
+    post:
+      tags: [Verification]
+      summary: Approve a case by hand
+      description: Requires `verification.review`. Applied under a row lock, so a reviewer and an arriving webhook cannot overwrite each other.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { note: { type: string, maxLength: 500 } } }
+      responses:
+        "200":
+          description: The decided case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+        "403": { description: Missing `verification.review`. }
+        "422": { description: Not a legal transition from the case's current status. }
+  /v1/verification/admin/cases/{id}/reject:
+    post:
+      tags: [Verification]
+      summary: Reject a case by hand
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code: { type: string, example: document_unreadable }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: The decided case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+  /v1/verification/admin/cases/{id}/require-reverification:
+    post:
+      tags: [Verification]
+      summary: Demand that a subject verify again
+      description: A data change, a policy change, or a concern. Consumers treat this exactly like a loss of verification.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { note: { type: string, maxLength: 500 } } }
+      responses:
+        "200":
+          description: The case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/VerificationCase" } } }
+  /v1/verification/admin/cases/{id}/documents:
+    get:
+      tags: [Verification]
+      summary: The regulated identity fields
+      description: >-
+        The narrowest permission on the platform (`verification.pii`) and the
+        only endpoint that returns regulated identity data. No raw document is
+        ever returned or stored — the provider holds the artefact and the
+        platform holds the last four characters of the number, encrypted at rest.
+
+        Every call writes an immutable audit event naming the actor, the case,
+        the permission, the action, the stated reason, the result and the request
+        correlation id — granted or denied, and whoever made it. A SuperAdmin
+        retains this permission; what they do not retain is the ability to look
+        unobserved.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: reason, in: query, required: false, schema: { type: string, maxLength: 255 }, description: Why this access is necessary; recorded on the audit event. }
+      responses:
+        "200":
+          description: Document metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/VerificationDocument" } }
+        "403": { description: Missing `verification.pii`. The refusal is itself audited. }
+  /v1/notifications/preferences/marketing:
+    put:
+      tags: [Notifications]
+      summary: Opt in or out of marketing messages
+      description: >-
+        Marketing is the one notification class that requires a positive opt-in;
+        transactional and security messages are unaffected by this setting.
+        Opting in issues the unsubscribe token at the same moment, so every
+        marketing message the platform is now permitted to send already has a
+        working way out of it.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [opt_in]
+              properties:
+                opt_in: { type: boolean }
+      responses:
+        "200":
+          description: The updated preferences. The unsubscribe token is never returned.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/NotificationPreference" } } }
+  /v1/notifications/unsubscribe/{token}:
+    post:
+      tags: [Notifications]
+      summary: Unsubscribe from marketing via an emailed link
+      description: >-
+        Public by necessity — clicked from an email client with no session, where
+        the token stands in for authentication. Withdraws marketing consent only:
+        an unsubscribe from a campaign must never silence delivery receipts or
+        account-security messages.
+
+        The response is identical whether or not the token matched, so the
+        endpoint cannot be used to test tokens.
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Acknowledged.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      unsubscribed: { type: boolean }
+                      note: { type: string }
+        "429": { description: Rate limited. }
 
 components:
   securitySchemes:
@@ -5391,9 +6004,33 @@ components:
             "nutrition:read": Read nutrition information.
             "search:read": Query the public search index.
 
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >
+        A client-generated key that makes this request safe to retry. The first
+        request under a given key is executed and its response stored; any later
+        request with the same key and the same body returns that stored response
+        with status 200 instead of performing the operation again. Reusing a key
+        with a different body is rejected with 422. A duplicate that arrives
+        while the first is still running is rejected with 409 and may be retried.
+        Keys expire after 24 hours. Omitting the header preserves the previous
+        at-least-once behaviour.
+      schema: { type: string, maxLength: 255 }
+      example: "6f1a2c4e-9b3d-4a71-8f2e-5c7d9a0b1e33"
+
   responses:
     Error:
       description: Error envelope.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    IdempotencyInFlight:
+      description: >
+        A request carrying this idempotency key is still being processed, or the
+        resource was modified concurrently. Nothing was changed — retry shortly.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -5446,6 +6083,117 @@ components:
               data: { $ref: "#/components/schemas/NutritionAdvicePayload" }
 
   schemas:
+    VerificationStatus:
+      type: string
+      description: >-
+        The verification state machine. Transitions are enforced by the domain
+        and recorded individually: a verified case may only decay (expire, or be
+        sent back for reverification), so a late "declined" callback can never
+        silently strip somebody's verification.
+      enum:
+        - not_started
+        - pending
+        - processing
+        - requires_review
+        - verified
+        - rejected
+        - expired
+        - reverification_required
+    VerificationLevel:
+      type: string
+      description: >-
+        Progressive assurance. Every account starts at `basic` and stays there
+        until an operation needs more; a stronger level satisfies any weaker
+        requirement.
+      enum: [basic, phone, identity]
+    VerificationCase:
+      type: object
+      description: One subject's verification of one kind. A subject holds at most one open case per case type.
+      properties:
+        id: { type: string, format: uuid }
+        subject_type: { type: string, enum: [customer, rider, business] }
+        subject_id: { type: string, format: uuid }
+        case_type: { type: string, enum: [identity, business] }
+        country_code: { type: string, example: "NG" }
+        status: { $ref: "#/components/schemas/VerificationStatus" }
+        required_level: { $ref: "#/components/schemas/VerificationLevel" }
+        provider: { type: string, nullable: true, enum: [didit, cac, manual, mock] }
+        hosted_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Where the subject completes the provider's flow. Present only while an attempt is live.
+        decision_reason_code: { type: string, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    VerificationStatusChange:
+      type: object
+      description: One transition. Append-only — history is corrected by appending, never by editing.
+      properties:
+        from_status: { $ref: "#/components/schemas/VerificationStatus" }
+        to_status: { $ref: "#/components/schemas/VerificationStatus" }
+        actor_type: { type: string, enum: [system, provider, admin, subject] }
+        actor_id:
+          type: string
+          nullable: true
+          description: A person's id, or the name of the component that acted (`reconciliation`, a provider).
+        reason_code: { type: string, nullable: true }
+        note: { type: string, nullable: true }
+        occurred_at: { type: string, format: date-time }
+    VerificationDocument:
+      type: object
+      description: >-
+        What the platform keeps about a document, and deliberately nothing more.
+        There is no image, file path or blob anywhere in this context — the
+        provider holds the artefact.
+      properties:
+        id: { type: string, format: uuid }
+        document_type: { type: string, enum: [passport, national_id, drivers_licence, residence_permit, voters_card, other] }
+        issuing_country: { type: string, nullable: true }
+        number_last4:
+          type: string
+          nullable: true
+          description: The last four characters only — enough to reconcile a support call, useless to an attacker, and encrypted at rest.
+        expires_on: { type: string, format: date, nullable: true }
+        created_at: { type: string, format: date-time }
+    BusinessProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        business_kind: { type: string, enum: [restaurant, grocery] }
+        business_id: { type: string, format: uuid }
+        legal_name: { type: string }
+        registration_number: { type: string, description: Encrypted at rest; returned only to the owning merchant and to holders of the PII permission. }
+        country_code: { type: string }
+        status: { $ref: "#/components/schemas/VerificationStatus" }
+        created_at: { type: string, format: date-time }
+    BusinessRepresentative:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        business_profile_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        full_name: { type: string }
+        role: { type: string }
+        is_primary: { type: boolean }
+        ownership_percentage: { type: integer, nullable: true }
+        identity_case_id: { type: string, format: uuid, nullable: true }
+    RegistryLookup:
+      type: object
+      description: >-
+        The outcome of a business-registry check. `found`, `active` and `matched`
+        are reported separately because "no such company" and "a real company
+        under a different name" are materially different things to a reviewer.
+      properties:
+        authority: { type: string, example: "CAC" }
+        found: { type: boolean }
+        active: { type: boolean }
+        matched: { type: boolean, description: "Whether the claimed name matches the registered one, allowing for suffix variation (Limited/Ltd/PLC)." }
+        requires_manual_review: { type: boolean, description: True when the registry is unconfigured or unreachable — never treated as "assumed valid". }
+        registered_name: { type: string, nullable: true }
+        note: { type: string, nullable: true }
     SystemStatus:
       type: object
       required: [status, service, version, environment, timestamp]
@@ -6757,19 +7505,29 @@ components:
         created_at: { type: string, format: date-time }
     NotificationPreference:
       type: object
+      description: >-
+        Per-user delivery preferences. `marketing_opt_in` governs the marketing
+        class only; security notifications are never suppressed by any
+        preference, because an account whose owner has silenced its security
+        alerts has lost its only warning that it is being tampered with.
+
+        The unsubscribe token is deliberately absent: it is a bearer secret that
+        belongs in an emailed link, not in an API response.
       properties:
         user_id: { type: string, format: uuid }
         channels_by_category:
           type: object
-          additionalProperties: { type: array, items: { type: string } }
+          additionalProperties: { type: array, items: { type: string, enum: [email, sms, push, in_app, whatsapp, telegram] } }
         quiet_hours:
           type: object
           properties:
             enabled: { type: boolean }
             start: { type: string }
             end: { type: string }
-        language: { type: string }
+        language: { type: string, example: en }
         max_per_day: { type: integer }
+        marketing_opt_in: { type: boolean }
+        marketing_opt_in_at: { type: string, format: date-time, nullable: true }
     MessagingConversation:
       type: object
       properties:

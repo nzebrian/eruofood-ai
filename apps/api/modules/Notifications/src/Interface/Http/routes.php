@@ -19,6 +19,15 @@ use Illuminate\Support\Facades\Route;
 |------------------------------------------------------------------------------
 */
 
+/*
+ * Unsubscribe is deliberately outside the authenticated group: it is clicked
+ * from an email client that has no session, and the token in the URL is what
+ * stands in for authentication. Throttled, because a public endpoint that
+ * mutates preferences is worth rate-limiting even when it cannot leak anything.
+ */
+Route::post('v1/notifications/unsubscribe/{token}', [PreferenceController::class, 'unsubscribe'])
+    ->middleware('throttle:30,1');
+
 Route::prefix('v1/notifications')->middleware('auth.jwt')->group(function (): void {
     // ---- Notification centre ----
     Route::get('/', [NotificationController::class, 'index']);
@@ -31,6 +40,7 @@ Route::prefix('v1/notifications')->middleware('auth.jwt')->group(function (): vo
     Route::put('preferences', [PreferenceController::class, 'update']);
     Route::put('preferences/channels', [PreferenceController::class, 'setChannels']);
     Route::put('preferences/quiet-hours', [PreferenceController::class, 'setQuietHours']);
+    Route::put('preferences/marketing', [PreferenceController::class, 'setMarketing']);
 
     // ---- Messaging (chat) ----
     Route::get('conversations', [MessagingController::class, 'index']);

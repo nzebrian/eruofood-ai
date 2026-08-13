@@ -32,6 +32,7 @@ use EruoFood\Identity\Infrastructure\Auth\JwtTokenIssuer;
 use EruoFood\Identity\Infrastructure\Auth\Social\AppleAuthenticator;
 use EruoFood\Identity\Infrastructure\Auth\Social\GoogleAuthenticator;
 use EruoFood\Identity\Infrastructure\Contract\UserDirectoryAdapter;
+use EruoFood\Identity\Infrastructure\Event\VerificationLevelProjectionSubscriber;
 use EruoFood\Identity\Infrastructure\Mail\LaravelAuthNotifier;
 use EruoFood\Identity\Infrastructure\Persistence\Eloquent\EloquentOAuthAccounts;
 use EruoFood\Identity\Infrastructure\Persistence\Eloquent\EloquentUserRepository;
@@ -39,6 +40,7 @@ use EruoFood\Identity\Infrastructure\Storage\S3AvatarStorage;
 use EruoFood\Identity\Interface\Http\Middleware\EnsureRole;
 use EruoFood\Identity\Interface\Http\Middleware\JwtAuthenticate;
 use EruoFood\Shared\Domain\EventBus;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Route;
@@ -71,6 +73,10 @@ final class IdentityServiceProvider extends ServiceProvider
 
         $this->loadMigrationsFrom(__DIR__.'/../Persistence/Migration');
         $this->loadViewsFrom(__DIR__.'/../Mail/views', 'identity');
+
+        // Project the account's assurance level from Verification. One-way, by
+        // event name — Identity never queries the Verification context.
+        (new VerificationLevelProjectionSubscriber())->register($this->app->make(Dispatcher::class));
     }
 
     private function bindPorts(): void

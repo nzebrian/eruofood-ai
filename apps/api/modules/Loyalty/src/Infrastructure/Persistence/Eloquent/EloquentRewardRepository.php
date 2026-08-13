@@ -25,6 +25,13 @@ final class EloquentRewardRepository implements RewardRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findByIdForUpdate(string $id): ?Reward
+    {
+        $m = RewardModel::query()->whereKey($id)->lockForUpdate()->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function catalogue(bool $activeOnly, int $page, int $perPage): Paginated
     {
         $builder = RewardModel::query();

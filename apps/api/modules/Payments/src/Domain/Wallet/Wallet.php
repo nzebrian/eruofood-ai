@@ -38,6 +38,7 @@ final class Wallet extends AggregateRoot
         private readonly string $currency,
         private readonly int $lowBalanceThreshold,
         private readonly DateTimeImmutable $createdAt,
+        private readonly int $version,
     ) {
     }
 
@@ -49,7 +50,7 @@ final class Wallet extends AggregateRoot
         int $lowBalanceThreshold,
         DateTimeImmutable $now,
     ): self {
-        return new self($id, $ownerType, $ownerId, new Money(0, $currency), $currency, $lowBalanceThreshold, $now);
+        return new self($id, $ownerType, $ownerId, new Money(0, $currency), $currency, $lowBalanceThreshold, $now, 0);
     }
 
     public static function reconstitute(
@@ -60,8 +61,9 @@ final class Wallet extends AggregateRoot
         string $currency,
         int $lowBalanceThreshold,
         DateTimeImmutable $createdAt,
+        int $version = 0,
     ): self {
-        return new self($id, $ownerType, $ownerId, $balance, $currency, $lowBalanceThreshold, $createdAt);
+        return new self($id, $ownerType, $ownerId, $balance, $currency, $lowBalanceThreshold, $createdAt, $version);
     }
 
     public function credit(Money $amount, TransactionType $type, ?string $reference, ?string $description, string $txnId, DateTimeImmutable $at): void
@@ -163,5 +165,16 @@ final class Wallet extends AggregateRoot
     public function createdAt(): DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    /**
+     * The version this aggregate was loaded at. The repository writes with this
+     * value in the WHERE clause and stores version + 1, so a second writer that
+     * loaded the same version updates zero rows and is rejected rather than
+     * silently overwriting the first writer's balance.
+     */
+    public function version(): int
+    {
+        return $this->version;
     }
 }

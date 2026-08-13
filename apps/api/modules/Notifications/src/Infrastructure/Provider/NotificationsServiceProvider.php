@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace EruoFood\Notifications\Infrastructure\Provider;
 
+use EruoFood\Notifications\Application\Port\EmailProvider;
 use EruoFood\Notifications\Application\Port\PresenceRepository;
 use EruoFood\Notifications\Application\Port\RealtimeBroadcaster;
+use EruoFood\Notifications\Application\Port\RecipientResolver;
 use EruoFood\Notifications\Application\Service\ChannelDispatcher;
+use EruoFood\Notifications\Application\Service\EmailBodyRenderer;
 use EruoFood\Notifications\Application\Service\EventTranslator;
 use EruoFood\Notifications\Application\Service\NotificationService;
 use EruoFood\Notifications\Application\Service\PreferenceService;
@@ -26,6 +29,8 @@ use EruoFood\Notifications\Infrastructure\Channel\PushChannelSender;
 use EruoFood\Notifications\Infrastructure\Channel\SmsChannelSender;
 use EruoFood\Notifications\Infrastructure\Channel\TelegramChannelSender;
 use EruoFood\Notifications\Infrastructure\Channel\WhatsAppChannelSender;
+use EruoFood\Notifications\Infrastructure\Email\LogEmailProvider;
+use EruoFood\Notifications\Infrastructure\Email\MailerEmailProvider;
 use EruoFood\Notifications\Infrastructure\Event\DomainEventSubscriber;
 use EruoFood\Notifications\Infrastructure\Persistence\Eloquent\EloquentBroadcastRepository;
 use EruoFood\Notifications\Infrastructure\Persistence\Eloquent\EloquentConversationRepository;
@@ -36,7 +41,11 @@ use EruoFood\Notifications\Infrastructure\Persistence\Eloquent\EloquentNotificat
 use EruoFood\Notifications\Infrastructure\Persistence\Eloquent\EloquentPresenceRepository;
 use EruoFood\Notifications\Infrastructure\Realtime\BroadcastingRealtimeBroadcaster;
 use EruoFood\Notifications\Infrastructure\Realtime\LogRealtimeBroadcaster;
+use EruoFood\Notifications\Infrastructure\Recipient\IdentityRecipientResolver;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Contracts\Mail\Mailer;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Psr\Log\LoggerInterface;
@@ -86,11 +95,17 @@ final class NotificationsServiceProvider extends ServiceProvider
         });
 
         // Channel dispatcher — only the enabled channels.
-        $this->app->singleton(ChannelDispatcher::class, function ($app) use ($channels): ChannelDispatcher {
+        $this->app->singleton(ChannelDispatcher::class, function ($app) use ($channels, $config): ChannelDispatcher {
             $log = $app->make(LoggerInterface::class);
             $senders = [];
             if ($channels['email'] ?? false) {
-                $senders[] = new EmailChannelSender($log);
+                $senders[] = new EmailChannelSender(
+                    $app->make(EmailProvider::class),
+                    $app->make(RecipientResolver::class),
+                    $app->make(EmailBodyRenderer::class),
+                    $app->make(NotificationPreferenceRepository::class),
+                    $this->unsubscribeUrl($config),
+                );
             }
             if ($channels['sms'] ?? false) {
                 $senders[] = new SmsChannelSender($log);
@@ -109,9 +124,46 @@ final class NotificationsServiceProvider extends ServiceProvider
             return new ChannelDispatcher($senders);
         });
 
+        /*
+         * The email stack, bottom up: a provider that transmits, a resolver that
+         * turns a user id into an address, and a renderer that wraps a message
+         * in the house layout.
+         *
+         * The provider defaults to the log adapter unless a transport is
+         * deliberately configured. A local or CI environment that started
+         * emailing real customers because a default pointed at SMTP would be a
+         * far worse failure than one that sends nothing.
+         */
+        $this->app->singleton(EmailProvider::class, function ($app) use ($config): EmailProvider {
+            $driver = (string) $config->get('notifications.email.driver', 'log');
+
+            if ($driver !== 'mailer') {
+                return new LogEmailProvider($app->make(LoggerInterface::class));
+            }
+
+            return new MailerEmailProvider(
+                $app->make(Mailer::class),
+                $app->make(LoggerInterface::class),
+                $config->get('notifications.email.from_address'),
+                $config->get('notifications.email.from_name'),
+            );
+        });
+
+        $this->app->singleton(RecipientResolver::class, fn ($app): RecipientResolver
+            => new IdentityRecipientResolver(
+                $app->make(ConnectionInterface::class),
+                (string) $config->get('notifications.default_language', 'en'),
+            ));
+
+        $this->app->singleton(EmailBodyRenderer::class, fn (): EmailBodyRenderer => new EmailBodyRenderer(
+            (string) $config->get('notifications.email.app_name', 'EruoFood'),
+            (string) $config->get('notifications.email.app_url', ''),
+            (string) $config->get('notifications.email.support_address', ''),
+        ));
+
         // The event translator (config-driven event → notification map).
         $this->app->bind(EventTranslator::class, function ($app) use ($config): EventTranslator {
-            /** @var array<string, array{category: string, template: string, channels: list<string>, recipient: list<string>}> $map */
+            /** @var array<string, mixed> $map */
             $map = (array) $config->get('notifications.event_map', []);
 
             return new EventTranslator($app->make(NotificationService::class), $map);
@@ -126,6 +178,18 @@ final class NotificationsServiceProvider extends ServiceProvider
             $this->app->when($needs)->needs(QuietHours::class)->give(fn (): QuietHours => $quietHours);
         }
         $this->app->when(NotificationService::class)->needs('$maxAttempts')->give(fn () => $maxAttempts);
+    }
+
+    /**
+     * The base URL an unsubscribe link points at, or null when the app URL is
+     * unknown — in which case no `List-Unsubscribe` header is attached at all,
+     * rather than one pointing nowhere.
+     */
+    private function unsubscribeUrl(ConfigRepository $config): ?string
+    {
+        $appUrl = (string) $config->get('notifications.email.app_url', '');
+
+        return $appUrl === '' ? null : rtrim($appUrl, '/').'/notifications/unsubscribe';
     }
 
     public function boot(): void

@@ -72,6 +72,10 @@ jobs:
           php artisan migrate --force
       - name: Redis primitives — MANDATORY
         run: php scripts/redis_validation.php
+      - name: Financial concurrency (locking / atomicity / idempotency) — MANDATORY
+        run: |
+          php artisan migrate:fresh --force
+          php scripts/financial_concurrency_validation.php
 
   web:
     name: Web · Typecheck · Test · Build

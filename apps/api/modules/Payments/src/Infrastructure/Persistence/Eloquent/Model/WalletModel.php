@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $balance_minor
  * @property string $currency
  * @property int $low_balance_threshold
+ * @property int $version
  * @property DateTimeInterface $created_at
  */
 final class WalletModel extends Model
@@ -33,6 +34,7 @@ final class WalletModel extends Model
         return [
             'balance_minor' => 'integer',
             'low_balance_threshold' => 'integer',
+            'version' => 'integer',
             'created_at' => 'datetime',
         ];
     }

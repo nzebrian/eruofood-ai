@@ -27,6 +27,7 @@ use EruoFood\Payments\Domain\Subscription\SubscriptionRepository;
 use EruoFood\Payments\Domain\Wallet\WalletRepository;
 use EruoFood\Payments\Domain\Webhook\WebhookEventRepository;
 use EruoFood\Payments\Infrastructure\Commission\ConfigCommissionCalculator;
+use EruoFood\Payments\Infrastructure\Console\VerifyLedgerCommand;
 use EruoFood\Payments\Infrastructure\Notification\LoggingPaymentNotifier;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\EloquentLedgerRepository;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\EloquentPaymentRepository;
@@ -119,5 +120,9 @@ final class PaymentsServiceProvider extends ServiceProvider
             ->group(__DIR__.'/../../Interface/Http/routes.php');
 
         $this->loadMigrationsFrom(__DIR__.'/../Persistence/Migration');
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([VerifyLedgerCommand::class]);
+        }
     }
 }
