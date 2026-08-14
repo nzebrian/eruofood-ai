@@ -7,7 +7,6 @@ namespace EruoFood\Geo\Infrastructure\Event;
 use EruoFood\Geo\Application\Service\MerchantLocationService;
 use EruoFood\Verification\Domain\Business\BusinessProfileRepository;
 use EruoFood\Verification\Domain\Event\SubjectVerified;
-use Illuminate\Contracts\Events\Dispatcher;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -34,6 +33,18 @@ use Throwable;
  * **It is one-way and by event name.** Geo never queries Verification's tables
  * on the hot path, and Verification knows nothing about Geo — the same
  * arrangement Commerce and Marketplace already use for this event.
+ *
+ * ## Why this is registered by class name, not as an instance
+ *
+ * The dependencies below are resolved only when a KYB approval actually fires.
+ * Constructing this at boot instead would pull M24's business-profile
+ * repository — and with it the encrypter, since M24 encrypts document numbers
+ * at the repository boundary — into *every* process start, including
+ * `package:discover`, which runs before an application key exists. That is not
+ * a hypothetical: it broke CI on this milestone's first push.
+ *
+ * A listener that is needed on a rare event should cost nothing on the paths
+ * where it is not.
  */
 final readonly class KybLocationSubscriber
 {
@@ -44,15 +55,14 @@ final readonly class KybLocationSubscriber
     ) {
     }
 
-    public function register(Dispatcher $dispatcher): void
+    /** Invoked by the dispatcher; the container builds this class at that moment. */
+    public function handle(SubjectVerified $event): void
     {
-        $dispatcher->listen('verification.subject_verified', function (SubjectVerified $event): void {
-            if ($event->subjectType !== 'business' || $event->caseType !== 'business') {
-                return;
-            }
+        if ($event->subjectType !== 'business' || $event->caseType !== 'business') {
+            return;
+        }
 
-            $this->geocode($event->subjectId);
-        });
+        $this->geocode($event->subjectId);
     }
 
     private function geocode(string $businessId): void

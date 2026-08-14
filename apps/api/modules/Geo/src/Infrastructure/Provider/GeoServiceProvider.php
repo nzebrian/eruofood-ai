@@ -77,10 +77,21 @@ final class GeoServiceProvider extends ServiceProvider
             ->prefix('api')
             ->group(__DIR__.'/../../Interface/Http/routes.php');
 
-        // Geocodes a business's registered address once M24 approves its KYB —
-        // filling the latitude/longitude columns M24 created and could not
-        // populate, because there was no geocoder until now.
-        $this->app->make(KybLocationSubscriber::class)->register($this->app->make(Dispatcher::class));
+        /*
+        | Geocodes a business's registered address once M24 approves its KYB —
+        | filling the latitude/longitude columns M24 created and could not
+        | populate, because there was no geocoder until now.
+        |
+        | Registered by class name so the container builds it only when the
+        | event fires. Resolving it here instead would drag M24's business
+        | profile repository, and through it the encrypter, into every process
+        | start — including `package:discover`, which runs before an application
+        | key exists.
+        */
+        $this->app->make(Dispatcher::class)->listen(
+            'verification.subject_verified',
+            [KybLocationSubscriber::class, 'handle'],
+        );
     }
 
     private function registerRepositories(): void
