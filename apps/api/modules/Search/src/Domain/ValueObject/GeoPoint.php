@@ -4,9 +4,17 @@ declare(strict_types=1);
 
 namespace EruoFood\Search\Domain\ValueObject;
 
+use EruoFood\Geo\Domain\ValueObject\Coordinates;
+use EruoFood\Geo\Domain\ValueObject\Haversine;
 use EruoFood\Search\Domain\Exception\SearchInvalidQuery;
 
-/** A latitude/longitude pair used for distance sorting and geo filtering. */
+/**
+ * A latitude/longitude pair used for distance sorting and geo filtering.
+ *
+ * Kept as the Search context's own type; the distance arithmetic delegates to
+ * the platform's canonical {@see Haversine} so there is one implementation
+ * rather than the two that existed before M25.
+ */
 final readonly class GeoPoint
 {
     public function __construct(
@@ -21,12 +29,11 @@ final readonly class GeoPoint
     /** Great-circle distance to another point, in kilometres (haversine). */
     public function distanceKmTo(GeoPoint $other): float
     {
-        $earthKm = 6371.0088;
-        $dLat = deg2rad($other->latitude - $this->latitude);
-        $dLon = deg2rad($other->longitude - $this->longitude);
-        $a = sin($dLat / 2) ** 2
-            + cos(deg2rad($this->latitude)) * cos(deg2rad($other->latitude)) * sin($dLon / 2) ** 2;
+        return Haversine::kilometres($this->toCoordinates(), $other->toCoordinates());
+    }
 
-        return $earthKm * 2 * atan2(sqrt($a), sqrt(1 - $a));
+    public function toCoordinates(): Coordinates
+    {
+        return new Coordinates($this->latitude, $this->longitude);
     }
 }

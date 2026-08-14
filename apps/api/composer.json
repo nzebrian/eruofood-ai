@@ -43,6 +43,7 @@
             "EruoFood\\Loyalty\\": "modules/Loyalty/src/",
             "EruoFood\\PublicApi\\": "modules/PublicApi/src/",
             "EruoFood\\Verification\\": "modules/Verification/src/",
+            "EruoFood\\Geo\\": "modules/Geo/src/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
         }

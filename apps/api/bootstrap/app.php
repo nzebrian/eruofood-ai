@@ -52,6 +52,11 @@ return Application::configure(basePath: dirname(__DIR__))
                 'NOTIFICATIONS_RESOURCE_NOT_FOUND', 'VERIFICATION_RESOURCE_NOT_FOUND',
                 'ANALYTICS_RESOURCE_NOT_FOUND', 'ADMIN_RESOURCE_NOT_FOUND',
                 'SEARCH_RESOURCE_NOT_FOUND', 'SUPPORT_RESOURCE_NOT_FOUND',
+                // A geocode that found nothing is the caller's address to
+                // correct; an unreachable provider is ours to absorb, and maps
+                // to 503 below. Answering both the same way would tell somebody
+                // their real address is wrong during an outage.
+                'GEO_RESOURCE_NOT_FOUND', 'GEO_ADDRESS_NOT_FOUND',
                 'REVIEWS_RESOURCE_NOT_FOUND', 'LOYALTY_RESOURCE_NOT_FOUND',
                 'PUBLICAPI_RESOURCE_NOT_FOUND' => 404,
                 // A concurrent writer won, or a duplicate request is still in
@@ -72,7 +77,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 'ANALYTICS_NOT_AUTHORIZED', 'ADMIN_NOT_AUTHORIZED',
                 'SEARCH_NOT_AUTHORIZED', 'SUPPORT_NOT_AUTHORIZED',
                 'REVIEWS_NOT_AUTHORIZED', 'LOYALTY_NOT_AUTHORIZED',
-                'VERIFICATION_NOT_AUTHORIZED',
+                'VERIFICATION_NOT_AUTHORIZED', 'GEO_NOT_AUTHORIZED',
                 // Step-up is a 403 with a machine-readable next step: the
                 // caller is not forbidden, they are not yet verified enough,
                 // and the error body names the level to obtain.
@@ -84,10 +89,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 'SEARCH_INVALID_QUERY', 'SUPPORT_INVALID_STATE',
                 'REVIEWS_INVALID_STATE', 'LOYALTY_INVALID_STATE',
                 'VERIFICATION_INVALID_STATE', 'VERIFICATION_INVALID_TRANSITION',
+                'GEO_INVALID_STATE', 'GEO_INVALID_COORDINATES',
                 'PUBLICAPI_INVALID_STATE' => 422,
-                'AI_RATE_LIMIT_EXCEEDED', 'PUBLICAPI_RATE_LIMITED', 'PUBLICAPI_QUOTA_EXCEEDED' => 429,
+                'AI_RATE_LIMIT_EXCEEDED', 'PUBLICAPI_RATE_LIMITED', 'PUBLICAPI_QUOTA_EXCEEDED',
+                // Mapping APIs bill per request, so a spent budget is a
+                // throttle rather than a fault: the caller should back off and
+                // retry, not conclude the address is bad.
+                'GEO_QUOTA_EXCEEDED' => 429,
                 'AI_GENERATION_FAILED', 'PAYMENTS_PROVIDER_ERROR' => 502,
-                'AI_PROVIDER_UNAVAILABLE', 'VERIFICATION_PROVIDER_UNAVAILABLE' => 503,
+                'AI_PROVIDER_UNAVAILABLE', 'VERIFICATION_PROVIDER_UNAVAILABLE',
+                // `GEO_ROUTING_UNAVAILABLE` is the honest refusal at the end of
+                // the delivery-fee fallback chain. It is a 503 and not a 200
+                // with a guessed price, which is the whole point of it existing.
+                'GEO_PROVIDER_UNAVAILABLE', 'GEO_ROUTING_UNAVAILABLE' => 503,
                 default => 400,
             };
 
