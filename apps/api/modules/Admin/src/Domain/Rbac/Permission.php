@@ -43,6 +43,19 @@ final class Permission
 
     public const VERIFICATION_PII = 'verification.pii';
 
+    /*
+     * Maps & Geolocation, split two ways.
+     *
+     * Reading provider health, cost and geocoding coverage is an operational
+     * need that many roles have. Overruling a location's verification status —
+     * confirming a pin or marking one disputed — changes where the platform
+     * sends riders, so it is a narrower power held by the roles that actually
+     * run deliveries.
+     */
+    public const GEO_READ = 'geo.read';
+
+    public const GEO_MANAGE = 'geo.manage';
+
     /** @return list<string> every permission the platform defines */
     public static function all(): array
     {
@@ -52,6 +65,7 @@ final class Permission
             self::OPS_READ, self::OPS_APPROVE, self::SUPPORT_READ, self::SUPPORT_MANAGE,
             self::FINANCE_READ, self::AUDIT_READ,
             self::VERIFICATION_READ, self::VERIFICATION_REVIEW, self::VERIFICATION_PII,
+            self::GEO_READ, self::GEO_MANAGE,
         ];
     }
 
@@ -73,15 +87,24 @@ final class Permission
                 // administrator can unblock a merchant or a rider without ever
                 // opening their identity documents.
                 self::VERIFICATION_READ, self::VERIFICATION_REVIEW,
+                self::GEO_READ, self::GEO_MANAGE,
             ],
             AdminRole::Moderator => [self::USERS_READ, self::USERS_MODERATE, self::CONTENT_MANAGE],
             AdminRole::ContentManager => [self::CONTENT_MANAGE, self::CONFIG_READ],
             AdminRole::CustomerSupport => [self::SUPPORT_READ, self::SUPPORT_MANAGE, self::USERS_READ],
             AdminRole::FinanceManager => [self::FINANCE_READ, self::AUDIT_READ, self::CONFIG_READ],
-            AdminRole::RestaurantManager, AdminRole::VendorManager => [self::OPS_READ, self::OPS_APPROVE, self::USERS_READ],
+            AdminRole::RestaurantManager, AdminRole::VendorManager => [
+                self::OPS_READ, self::OPS_APPROVE, self::USERS_READ,
+                // Health and coverage only: a vendor manager can see that
+                // geocoding is degraded without being able to move a pin.
+                self::GEO_READ,
+            ],
             AdminRole::OperationsManager => [
                 self::OPS_READ, self::OPS_APPROVE, self::SUPPORT_READ, self::CONFIG_READ, self::AUDIT_READ,
                 self::VERIFICATION_READ,
+                // Operations owns delivery, so it owns correcting the addresses
+                // riders are sent to.
+                self::GEO_READ, self::GEO_MANAGE,
             ],
             // The only non-super role holding VERIFICATION_PII.
             AdminRole::ComplianceOfficer => [

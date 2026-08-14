@@ -44,9 +44,7 @@ final class VendorSourceProvider extends AbstractSourceProvider
         }
 
         $isRestaurant = (string) ($row['type'] ?? 'vendor') === 'restaurant';
-        $lat = $row['latitude'] ?? null;
-        $lng = $row['longitude'] ?? null;
-        $geo = ($lat !== null && $lng !== null) ? new GeoPoint((float) $lat, (float) $lng) : null;
+        $geo = $this->geoFor($row);
 
         $facets = new DocumentFacets(
             category: isset($row['category']) ? (string) $row['category'] : null,
@@ -72,5 +70,47 @@ final class VendorSourceProvider extends AbstractSourceProvider
             geo: $geo,
             now: new DateTimeImmutable(),
         );
+    }
+
+    /**
+     * The point to index a merchant at.
+     *
+     * Prefers the canonical `geo_locations` record M25 introduced, falling back
+     * to the latitude/longitude columns that lived on the vendor row before it.
+     * The preference matters because the canonical record is the one a merchant
+     * actually curates — geocoded, and confirmable by a human who dragged the
+     * pin — while the legacy columns were populated once and never revisited.
+     *
+     * Delegation rather than duplication: Search reads the coordinates through
+     * this seam and does its own distance arithmetic with the platform's single
+     * {@see \EruoFood\Geo\Domain\ValueObject\Haversine}, so there is no
+     * second copy of either the data or the formula.
+     *
+     * An unusable location — never geocoded, or disputed — is skipped rather
+     * than indexed, because a search result placed in the wrong street is worse
+     * than one with no distance at all.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function geoFor(array $row): ?GeoPoint
+    {
+        $locationId = $row['primary_location_id'] ?? null;
+
+        if (is_string($locationId) && $locationId !== '') {
+            $location = $this->db->table('geo_locations')
+                ->where('id', $locationId)
+                ->whereNotNull('latitude')
+                ->whereIn('verification_status', ['geocoded', 'confirmed'])
+                ->first();
+
+            if ($location !== null) {
+                return new GeoPoint((float) $location->latitude, (float) $location->longitude);
+            }
+        }
+
+        $lat = $row['latitude'] ?? null;
+        $lng = $row['longitude'] ?? null;
+
+        return ($lat !== null && $lng !== null) ? new GeoPoint((float) $lat, (float) $lng) : null;
     }
 }
