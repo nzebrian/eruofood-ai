@@ -105,6 +105,24 @@ tags:
       health, the delivery pricing mode, geocoding coverage, and location
       correction (RBAC). Built from telemetry that records no coordinates and no
       address text. There is deliberately no endpoint listing where riders are.
+  - name: Dispatch
+    description: >-
+      Dispatch, Vehicles & Rider Assignment. Riders see the offer made to them
+      and answer it; nothing here accepts a rider id, a delivery to claim or a
+      coordinate, so rider self-assignment and client-supplied positions are
+      unexpressible rather than merely forbidden. Positions come from Geo, under
+      Geo's authorisation. A rider may describe their vehicle; only an operator
+      may approve it, and eligibility is re-checked inside the assignment lock —
+      a rider whose insurance lapsed between the offer and the tap is refused.
+  - name: Dispatch Admin
+    description: >-
+      Control Centre dispatch backend (no UI in M26). Split across two
+      permissions: dispatch.read sees the queue, active assignments, failures,
+      history and health; dispatch.manage takes a delivery off one rider and
+      gives it to another. Every privileged action requires a stated reason and
+      writes to the append-only audit log. No endpoint here returns a
+      coordinate — an operations dashboard needs to know the fleet is thin, not
+      to be a live map of where a workforce is standing.
   - name: Developer Platform
     description: The developer portal management API at /api/v1/developer (internal, JWT-authenticated) — developer accounts, applications (scope-grant boundary), API keys (hashed secrets, rotation, revocation, expiry), webhooks (signed, retried, idempotent) and usage. API keys are never accepted here.
 
@@ -6634,6 +6652,642 @@ paths:
         "403": { description: Requires geo.read. }
         "429": { description: Rate limited. }
 
+  /v1/dispatch/offers/current:
+    get:
+      tags: [Dispatch]
+      summary: The offer currently on this rider's screen
+      description: >-
+        The rider is resolved from the token; no rider id is accepted. Carries
+        both the expiry instant and the countdown, so a slow network cannot make
+        the app show more time than the rider actually has. Deliberately omits
+        the score, the score breakdown, and anything about the other riders who
+        were considered.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      offer:
+                        oneOf:
+                          - $ref: "#/components/schemas/DispatchOffer"
+                          - type: "null"
+        "401": { description: Unauthenticated. }
+  /v1/dispatch/offers/{offerId}/accept:
+    post:
+      tags: [Dispatch]
+      summary: Take the delivery
+      description: >-
+        Atomic and idempotent. Exactly one rider wins a contested delivery; the
+        losers get 409 rather than a second assignment. A repeated tap returns
+        the same assignment. Eligibility is re-checked inside the lock, so a
+        rider suspended or with lapsed insurance since the offer is refused.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: offerId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "201":
+          description: The delivery is theirs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      assignment: { $ref: "#/components/schemas/DispatchAssignment" }
+        "403": { description: The offer was not made to you. }
+        "404": { description: No such offer. }
+        "409":
+          description: >-
+            Somebody else got there first, the offer was already answered or
+            expired, or the rider is no longer eligible. Nothing changed.
+  /v1/dispatch/offers/{offerId}/decline:
+    post:
+      tags: [Dispatch]
+      summary: Say no
+      description: >-
+        Frees the rider without failing the search — declining is a normal thing
+        a rider does. They are not offered this delivery again.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: offerId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 255 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      offer: { $ref: "#/components/schemas/DispatchOffer" }
+        "403": { description: The offer was not made to you. }
+        "409": { description: Already answered or expired. }
+  /v1/dispatch/assignments/current:
+    get:
+      tags: [Dispatch]
+      summary: What this rider is carrying right now
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      assignment:
+                        oneOf:
+                          - $ref: "#/components/schemas/DispatchAssignment"
+                          - type: "null"
+        "401": { description: Unauthenticated. }
+  /v1/dispatch/assignments/{assignmentId}/state:
+    post:
+      tags: [Dispatch]
+      summary: Report where the rider has got to
+      description: >-
+        The journey is OFFERED to ACCEPTED to EN_ROUTE_PICKUP to ARRIVED_PICKUP
+        to PICKED_UP to IN_TRANSIT to DELIVERED, and DELIVERED is terminal.
+        Marketplace's delivery is advanced first and the dispatch assignment
+        mirrors it, so the two records cannot disagree. Only the rider-drivable
+        states are accepted — cancellation and reassignment are not a rider's to
+        declare.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: assignmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state:
+                  type: string
+                  enum: [en_route_pickup, arrived_pickup, picked_up, in_transit, delivered]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      assignment: { $ref: "#/components/schemas/DispatchAssignment" }
+        "403": { description: This delivery is not assigned to you. }
+        "422": { description: "Not a legal transition, or not a state a rider may declare." }
+  /v1/dispatch/vehicles:
+    get:
+      tags: [Dispatch]
+      summary: The rider's own vehicles
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DispatchVehicle" }
+    post:
+      tags: [Dispatch]
+      summary: Register a vehicle
+      description: >-
+        Lands pending verification, always. There is no argument to this
+        endpoint that could make a vehicle dispatchable — approval requires an
+        operator, and lives under /admin.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [bike, tricycle, car, bus] }
+                registration_number: { type: string, maxLength: 32 }
+                make: { type: string, maxLength: 64 }
+                model: { type: string, maxLength: 64 }
+                colour: { type: string, maxLength: 32 }
+                capacity_kg: { type: integer, minimum: 1, maximum: 5000 }
+                capacity_litres: { type: integer, minimum: 1, maximum: 20000 }
+      responses:
+        "201":
+          description: Registered, pending verification.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "422": { description: "A plated vehicle type with no registration number, or the per-rider limit is reached." }
+  /v1/dispatch/vehicles/{vehicleId}:
+    get:
+      tags: [Dispatch]
+      summary: One of the rider's vehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "403": { description: Not your vehicle. }
+    delete:
+      tags: [Dispatch]
+      summary: Retire a vehicle
+      description: Kept for the record, never dispatched on again.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "403": { description: Not your vehicle. }
+  /v1/dispatch/vehicles/{vehicleId}/documents:
+    put:
+      tags: [Dispatch]
+      summary: Record the paperwork dates
+      description: >-
+        Sends a previously verified vehicle back to pending. A rider who could
+        extend their own insurance date on a verified vehicle would make the
+        check ceremonial.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                insurance_expires_at: { type: string, format: date-time, nullable: true }
+                roadworthiness_expires_at: { type: string, format: date-time, nullable: true }
+                licence_expires_at: { type: string, format: date-time, nullable: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "403": { description: Not your vehicle. }
+  /v1/dispatch/vehicles/{vehicleId}/submit:
+    post:
+      tags: [Dispatch]
+      summary: Put the vehicle in front of an operator
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "422": { description: A retired vehicle cannot be resubmitted. }
+  /v1/dispatch/vehicles/{vehicleId}/primary:
+    post:
+      tags: [Dispatch]
+      summary: Nominate the primary vehicle
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "422": { description: A retired vehicle cannot be made primary. }
+  /v1/admin/dispatch/queue:
+    get:
+      tags: [Dispatch Admin]
+      summary: Deliveries still looking for a rider
+      description: Longest wait first. Requires dispatch.read. Returns no coordinates.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DispatchRequestSummary" }
+        "403": { description: Requires dispatch.read. }
+  /v1/admin/dispatch/active:
+    get:
+      tags: [Dispatch Admin]
+      summary: Deliveries somebody is carrying right now
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DispatchAssignmentAdmin" }
+        "403": { description: Requires dispatch.read. }
+  /v1/admin/dispatch/failures:
+    get:
+      tags: [Dispatch Admin]
+      summary: Searches that ended without a rider
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DispatchRequestSummary" }
+                  meta:
+                    type: object
+                    properties:
+                      reasons: { type: array, items: { type: object } }
+        "403": { description: Requires dispatch.read. }
+  /v1/admin/dispatch/availability:
+    get:
+      tags: [Dispatch Admin]
+      summary: How much of the fleet could take work
+      description: >-
+        Counts, never positions. The gap between riders reporting a position and
+        riders with a dispatchable vehicle is what tells an operations team
+        whether they have a supply problem or a paperwork one.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchAvailability" }
+        "403": { description: Requires dispatch.read. }
+  /v1/admin/dispatch/health:
+    get:
+      tags: [Dispatch Admin]
+      summary: Is dispatch healthy right now
+      description: >-
+        Says whether the engine is switched on, how many customers are waiting
+        and how long the oldest has been. The engine ships off.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchHealth" }
+        "403": { description: Requires dispatch.read. }
+  /v1/admin/dispatch/vehicles/queue:
+    get:
+      tags: [Dispatch Admin]
+      summary: Vehicles waiting on an operator's decision
+      description: Oldest first — any other order lets a rider wait indefinitely.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DispatchVehicle" }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+        "403": { description: Requires dispatch.read. }
+  /v1/admin/dispatch/requests/{requestId}/history:
+    get:
+      tags: [Dispatch Admin]
+      summary: Everything tried for one delivery
+      description: >-
+        The rejection breakdown is why this endpoint exists — "eleven riders
+        nearby, nine stale locations" is a next action, and "no eligible riders"
+        is not. Operators see the score internals; riders do not.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      request: { $ref: "#/components/schemas/DispatchRequestSummary" }
+                      attempts:
+                        type: array
+                        items: { $ref: "#/components/schemas/DispatchAttempt" }
+                      offers: { type: array, items: { type: object } }
+        "403": { description: Requires dispatch.read. }
+        "404": { description: No such dispatch request. }
+  /v1/admin/dispatch/requests/{requestId}/assign:
+    post:
+      tags: [Dispatch Admin]
+      summary: Put a delivery on a specific rider
+      description: >-
+        Break-glass. Goes through the same exclusivity guarantees — the partial
+        unique indexes do not care that a human made the decision. Eligibility
+        is deliberately not re-checked, which is what makes it an override; the
+        audit entry is what makes that accountable. Requires dispatch.manage and
+        a stated reason.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rider_id, reason]
+              properties:
+                rider_id: { type: string, format: uuid }
+                reason: { type: string, maxLength: 255 }
+      responses:
+        "201":
+          description: Assigned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchAssignmentAdmin" }
+        "403": { description: Requires dispatch.manage. }
+        "409": { description: The delivery or the rider is already taken. }
+        "422": { description: No stated reason. }
+  /v1/admin/dispatch/requests/{requestId}/cancel:
+    post:
+      tags: [Dispatch Admin]
+      summary: Stop a search
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 255 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchRequestSummary" }
+        "403": { description: Requires dispatch.manage. }
+        "422": { description: "No stated reason, or the search already ended." }
+  /v1/admin/dispatch/assignments/{assignmentId}/reassign:
+    post:
+      tags: [Dispatch Admin]
+      summary: Take a delivery off the rider holding it
+      description: >-
+        Opens a new search rather than reopening the old one, and the
+        replacement inherits what is left of the customer's original deadline
+        rather than a fresh grant. Refused once the rider has the food — past
+        pickup that is an operational incident, not a dispatch decision.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: assignmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 255 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      replacement_request:
+                        oneOf:
+                          - $ref: "#/components/schemas/DispatchRequestSummary"
+                          - type: "null"
+                      needs_manual_handling:
+                        type: boolean
+                        description: >-
+                          True when too little of the deadline remained to open a
+                          fresh search. The delivery needs a human.
+        "403": { description: Requires dispatch.manage. }
+        "422": { description: The rider already has the food. }
+  /v1/admin/dispatch/vehicles/{vehicleId}/approve:
+    post:
+      tags: [Dispatch Admin]
+      summary: Accept a vehicle's paperwork
+      description: The only path to a dispatchable vehicle. Requires dispatch.manage.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "403": { description: Requires dispatch.manage. }
+        "409": { description: Another operator decided first. }
+        "422": { description: The documents have already expired. }
+  /v1/admin/dispatch/vehicles/{vehicleId}/reject:
+    post:
+      tags: [Dispatch Admin]
+      summary: Refuse a vehicle's paperwork
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "403": { description: Requires dispatch.manage. }
+  /v1/admin/dispatch/vehicles/{vehicleId}/suspend:
+    post:
+      tags: [Dispatch Admin]
+      summary: Withdraw a vehicle from service
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DispatchVehicle" }
+        "403": { description: Requires dispatch.manage. }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -9283,6 +9937,148 @@ components:
         last_response_code: { type: integer, nullable: true }
         created_at: { type: string, format: date-time }
         delivered_at: { type: string, format: date-time, nullable: true }
+    DispatchOffer:
+      type: object
+      description: >-
+        An offer as the rider it was made to sees it. Deliberately omits the
+        score, the score breakdown, and anything about the other riders who were
+        considered — a leaderboard of colleagues is not something a delivery app
+        should hand out.
+      properties:
+        id: { type: string, format: uuid }
+        delivery_id: { type: string, format: uuid }
+        vehicle_id: { type: string, format: uuid, nullable: true }
+        state: { type: string, enum: [offered, accepted, declined, expired, cancelled] }
+        expires_at: { type: string, format: date-time }
+        seconds_remaining: { type: integer, description: "Countdown, so the app need not trust the device clock." }
+        eta_seconds: { type: integer, nullable: true }
+        distance_metres: { type: integer, nullable: true }
+    DispatchAssignment:
+      type: object
+      description: An assignment as the rider carrying it sees it.
+      properties:
+        id: { type: string, format: uuid }
+        delivery_id: { type: string, format: uuid }
+        vehicle_id: { type: string, format: uuid, nullable: true }
+        state:
+          type: string
+          enum: [accepted, en_route_pickup, arrived_pickup, picked_up, in_transit, delivered, cancelled, reassignment_required]
+        eta_seconds: { type: integer, nullable: true }
+        accepted_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time, nullable: true }
+        next_states:
+          type: array
+          description: >-
+            What the app's next button may offer, decided by the server. A client
+            computing its own transition table will eventually disagree with it.
+          items: { type: string }
+    DispatchAssignmentAdmin:
+      type: object
+      description: An assignment as operations sees it. Adds the rider; still no coordinates.
+      properties:
+        id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        offer_id: { type: string, format: uuid }
+        delivery_id: { type: string, format: uuid }
+        rider_id: { type: string, format: uuid }
+        vehicle_id: { type: string, format: uuid, nullable: true }
+        state: { type: string }
+        is_active: { type: boolean }
+        eta_seconds: { type: integer, nullable: true }
+        ended_reason: { type: string, nullable: true }
+        accepted_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time, nullable: true }
+    DispatchRequestSummary:
+      type: object
+      description: >-
+        A delivery's search for a rider. Pickup and dropoff are deliberately
+        absent — an operator who needs them reads the delivery, where Geo's
+        presenter decides how much precision leaves the building.
+      properties:
+        id: { type: string, format: uuid }
+        delivery_id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        state: { type: string, enum: [pending, dispatching, assigned, failed, cancelled] }
+        required_vehicle_type: { type: string, enum: [bike, tricycle, car, bus] }
+        attempt_count: { type: integer }
+        max_attempts: { type: integer }
+        assigned_rider_id: { type: string, format: uuid, nullable: true }
+        failure_reason: { type: string, nullable: true }
+        waiting_seconds: { type: integer, description: "How long the customer has been waiting." }
+        expires_at: { type: string, format: date-time }
+        has_expired: { type: boolean }
+        created_at: { type: string, format: date-time }
+    DispatchAttempt:
+      type: object
+      description: >-
+        One round of looking. The rejection breakdown is the most useful field
+        in this context when dispatch is struggling — it separates a platform
+        outage from a fleet paperwork backlog.
+      properties:
+        attempt_number: { type: integer }
+        search_radius_metres: { type: integer }
+        raw_candidate_count: { type: integer }
+        eligible_candidate_count: { type: integer }
+        rejection_breakdown:
+          type: object
+          additionalProperties: { type: integer }
+          description: "Rejection reason to rider count. Each rider counted once, under their first objection."
+        dominant_rejection: { type: string, nullable: true }
+        summary: { type: string, description: "A one-line explanation an operator can read without opening the JSON." }
+        offered_rider_id: { type: string, format: uuid, nullable: true }
+        offered_score: { type: number, format: double, nullable: true }
+        outcome: { type: string, nullable: true }
+        duration_ms: { type: integer }
+        completed_at: { type: string, format: date-time }
+    DispatchVehicle:
+      type: object
+      description: >-
+        Status, verification state and document expiry are three separate fields
+        because they fail independently. A verified vehicle whose insurance
+        lapsed last night is still verified — its documents simply are not
+        current, and it stops receiving work at the moment the policy lapses.
+      properties:
+        id: { type: string, format: uuid }
+        rider_id: { type: string, format: uuid }
+        type: { type: string, enum: [bike, tricycle, car, bus] }
+        registration_number: { type: string, nullable: true }
+        make: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        colour: { type: string, nullable: true }
+        capacity_kg: { type: integer, nullable: true }
+        capacity_litres: { type: integer, nullable: true }
+        status: { type: string, enum: [pending_verification, active, suspended, retired] }
+        verification_state: { type: string, enum: [unverified, pending, verified, rejected, expired] }
+        verification_note: { type: string, nullable: true }
+        is_primary: { type: boolean }
+        is_dispatchable: { type: boolean, description: "Status, verification and document expiry, evaluated against the clock." }
+        documents_current: { type: boolean }
+        expires_soon: { type: boolean }
+        insurance_expires_at: { type: string, format: date-time, nullable: true }
+        roadworthiness_expires_at: { type: string, format: date-time, nullable: true }
+        licence_expires_at: { type: string, format: date-time, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+    DispatchAvailability:
+      type: object
+      description: Counts, never positions.
+      properties:
+        riders_online: { type: integer }
+        riders_reporting_position: { type: integer }
+        riders_carrying_a_delivery: { type: integer }
+        vehicles_awaiting_verification: { type: integer }
+        vehicles_expiring_soon: { type: integer }
+        vehicles_expired: { type: integer }
+    DispatchHealth:
+      type: object
+      properties:
+        engine_enabled: { type: boolean, description: "Ships off. Turning it on changes how work reaches every rider." }
+        manual_override_allowed: { type: boolean }
+        searches_waiting: { type: integer }
+        oldest_wait_seconds: { type: integer }
+        searches_past_deadline: { type: integer }
+        offers_awaiting_answer: { type: integer }
+        availability: { $ref: "#/components/schemas/DispatchAvailability" }
     DevUsage:
       type: object
       properties:

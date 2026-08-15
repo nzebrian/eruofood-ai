@@ -56,6 +56,22 @@ final class Permission
 
     public const GEO_MANAGE = 'geo.manage';
 
+    /*
+     * Dispatch, split two ways for the same reason Geo is.
+     *
+     * Reading the dispatch queue, why a search failed and who is carrying what
+     * is an operational need many roles have — support answering "where is my
+     * order?" needs it as much as operations does.
+     *
+     * `dispatch.manage` is the narrow one. It takes a delivery off one rider
+     * and gives it to another, cancels a search, or overrides the engine's
+     * decision. Those change who earns and who eats, so they are held by the
+     * roles that actually run deliveries, and every use of them is audited.
+     */
+    public const DISPATCH_READ = 'dispatch.read';
+
+    public const DISPATCH_MANAGE = 'dispatch.manage';
+
     /** @return list<string> every permission the platform defines */
     public static function all(): array
     {
@@ -66,6 +82,7 @@ final class Permission
             self::FINANCE_READ, self::AUDIT_READ,
             self::VERIFICATION_READ, self::VERIFICATION_REVIEW, self::VERIFICATION_PII,
             self::GEO_READ, self::GEO_MANAGE,
+            self::DISPATCH_READ, self::DISPATCH_MANAGE,
         ];
     }
 
@@ -88,23 +105,35 @@ final class Permission
                 // opening their identity documents.
                 self::VERIFICATION_READ, self::VERIFICATION_REVIEW,
                 self::GEO_READ, self::GEO_MANAGE,
+                self::DISPATCH_READ, self::DISPATCH_MANAGE,
             ],
             AdminRole::Moderator => [self::USERS_READ, self::USERS_MODERATE, self::CONTENT_MANAGE],
             AdminRole::ContentManager => [self::CONTENT_MANAGE, self::CONFIG_READ],
-            AdminRole::CustomerSupport => [self::SUPPORT_READ, self::SUPPORT_MANAGE, self::USERS_READ],
+            AdminRole::CustomerSupport => [
+                self::SUPPORT_READ, self::SUPPORT_MANAGE, self::USERS_READ,
+                // Answering "where is my order?" needs the dispatch queue.
+                // Taking the delivery off the rider does not.
+                self::DISPATCH_READ,
+            ],
             AdminRole::FinanceManager => [self::FINANCE_READ, self::AUDIT_READ, self::CONFIG_READ],
             AdminRole::RestaurantManager, AdminRole::VendorManager => [
                 self::OPS_READ, self::OPS_APPROVE, self::USERS_READ,
                 // Health and coverage only: a vendor manager can see that
                 // geocoding is degraded without being able to move a pin.
                 self::GEO_READ,
+                // Likewise dispatch: a vendor manager can see that their order
+                // is still looking for a rider without being able to take it
+                // off the one who has it.
+                self::DISPATCH_READ,
             ],
             AdminRole::OperationsManager => [
                 self::OPS_READ, self::OPS_APPROVE, self::SUPPORT_READ, self::CONFIG_READ, self::AUDIT_READ,
                 self::VERIFICATION_READ,
                 // Operations owns delivery, so it owns correcting the addresses
-                // riders are sent to.
+                // riders are sent to — and reassigning a delivery when a rider
+                // drops out.
                 self::GEO_READ, self::GEO_MANAGE,
+                self::DISPATCH_READ, self::DISPATCH_MANAGE,
             ],
             // The only non-super role holding VERIFICATION_PII.
             AdminRole::ComplianceOfficer => [
