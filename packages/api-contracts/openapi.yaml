@@ -6675,9 +6675,10 @@ paths:
                     type: object
                     properties:
                       offer:
-                        oneOf:
+                        type: object
+                        nullable: true
+                        allOf:
                           - $ref: "#/components/schemas/DispatchOffer"
-                          - type: "null"
         "401": { description: Unauthenticated. }
   /v1/dispatch/offers/{offerId}/accept:
     post:
@@ -6758,9 +6759,10 @@ paths:
                     type: object
                     properties:
                       assignment:
-                        oneOf:
+                        type: object
+                        nullable: true
+                        allOf:
                           - $ref: "#/components/schemas/DispatchAssignment"
-                          - type: "null"
         "401": { description: Unauthenticated. }
   /v1/dispatch/assignments/{assignmentId}/state:
     post:
@@ -7197,9 +7199,10 @@ paths:
                     type: object
                     properties:
                       replacement_request:
-                        oneOf:
+                        type: object
+                        nullable: true
+                        allOf:
                           - $ref: "#/components/schemas/DispatchRequestSummary"
-                          - type: "null"
                       needs_manual_handling:
                         type: boolean
                         description: >-
