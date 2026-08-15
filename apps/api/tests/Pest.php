@@ -37,4 +37,5 @@ uses(TestCase::class)->in(
     __DIR__.'/../modules/PublicApi/tests/Feature',
     __DIR__.'/../modules/Verification/tests/Feature',
     __DIR__.'/../modules/Geo/tests/Feature',
+    __DIR__.'/../modules/Dispatch/tests/Feature',
 );

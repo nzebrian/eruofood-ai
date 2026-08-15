@@ -44,6 +44,7 @@
             "EruoFood\\PublicApi\\": "modules/PublicApi/src/",
             "EruoFood\\Verification\\": "modules/Verification/src/",
             "EruoFood\\Geo\\": "modules/Geo/src/",
+        "EruoFood\\Dispatch\\": "modules/Dispatch/src/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
         }

@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property list<array{lat: float, lng: float, at: string}> $track_points
  * @property DateTimeInterface|null $assigned_at
  * @property DateTimeInterface|null $delivered_at
+ * @property int $version
  * @property DateTimeInterface $created_at
  */
 final class DeliveryModel extends Model

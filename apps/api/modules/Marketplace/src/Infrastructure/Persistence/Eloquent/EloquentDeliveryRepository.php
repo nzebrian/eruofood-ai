@@ -10,7 +10,9 @@ use EruoFood\Marketplace\Domain\Delivery\DeliveryRepository;
 use EruoFood\Marketplace\Domain\Enum\DeliveryStatus;
 use EruoFood\Marketplace\Domain\ValueObject\GeoLocation;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\Model\DeliveryModel;
+use EruoFood\Shared\Domain\Exception\ConcurrencyConflict;
 use EruoFood\Shared\Domain\ValueObject\Money;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 final class EloquentDeliveryRepository implements DeliveryRepository
@@ -47,9 +49,39 @@ final class EloquentDeliveryRepository implements DeliveryRepository
         ));
     }
 
+    /**
+     * Persist, guarded by the version the caller read.
+     *
+     * M26 added a second writer to this row — the dispatch bridge, which
+     * advances the delivery when a rider accepts and releases it when they are
+     * reassigned away. Two writers on one row is exactly what the version
+     * column is for: without it, a rider marking "picked up" at the same
+     * instant an operator reassigns the delivery would produce whichever write
+     * landed last, silently, and the losing decision would vanish.
+     *
+     * A brand-new delivery inserts at version 1; an existing one must match.
+     */
     public function save(Delivery $delivery): void
     {
-        $model = DeliveryModel::query()->find($delivery->id()) ?? new DeliveryModel();
+        $existing = DeliveryModel::query()->find($delivery->id());
+
+        if ($existing !== null) {
+            /** @var array<string, mixed> $values */
+            $values = [...$this->attributesOf($delivery), 'version' => $existing->version + 1];
+
+            $updated = DB::table('marketplace_deliveries')
+                ->where('id', $delivery->id())
+                ->where('version', $existing->version)
+                ->update($values);
+
+            if ($updated === 0) {
+                throw ConcurrencyConflict::on('delivery', $delivery->id());
+            }
+
+            return;
+        }
+
+        $model = new DeliveryModel();
         $model->id = $delivery->id();
         $model->order_id = $delivery->orderId();
         $model->vendor_id = $delivery->vendorId();
@@ -67,6 +99,27 @@ final class EloquentDeliveryRepository implements DeliveryRepository
         $model->delivered_at = $delivery->deliveredAt();
         $model->created_at = $delivery->createdAt();
         $model->save();
+    }
+
+    /** @return array<string, mixed> */
+    private function attributesOf(Delivery $delivery): array
+    {
+        return [
+            'order_id' => $delivery->orderId(),
+            'vendor_id' => $delivery->vendorId(),
+            'rider_id' => $delivery->riderId(),
+            'status' => $delivery->status()->value,
+            'fee_minor' => $delivery->fee()->minorUnits,
+            'currency' => $delivery->fee()->currency,
+            'zone_name' => $delivery->zoneName(),
+            'pickup_lat' => $delivery->pickup()?->latitude,
+            'pickup_lng' => $delivery->pickup()?->longitude,
+            'dropoff_lat' => $delivery->dropoff()?->latitude,
+            'dropoff_lng' => $delivery->dropoff()?->longitude,
+            'track_points' => json_encode($delivery->trackPoints(), JSON_THROW_ON_ERROR),
+            'assigned_at' => $delivery->assignedAt(),
+            'delivered_at' => $delivery->deliveredAt(),
+        ];
     }
 
     private function toDomain(DeliveryModel $m): Delivery

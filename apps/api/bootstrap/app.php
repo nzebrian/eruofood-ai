@@ -58,11 +58,20 @@ return Application::configure(basePath: dirname(__DIR__))
                 // their real address is wrong during an outage.
                 'GEO_RESOURCE_NOT_FOUND', 'GEO_ADDRESS_NOT_FOUND',
                 'REVIEWS_RESOURCE_NOT_FOUND', 'LOYALTY_RESOURCE_NOT_FOUND',
+                'DISPATCH_RESOURCE_NOT_FOUND',
                 'PUBLICAPI_RESOURCE_NOT_FOUND' => 404,
                 // A concurrent writer won, or a duplicate request is still in
                 // flight. Nothing was changed either way, so the client may
                 // safely retry — 409 says exactly that.
-                'CONCURRENCY_CONFLICT', 'IDEMPOTENCY_IN_FLIGHT' => 409,
+                'CONCURRENCY_CONFLICT', 'IDEMPOTENCY_IN_FLIGHT',
+                // Somebody else got there first, or the offer was answered
+                // between the rider seeing it and tapping. Nothing changed, so
+                // the client may safely move on to the next offer.
+                'DISPATCH_ASSIGNMENT_CONFLICT', 'DISPATCH_OFFER_NOT_ANSWERABLE',
+                // The rider was eligible when offered and is not now — their
+                // insurance lapsed, or an operator suspended them. 409 because
+                // nothing was changed and the reason is in the message.
+                'DISPATCH_RIDER_NO_LONGER_ELIGIBLE' => 409,
                 'EMAIL_ALREADY_REGISTERED', 'DUPLICATE_SLUG', 'ALREADY_REVIEWED',
                 'MARKETPLACE_CONFLICT', 'COMMERCE_CONFLICT', 'PAYMENTS_CONFLICT',
                 'NOTIFICATIONS_CONFLICT', 'ADMIN_CONFLICT', 'SEARCH_CONFLICT',
@@ -78,6 +87,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 'SEARCH_NOT_AUTHORIZED', 'SUPPORT_NOT_AUTHORIZED',
                 'REVIEWS_NOT_AUTHORIZED', 'LOYALTY_NOT_AUTHORIZED',
                 'VERIFICATION_NOT_AUTHORIZED', 'GEO_NOT_AUTHORIZED',
+                'DISPATCH_NOT_AUTHORIZED',
                 // Step-up is a 403 with a machine-readable next step: the
                 // caller is not forbidden, they are not yet verified enough,
                 // and the error body names the level to obtain.
@@ -90,7 +100,15 @@ return Application::configure(basePath: dirname(__DIR__))
                 'REVIEWS_INVALID_STATE', 'LOYALTY_INVALID_STATE',
                 'VERIFICATION_INVALID_STATE', 'VERIFICATION_INVALID_TRANSITION',
                 'GEO_INVALID_STATE', 'GEO_INVALID_COORDINATES',
+                // An illegal delivery transition, and a vehicle that cannot be
+                // dispatched on. Both are the caller asking for something the
+                // domain will not do, not a fault on our side.
+                'DISPATCH_INVALID_STATE', 'DISPATCH_VEHICLE_NOT_DISPATCHABLE',
                 'PUBLICAPI_INVALID_STATE' => 422,
+                // Nobody could be found. A 503 rather than a 404: the delivery
+                // exists and the platform simply has no rider for it right now,
+                // which is an availability problem and not a missing resource.
+                'DISPATCH_NO_ELIGIBLE_RIDERS' => 503,
                 'AI_RATE_LIMIT_EXCEEDED', 'PUBLICAPI_RATE_LIMITED', 'PUBLICAPI_QUOTA_EXCEEDED',
                 // Mapping APIs bill per request, so a spent budget is a
                 // throttle rather than a fault: the caller should back off and

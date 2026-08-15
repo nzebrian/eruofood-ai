@@ -17,8 +17,47 @@ use EruoFood\Shared\Domain\ValueObject\Money;
  */
 final class Delivery
 {
-    private const ORDER = [
-        'unassigned' => 0, 'assigned' => 1, 'picked_up' => 2, 'en_route' => 3, 'delivered' => 4,
+    /**
+     * The journey, written out.
+     *
+     * This replaced a `+1` ordinal table in M26, and the replacement was not
+     * stylistic. The ordinal table read:
+     *
+     *     ['unassigned' => 0, 'assigned' => 1, 'picked_up' => 2, 'en_route' => 3, ...]
+     *
+     * which encodes `en_route` as coming *after* `picked_up` — i.e. en route to
+     * the customer. That is a defensible meaning, but nothing said so, and the
+     * obvious reading ("en route to the restaurant") is the opposite order. A
+     * table of ordinals cannot be read; an explicit table cannot be wrong
+     * quietly.
+     *
+     * The legacy names sit alongside their modern equivalents so existing rows
+     * keep advancing: a delivery stored as `assigned` moves on exactly as one
+     * stored as `accepted` does.
+     *
+     * @var array<string, list<string>>
+     */
+    private const ALLOWED_NEXT = [
+        'unassigned' => ['offered', 'accepted', 'assigned', 'failed'],
+
+        // Nobody answered, or they declined — back to looking.
+        'offered' => ['accepted', 'assigned', 'unassigned', 'failed'],
+
+        'accepted' => ['en_route_pickup', 'unassigned', 'failed'],
+        'assigned' => ['en_route_pickup', 'picked_up', 'unassigned', 'failed'],
+
+        'en_route_pickup' => ['arrived_pickup', 'unassigned', 'failed'],
+        'arrived_pickup' => ['picked_up', 'unassigned', 'failed'],
+
+        // Past this point the rider holds the customer's food. Returning to
+        // `unassigned` is no longer a delivery-state change — it is an
+        // operational incident, and it goes through `failed`.
+        'picked_up' => ['in_transit', 'en_route', 'failed'],
+        'in_transit' => ['delivered', 'failed'],
+        'en_route' => ['delivered', 'failed'],
+
+        'delivered' => [],
+        'failed' => [],
     ];
 
     /**
@@ -103,36 +142,98 @@ final class Delivery
         );
     }
 
+    /**
+     * A vendor or admin hands the delivery to a rider directly.
+     *
+     * The pre-M26 manual path, unchanged. It still records `assigned`, and that
+     * is deliberate: this endpoint has shipped, clients read `data.status` from
+     * it, and quietly changing a live API's output to tidy up an enum would
+     * break them for no benefit anybody asked for. `assigned` and `accepted`
+     * are the same point in the journey — see {@see DeliveryStatus::canonical()}.
+     *
+     * M26's dispatch path uses {@see acceptedByRider()} instead.
+     */
     public function assignRider(string $riderId, DateTimeImmutable $at): void
     {
-        if ($this->status !== DeliveryStatus::Unassigned) {
+        if ($this->status !== DeliveryStatus::Unassigned && $this->status !== DeliveryStatus::Offered) {
             throw new MarketplaceInvalidState('Delivery already has a rider.');
         }
+
         $this->riderId = $riderId;
         $this->status = DeliveryStatus::Assigned;
         $this->assignedAt = $at;
     }
 
+    /**
+     * A rider accepted an M26 dispatch offer.
+     *
+     * Separate from {@see assignRider()} only so the manual path's shipped
+     * output stays exactly as it was; the resulting state is the same point in
+     * the journey under its modern name.
+     */
+    public function acceptedByRider(string $riderId, DateTimeImmutable $at): void
+    {
+        if ($this->status !== DeliveryStatus::Unassigned && $this->status !== DeliveryStatus::Offered) {
+            throw new MarketplaceInvalidState('Delivery already has a rider.');
+        }
+
+        $this->riderId = $riderId;
+        $this->status = DeliveryStatus::Accepted;
+        $this->assignedAt = $at;
+    }
+
+    /** A rider is being asked. Not yet theirs. */
+    public function markOffered(DateTimeImmutable $at): void
+    {
+        if ($this->status !== DeliveryStatus::Unassigned) {
+            throw new MarketplaceInvalidState(sprintf(
+                'Cannot offer a delivery that is "%s".',
+                $this->status->value,
+            ));
+        }
+
+        $this->status = DeliveryStatus::Offered;
+    }
+
+    /**
+     * Move the delivery along, refusing anything the table does not allow.
+     *
+     * `failed` is reachable from any non-terminal state — a delivery can go
+     * wrong at any point — but not from `delivered`. A completed delivery is
+     * finished, and letting it be marked failed afterwards would let a mistake
+     * or a bad actor rewrite a customer's completed order.
+     */
     public function advanceTo(DeliveryStatus $next, DateTimeImmutable $at): void
     {
-        if ($next === DeliveryStatus::Failed) {
-            $this->status = DeliveryStatus::Failed;
+        $allowed = self::ALLOWED_NEXT[$this->status->value];
 
-            return;
-        }
-        $current = self::ORDER[$this->status->value] ?? -1;
-        $target = self::ORDER[$next->value];
-        if ($target !== $current + 1) {
+        if (! in_array($next->value, $allowed, true)) {
             throw new MarketplaceInvalidState(sprintf(
                 'Cannot move a delivery from "%s" to "%s".',
                 $this->status->value,
                 $next->value,
             ));
         }
+
         $this->status = $next;
+
+        if ($next === DeliveryStatus::Unassigned) {
+            // Reassignment: the rider is released and the delivery goes back to
+            // looking. Keeping the old rider id would leave the record claiming
+            // somebody is carrying it who is not.
+            $this->riderId = null;
+            $this->assignedAt = null;
+        }
+
         if ($next === DeliveryStatus::Delivered) {
             $this->deliveredAt = $at;
         }
+    }
+
+    /** Whether this delivery may move to `$next` — asked before offering the transition. */
+    public function canAdvanceTo(DeliveryStatus $next): bool
+    {
+        return in_array($next->value, self::ALLOWED_NEXT[$this->status->value], true);
     }
 
     /** Append a live-tracking breadcrumb. */
