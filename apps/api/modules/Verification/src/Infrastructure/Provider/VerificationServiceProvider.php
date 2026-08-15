@@ -89,7 +89,6 @@ final class VerificationServiceProvider extends ServiceProvider
         $this->app->singleton(SensitiveAccessLogger::class, fn (): AuditingSensitiveAccessLogger
             => new AuditingSensitiveAccessLogger(
                 $this->app->make(EventBus::class),
-                $this->app->bound('request') ? $this->app->make('request') : null,
             ));
 
         $this->app->singleton(PhoneVerificationSender::class, fn (): NullPhoneVerificationSender

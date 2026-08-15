@@ -211,8 +211,52 @@ it('records an immutable audit event for every privileged read of identity data'
         ->and($entry->context['permission'])->toBe('verification.pii')
         ->and($entry->context['action'])->toBe('read_documents')
         ->and($entry->context['result'])->toBe('granted')
-        ->and($entry->context['reason'])->toBe('fraud investigation 4471')
-        ->and($entry->context['correlationId'])->toBe('req-abc-123');
+        ->and($entry->context['reason'])->toBe('fraud investigation 4471');
+
+    // The correlation id is present and joins this record to the request — but
+    // it is the *server's* id, not the caller's `X-Request-Id`. This assertion
+    // used to require the header value, which meant a caller could choose the
+    // correlation id on their own regulated-data access: point it at an
+    // unrelated request, or reuse one id so several accesses read as a single
+    // event. The header is still honoured for tracing and echoed back on the
+    // response; it is simply not allowed to reach the audit trail.
+    expect($entry->context['correlationId'])
+        ->toBeString()
+        ->not->toBe('req-abc-123')
+        ->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/');
+});
+
+it('echoes a caller-supplied request id back but never lets it reach the audit trail', function (): void {
+    ['id' => $riderId] = verifUser($this, 'r5b@example.com');
+    $caseId = caseWithDocument($riderId);
+    ['token' => $token] = verifUser($this, 'officer2@example.com', [AdminRole::ComplianceOfficer]);
+
+    $this->withToken($token)
+        ->withHeader('X-Request-Id', 'caller-chosen-id')
+        ->getJson("/api/v1/verification/admin/cases/{$caseId}/documents?reason=access+review")
+        ->assertOk()
+        // Echoed, so the caller can find this request in their own logs.
+        ->assertHeader('X-Request-Id', 'caller-chosen-id');
+
+    expect(piiAudit()[0]->context['correlationId'])->not->toBe('caller-chosen-id');
+});
+
+it('refuses a forged request id that would inject a line into the logs', function (): void {
+    ['id' => $riderId] = verifUser($this, 'r5c@example.com');
+    $caseId = caseWithDocument($riderId);
+    ['token' => $token] = verifUser($this, 'officer3@example.com', [AdminRole::ComplianceOfficer]);
+
+    // A newline in the header would let a caller fabricate log entries. The
+    // request still succeeds — refusing it would turn a diagnostic header into
+    // an outage — but the value is discarded and ours is used instead.
+    $response = $this->withToken($token)
+        ->withHeader('X-Request-Id', "abc\ninjected-log-line")
+        ->getJson("/api/v1/verification/admin/cases/{$caseId}/documents?reason=access+review")
+        ->assertOk();
+
+    expect($response->headers->get('X-Request-Id'))
+        ->not->toContain('injected-log-line')
+        ->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/');
 });
 
 it('audits a SuperAdmin exactly as closely as anyone else', function (): void {

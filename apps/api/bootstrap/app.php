@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use EruoFood\Shared\Domain\Exception\DomainException;
+use EruoFood\Shared\Domain\Schedule\Cadence;
+use EruoFood\Shared\Domain\Schedule\ScheduleRegistry;
+use EruoFood\Shared\Infrastructure\Http\Middleware\AssignsCorrelationId;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -26,7 +30,39 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // API is stateless by default; per-route throttling is applied in modules.
-        $middleware->api(prepend: []);
+        //
+        // The correlation middleware is prepended so every later middleware,
+        // controller, job and log line in the request shares one id — including
+        // anything that fails before reaching a route.
+        $middleware->api(prepend: [AssignsCorrelationId::class]);
+    })
+    /*
+    | Recurring work, drained from the registry rather than listed here.
+    |
+    | Modules describe their own scheduled tasks (see ScheduleRegistry); this
+    | bootstrap stays ignorant of what they are, which is what keeps a new
+    | sweep a one-module change. Tasks registered as disabled are skipped.
+    |
+    | Note for anyone adding to this: there are deliberately **no dispatch
+    | entries**. M26 ships with automatic dispatch switched off, and wiring
+    | DispatchEngine into a scheduler is what "switching it on" means.
+    */
+    ->withSchedule(function (Schedule $schedule): void {
+        $registry = app(ScheduleRegistry::class);
+
+        foreach ($registry->enabled() as $task) {
+            $event = match ($task->cadence) {
+                Cadence::EveryMinute => $schedule->command($task->command)->everyMinute(),
+                Cadence::EveryFiveMinutes => $schedule->command($task->command)->everyFiveMinutes(),
+                Cadence::EveryFifteenMinutes => $schedule->command($task->command)->everyFifteenMinutes(),
+                Cadence::Hourly => $schedule->command($task->command)->hourly(),
+                Cadence::Daily => $schedule->command($task->command)->daily(),
+            };
+
+            if ($task->withoutOverlapping) {
+                $event->withoutOverlapping($task->cadence->overlapGuardMinutes());
+            }
+        }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Map domain exceptions to the standard API error envelope with a
