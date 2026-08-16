@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace EruoFood\Dispatch\Domain\Enum;
 
+use EruoFood\Shared\Domain\Lifecycle\ServerAuthoritative;
+use EruoFood\Shared\Domain\Lifecycle\ServerPhase;
+
 /**
  * The assignment's own lifecycle — and the boundary with Marketplace.
  *
@@ -30,7 +33,7 @@ namespace EruoFood\Dispatch\Domain\Enum;
  * second place the journey can be advanced from. That is what stops the two
  * machines disagreeing.
  */
-enum AssignmentState: string
+enum AssignmentState: string implements ServerAuthoritative
 {
     case Accepted = 'accepted';
     case EnRoutePickup = 'en_route_pickup';
@@ -70,6 +73,24 @@ enum AssignmentState: string
     public function canTransitionTo(self $next): bool
     {
         return in_array($next, $this->allowedNext(), true);
+    }
+
+    /**
+     * Where a rider's assignment has got to.
+     *
+     * Everything a rider drives is `Processing`; only `Delivered` confirms.
+     * `ReassignmentRequired` is `Failed` rather than `Cancelled` — the
+     * assignment did not complete, and nobody chose that.
+     */
+    public function serverPhase(): ServerPhase
+    {
+        return match ($this) {
+            self::Accepted, self::EnRoutePickup, self::ArrivedPickup,
+            self::PickedUp, self::InTransit => ServerPhase::Processing,
+            self::Delivered => ServerPhase::Confirmed,
+            self::Cancelled => ServerPhase::Cancelled,
+            self::ReassignmentRequired => ServerPhase::Failed,
+        };
     }
 
     public function isTerminal(): bool

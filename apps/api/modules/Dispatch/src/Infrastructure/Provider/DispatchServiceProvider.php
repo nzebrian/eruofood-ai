@@ -8,6 +8,7 @@ use EruoFood\Dispatch\Application\Port\CandidateSource;
 use EruoFood\Dispatch\Application\Port\DeliveryLifecycle;
 use EruoFood\Dispatch\Application\Port\RiderDirectory;
 use EruoFood\Dispatch\Application\Port\RiderPerformanceQuery;
+use EruoFood\Dispatch\Application\Port\RiderPresence;
 use EruoFood\Dispatch\Application\Port\RiderWorkloadQuery;
 use EruoFood\Dispatch\Application\Port\ServiceAreaCheck;
 use EruoFood\Dispatch\Application\Service\AssignmentService;
@@ -19,6 +20,7 @@ use EruoFood\Dispatch\Application\Service\EligibilityService;
 use EruoFood\Dispatch\Application\Service\OfferExpiryService;
 use EruoFood\Dispatch\Application\Service\ReassignmentService;
 use EruoFood\Dispatch\Application\Service\ScoringService;
+use EruoFood\Dispatch\Application\Service\StaleRiderSweepService;
 use EruoFood\Dispatch\Application\Service\VehicleService;
 use EruoFood\Dispatch\Domain\Assignment\AssignmentRepository;
 use EruoFood\Dispatch\Domain\Eligibility\Rule\FairnessCapNotReached;
@@ -41,9 +43,11 @@ use EruoFood\Dispatch\Domain\Offer\OfferRepository;
 use EruoFood\Dispatch\Domain\Request\DispatchRequestRepository;
 use EruoFood\Dispatch\Domain\Scoring\FairnessPolicy;
 use EruoFood\Dispatch\Domain\Vehicle\VehicleRepository;
+use EruoFood\Dispatch\Infrastructure\Console\SweepStaleRidersCommand;
 use EruoFood\Dispatch\Infrastructure\Directory\TableRiderDirectory;
 use EruoFood\Dispatch\Infrastructure\Event\DispatchNotificationSubscriber;
 use EruoFood\Dispatch\Infrastructure\Geo\GeoCandidateSource;
+use EruoFood\Dispatch\Infrastructure\Geo\GeoRiderPresence;
 use EruoFood\Dispatch\Infrastructure\Geo\GeoServiceAreaCheck;
 use EruoFood\Dispatch\Infrastructure\Marketplace\MarketplaceDeliveryLifecycle;
 use EruoFood\Dispatch\Infrastructure\Performance\ReviewsRiderPerformanceQuery;
@@ -57,8 +61,10 @@ use EruoFood\Dispatch\Interface\Console\VehicleBackfillReportCommand;
 use EruoFood\Dispatch\Interface\Http\Controller\DispatchPresenter;
 use EruoFood\Geo\Application\Service\RiderLocationService;
 use EruoFood\Geo\Contracts\DeliveryDistanceProvider;
+use EruoFood\Geo\Domain\Rider\RiderLocationRepository;
 use EruoFood\Shared\Domain\Clock;
 use EruoFood\Shared\Domain\EventBus;
+use EruoFood\Shared\Domain\Flag\FlagEvaluator;
 use EruoFood\Shared\Domain\Idempotency\IdempotencyStore;
 use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Verification\Contracts\VerificationStatusQuery;
@@ -122,6 +128,24 @@ final class DispatchServiceProvider extends ServiceProvider
             $app->make(TransactionManager::class),
             $app->make(EventBus::class),
             $app->make(Clock::class),
+        ));
+
+        $this->app->singleton(
+            RiderPresence::class,
+            fn ($app): GeoRiderPresence => new GeoRiderPresence($app->make(RiderLocationRepository::class)),
+        );
+
+        $this->app->singleton(StaleRiderSweepService::class, fn ($app): StaleRiderSweepService => new StaleRiderSweepService(
+            $app->make(AssignmentRepository::class),
+            $app->make(RiderPresence::class),
+            $app->make(ReassignmentService::class),
+            $app->make(FlagEvaluator::class),
+            $app->make(Clock::class),
+            // The same threshold the LocationIsFresh eligibility rule uses. A
+            // rider too stale to be offered work is exactly the rider whose
+            // existing work should be released; two different numbers here
+            // would produce a window where neither applied.
+            (int) config('geo.privacy.rider_location_stale_seconds', 300),
         ));
 
         $this->app->singleton(ReassignmentService::class, fn ($app): ReassignmentService => new ReassignmentService(
@@ -356,6 +380,7 @@ final class DispatchServiceProvider extends ServiceProvider
             $this->commands([
                 VehicleBackfillReportCommand::class,
                 ExpireOffersCommand::class,
+                SweepStaleRidersCommand::class,
             ]);
         }
     }

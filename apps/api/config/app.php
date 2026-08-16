@@ -19,7 +19,20 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
-    'timezone' => env('APP_TIMEZONE', 'Africa/Lagos'),
+    /*
+    | UTC is authoritative and is not a preference.
+    |
+    | This drives PHP's default timezone, so it decides what every timestamp
+    | written by the application *means*. It was 'Africa/Lagos', which stored
+    | local wall-clock in 167 timezone-naive columns while PostgreSQL itself ran
+    | in UTC — the two disagreed by an hour, and any second deployment region
+    | would have disagreed by more.
+    |
+    | A user's or merchant's timezone is a display and scheduling concern,
+    | carried per record as an IANA identifier and applied at the edge. It is
+    | never the storage format. See docs/TIMEZONE_ARCHITECTURE.md.
+    */
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
 
     'locale' => env('APP_LOCALE', 'en'),
 

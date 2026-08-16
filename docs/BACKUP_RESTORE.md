@@ -92,3 +92,29 @@ PostgreSQL 16 (the production engine):
 migration head was intact after restore. This validates the `pg_dump`/`pg_restore`
 procedure end-to-end. Production adds PITR (WAL replay) on top for the ≤5 min RPO
 (managed-instance feature, not exercisable in this sandbox).
+
+---
+
+## Executed backup/restore drill (cross-cutting foundation) — EXECUTED — PASSED
+
+The Milestone 21 drill above covered **105 tables / 406 indexes** and predates
+M24, M25 and M26. It no longer describes the schema in production, so it was
+re-executed against the **current** schema rather than being cited.
+
+| Step | Command | Result |
+|---|---|---|
+| Schema + data | `migrate:fresh` + a marker table | **126 tables, 519 indexes** |
+| Backup | `pg_dump -Fc` | 324 KB custom-format dump |
+| Destroy | `DROP DATABASE` + `CREATE DATABASE` | verified empty — **0 tables** |
+| Restore | `pg_restore` | exit 0, no errors |
+| Verify | table/index/row counts, marker value, `migrate:status` | **127 tables, 520 indexes** (126 + marker), marker value identical, **140 migrations ran, 0 pending** |
+
+Round-tripped identically on PostgreSQL 16 with the migration head intact.
+
+**What this drill does and does not certify.** It certifies that a full logical
+backup of the current schema restores completely into an empty database, which
+is the leg that can be executed here. Region failover (DR tier 2) and
+point-in-time recovery via WAL replay remain deployment-time validations against
+managed infrastructure — they cannot be exercised in a single-node container,
+and this document does not claim otherwise.
+

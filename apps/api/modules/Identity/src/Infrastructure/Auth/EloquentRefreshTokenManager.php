@@ -38,8 +38,12 @@ final readonly class EloquentRefreshTokenManager implements RefreshTokenManager
             'token_hash' => $this->hash($secret),
             'ip_address' => $meta->ipAddress,
             'user_agent' => $meta->userAgent,
+            'device_id' => $meta->deviceId,
+            'device_name' => $meta->deviceName,
+            'platform' => $meta->platform,
             'expires_at' => $expiresAt,
             'last_used_at' => now(),
+            'last_activity_at' => now(),
         ]);
 
         return new IssuedRefreshToken("{$sessionId}.{$secret}", $sessionId, $expiresAt->toDateTimeImmutable());
@@ -56,6 +60,14 @@ final readonly class EloquentRefreshTokenManager implements RefreshTokenManager
     {
         $row = $this->findValid($plaintext);
         if ($row === null) {
+            // Nothing valid matched. Before giving up, work out *why*: a token
+            // whose session exists but whose secret no longer matches is a
+            // token that was already rotated away, and somebody just presented
+            // it again. That is the signature of a stolen token — either the
+            // thief is using an old copy, or the real device is, having been
+            // overtaken by the thief.
+            $this->detectReuse($plaintext);
+
             return null;
         }
 
@@ -67,6 +79,10 @@ final readonly class EloquentRefreshTokenManager implements RefreshTokenManager
         $row->expires_at = $expiresAt;
         $row->ip_address = $meta->ipAddress ?? $row->ip_address;
         $row->user_agent = $meta->userAgent ?? $row->user_agent;
+        $row->device_id = $meta->deviceId ?? $row->device_id;
+        $row->device_name = $meta->deviceName ?? $row->device_name;
+        $row->platform = $meta->platform ?? $row->platform;
+        $row->last_activity_at = now();
         $row->save();
 
         return new IssuedRefreshToken("{$row->id}.{$secret}", $row->id, $expiresAt->toDateTimeImmutable());
@@ -112,8 +128,52 @@ final readonly class EloquentRefreshTokenManager implements RefreshTokenManager
                 userAgent: $m->user_agent,
                 createdAt: DateTimeImmutable::createFromInterface($m->created_at),
                 lastUsedAt: $m->last_used_at !== null ? DateTimeImmutable::createFromInterface($m->last_used_at) : null,
+                deviceId: $m->device_id,
+                deviceName: $m->device_name,
+                platform: $m->platform,
+                lastActivityAt: $m->last_activity_at !== null
+                    ? DateTimeImmutable::createFromInterface($m->last_activity_at)
+                    : null,
             ))
             ->all());
+    }
+
+    /**
+     * A rotated-away token was presented again. End the whole session.
+     *
+     * Rotation alone already refuses the old secret, but refusing silently
+     * leaves the attacker free to keep trying and leaves the legitimate device
+     * signed in beside them. Revoking the session is the standard response: it
+     * costs the real user one sign-in, and it costs the thief everything.
+     *
+     * Only sessions that are still live are revoked. Replaying a token whose
+     * session already ended tells us nothing new and must not overwrite the
+     * original revocation time.
+     */
+    private function detectReuse(string $plaintext): void
+    {
+        [$sessionId, $secret] = $this->split($plaintext);
+
+        if ($sessionId === null || $secret === null) {
+            // Malformed input rather than a replay — no session to act on.
+            return;
+        }
+
+        $row = RefreshTokenModel::query()->whereKey($sessionId)->first();
+
+        if ($row === null || hash_equals($row->token_hash, $this->hash($secret))) {
+            // No such session, or the secret matches and it failed validity for
+            // another reason (expired, already revoked). Neither is a replay.
+            return;
+        }
+
+        if ($row->revoked_at !== null) {
+            return;
+        }
+
+        $row->revoked_at = now();
+        $row->reuse_detected_at = now();
+        $row->save();
     }
 
     private function findValid(string $plaintext): ?RefreshTokenModel

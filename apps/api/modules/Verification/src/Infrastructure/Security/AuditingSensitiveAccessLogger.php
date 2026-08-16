@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace EruoFood\Verification\Infrastructure\Security;
 
+use EruoFood\Shared\Domain\Correlation\CorrelationContext;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Verification\Application\Port\SensitiveAccessLogger;
 use EruoFood\Verification\Domain\Event\SensitiveDataAccessed;
-use Illuminate\Http\Request;
 
 /**
  * Turns every read of regulated identity data into an immutable audit event.
@@ -17,9 +17,14 @@ use Illuminate\Http\Request;
  * its table would break the same module boundary the rest of this design
  * respects.
  *
- * The correlation id comes from the request's `X-Request-Id`, which the platform
- * already stamps for tracing — so an access record can be joined to the exact
- * request that made it.
+ * The correlation id joins an access record to the exact request that made it.
+ * It is taken from {@see CorrelationContext}, which is the *server-generated*
+ * id — never the caller's `X-Request-Id`, even when one was supplied and echoed
+ * back. This used to read the raw header, which meant two things: on the main
+ * API nothing set that header so the field was always null, and where a caller
+ * did send one they were choosing the correlation id on their own regulated-data
+ * access — able to point it at an unrelated request, or reuse one id so several
+ * accesses looked like a single event.
  *
  * Nothing here touches the application log. The audit trail carries *that*
  * someone looked and on what authority; it never carries what they saw.
@@ -28,7 +33,6 @@ final readonly class AuditingSensitiveAccessLogger implements SensitiveAccessLog
 {
     public function __construct(
         private EventBus $events,
-        private ?Request $request = null,
     ) {
     }
 
@@ -48,14 +52,7 @@ final readonly class AuditingSensitiveAccessLogger implements SensitiveAccessLog
             action: $action,
             reason: $reason,
             result: $result,
-            correlationId: $correlationId ?? $this->correlationId(),
+            correlationId: $correlationId ?? CorrelationContext::forAudit(),
         ));
-    }
-
-    private function correlationId(): ?string
-    {
-        $header = $this->request?->header('X-Request-Id');
-
-        return is_string($header) && $header !== '' ? $header : null;
     }
 }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace EruoFood\Marketplace\Domain\Enum;
 
+use EruoFood\Shared\Domain\Lifecycle\ServerAuthoritative;
+use EruoFood\Shared\Domain\Lifecycle\ServerPhase;
+
 /**
  * The lifecycle of a delivery job.
  *
@@ -29,7 +32,7 @@ namespace EruoFood\Marketplace\Domain\Enum;
  *
  * New deliveries use the modern names. See {@see isLegacyAlias()}.
  */
-enum DeliveryStatus: string
+enum DeliveryStatus: string implements ServerAuthoritative
 {
     case Unassigned = 'unassigned';
 
@@ -56,6 +59,34 @@ enum DeliveryStatus: string
     case Failed = 'failed';
 
     /** Whether this is a pre-M26 name kept for compatibility. */
+    /**
+     * Where a delivery has got to, in the platform's coarse language.
+     *
+     * `Unassigned` is `Pending`, not `Draft`: the delivery exists and the
+     * platform owes the customer a rider. Everything from the offer onwards is
+     * `Processing` — including `Offered`, because a search is genuinely under
+     * way even though no rider has committed.
+     *
+     * The legacy aliases `Assigned` and `EnRoute` are mapped through
+     * {@see self::canonical()} so a row written before M26 projects identically
+     * to the same state written after it. A client must not see a delivery
+     * change phase because of when the row happened to be created.
+     */
+    public function serverPhase(): ServerPhase
+    {
+        return match ($this->canonical()) {
+            self::Unassigned => ServerPhase::Pending,
+            self::Offered, self::Accepted, self::EnRoutePickup,
+            self::ArrivedPickup, self::PickedUp, self::InTransit => ServerPhase::Processing,
+            self::Delivered => ServerPhase::Confirmed,
+            self::Failed => ServerPhase::Failed,
+            // Unreachable: canonical() never returns an alias. Present because
+            // match must be exhaustive over the enum, and a silent default here
+            // is how an unclassified state would slip through.
+            self::Assigned, self::EnRoute => ServerPhase::Processing,
+        };
+    }
+
     public function isLegacyAlias(): bool
     {
         return $this === self::Assigned || $this === self::EnRoute;
