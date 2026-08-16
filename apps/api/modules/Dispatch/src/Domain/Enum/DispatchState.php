@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace EruoFood\Dispatch\Domain\Enum;
 
+use EruoFood\Shared\Domain\Lifecycle\ServerAuthoritative;
+use EruoFood\Shared\Domain\Lifecycle\ServerPhase;
+
 /** Where a dispatch request stands in its search for a rider. */
-enum DispatchState: string
+enum DispatchState: string implements ServerAuthoritative
 {
     /** Waiting to be picked up by a dispatch worker. */
     case Pending = 'pending';
@@ -19,6 +22,24 @@ enum DispatchState: string
     case Failed = 'failed';
 
     case Cancelled = 'cancelled';
+
+    /**
+     * Where the search for a rider has got to.
+     *
+     * `Dispatching` is `Processing`: offers are live on riders' screens, and a
+     * second search opened because somebody retried is the duplicate-assignment
+     * failure M26 exists to prevent.
+     */
+    public function serverPhase(): ServerPhase
+    {
+        return match ($this) {
+            self::Pending => ServerPhase::Pending,
+            self::Dispatching => ServerPhase::Processing,
+            self::Assigned => ServerPhase::Confirmed,
+            self::Failed => ServerPhase::Failed,
+            self::Cancelled => ServerPhase::Cancelled,
+        };
+    }
 
     public function isTerminal(): bool
     {

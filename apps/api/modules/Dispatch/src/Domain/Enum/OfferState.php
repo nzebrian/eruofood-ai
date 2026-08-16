@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace EruoFood\Dispatch\Domain\Enum;
 
+use EruoFood\Shared\Domain\Lifecycle\ServerAuthoritative;
+use EruoFood\Shared\Domain\Lifecycle\ServerPhase;
+
 /**
  * The life of one offer to one rider.
  *
@@ -11,7 +14,7 @@ namespace EruoFood\Dispatch\Domain\Enum;
  * unique index on `(rider_id) WHERE state = 'offered'` meaningful: a rider can
  * be looking at exactly one offer at a time.
  */
-enum OfferState: string
+enum OfferState: string implements ServerAuthoritative
 {
     case Offered = 'offered';
     case Accepted = 'accepted';
@@ -22,6 +25,26 @@ enum OfferState: string
 
     /** Withdrawn by the platform — the order was cancelled, or the rider went offline. */
     case Cancelled = 'cancelled';
+
+    /**
+     * Where an offer has got to.
+     *
+     * `Expired` maps to its own phase rather than to `Failed`. A rider who ran
+     * out of time and a rider who said no are different facts, and only one of
+     * them is a decision — which matters both for what the app says and for
+     * what fairness scoring later makes of it.
+     *
+     * `Declined` is `Cancelled`: the rider decided.
+     */
+    public function serverPhase(): ServerPhase
+    {
+        return match ($this) {
+            self::Offered => ServerPhase::Pending,
+            self::Accepted => ServerPhase::Confirmed,
+            self::Declined, self::Cancelled => ServerPhase::Cancelled,
+            self::Expired => ServerPhase::Expired,
+        };
+    }
 
     public function isTerminal(): bool
     {

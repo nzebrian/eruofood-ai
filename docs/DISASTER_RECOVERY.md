@@ -72,6 +72,16 @@ platform-wide compromise. Builds on `docs/BACKUP_RESTORE.md`.
 
 ---
 
+## Cross-cutting foundation — drill re-executed on the current schema
+
+The Milestone 21 result below covered 105 tables and predates M24, M25 and M26.
+It was re-run against the current schema: **126 tables / 519 indexes** dumped,
+database dropped and verified empty, restored to **127 tables / 520 indexes**
+with the marker row intact and **140 migrations ran, 0 pending** —
+**EXECUTED — PASSED**. See `BACKUP_RESTORE.md`.
+
+Region failover (Tier 2) and PITR remain deployment-time validations.
+
 ## Milestone 21 — backup/restore drill executed
 
 The database backup/restore leg of DR was **executed** (see `BACKUP_RESTORE.md` →

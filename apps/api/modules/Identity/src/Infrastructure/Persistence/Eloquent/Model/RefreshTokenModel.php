@@ -16,6 +16,11 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $token_hash
  * @property string|null $ip_address
  * @property string|null $user_agent
+ * @property string|null $device_id
+ * @property string|null $device_name
+ * @property string|null $platform
+ * @property DateTimeInterface|null $last_activity_at
+ * @property DateTimeInterface|null $reuse_detected_at
  * @property DateTimeInterface $expires_at
  * @property DateTimeInterface|null $revoked_at
  * @property DateTimeInterface|null $last_used_at
@@ -38,6 +43,8 @@ final class RefreshTokenModel extends Model
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',
             'last_used_at' => 'datetime',
+            'last_activity_at' => 'datetime',
+            'reuse_detected_at' => 'datetime',
         ];
     }
 }

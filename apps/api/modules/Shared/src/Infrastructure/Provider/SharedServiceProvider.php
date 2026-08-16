@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace EruoFood\Shared\Infrastructure\Provider;
 
 use EruoFood\Shared\Domain\Clock;
+use EruoFood\Shared\Domain\DataLifecycle\RetentionRegistry;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\Flag\FeatureFlag;
 use EruoFood\Shared\Domain\Flag\FlagEvaluator;
 use EruoFood\Shared\Domain\Flag\FlagRegistry;
 use EruoFood\Shared\Domain\Idempotency\IdempotencyStore;
+use EruoFood\Shared\Domain\Risk\RiskEvaluator;
 use EruoFood\Shared\Domain\Schedule\ScheduleRegistry;
 use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Infrastructure\Bus\LaravelEventBus;
@@ -18,6 +20,7 @@ use EruoFood\Shared\Infrastructure\Console\TimezoneManifestCommand;
 use EruoFood\Shared\Infrastructure\Correlation\PropagatesCorrelationToQueue;
 use EruoFood\Shared\Infrastructure\Flag\ConfigFlagEvaluator;
 use EruoFood\Shared\Infrastructure\Idempotency\EloquentIdempotencyStore;
+use EruoFood\Shared\Infrastructure\Risk\NullRiskEvaluator;
 use EruoFood\Shared\Infrastructure\Transaction\LaravelTransactionManager;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -59,6 +62,15 @@ final class SharedServiceProvider extends ServiceProvider
             $this->app->make(FlagRegistry::class),
             $this->app->make('config'),
         ));
+
+        // The abuse-detection seam. Allows everything until M29 provides a
+        // real evaluator; binding one is then a container change rather than a
+        // change to checkout, payments and dispatch.
+        $this->app->singleton(RiskEvaluator::class, NullRiskEvaluator::class);
+
+        // Declared retention, in one place. The registry does not delete
+        // anything — acting on it is a separate, flagged, dry-runnable job.
+        $this->app->singleton(RetentionRegistry::class, fn (): RetentionRegistry => RetentionRegistry::platformDefaults());
 
         $this->app->singleton(TransactionManager::class, function (): LaravelTransactionManager {
             /** @var Config $config */
