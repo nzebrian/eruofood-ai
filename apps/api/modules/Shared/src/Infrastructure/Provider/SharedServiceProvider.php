@@ -160,10 +160,68 @@ final class SharedServiceProvider extends ServiceProvider
             FeatureFlag::of(
                 key: 'settlement.new_flow',
                 safeDefault: false,
-                description: 'M27 split settlement. Not implemented; declared so the switch exists and is visibly off.',
+                description: 'Route settlement through M27 SettlementRun rather than the legacy M22 Settlement path.',
                 owner: 'Payments',
-                rolloutStrategy: 'Not yet applicable.',
-                rollbackStrategy: 'Not yet applicable.',
+                rolloutStrategy: 'Enable once one merchant has been settled end to end through the new path and reconciled against the legacy figures.',
+                rollbackStrategy: 'Disable the flag; the legacy path serves. Runs already created stay readable and can be cancelled.',
+            ),
+
+            /*
+             * M27 settlement, switched on in the order below and no other.
+             *
+             * The order is not a preference. Each stage makes the next one's
+             * mistakes cheap: accruals that nobody acts on, then ledger
+             * movements with no payout, then drafts that move nothing, then
+             * reconciliation that only reads — and only then the flag that
+             * actually pays somebody.
+             */
+            FeatureFlag::of(
+                key: 'settlement.accrual',
+                safeDefault: false,
+                description: 'Record a payable accrual when an order becomes financially final. Writes rows; moves no money and posts no ledger entries on its own.',
+                owner: 'Payments / finance',
+                rolloutStrategy: 'Enable first, with settlement.accrual_posting off, for a full settlement cycle. Compare accrual totals against the figures finance produces by hand before going further.',
+                rollbackStrategy: 'Disable the flag; accruals stop being written. Nothing is at risk — no money has moved, and the missing accruals are re-derivable from the ledger.',
+            ),
+            FeatureFlag::of(
+                key: 'settlement.accrual_posting',
+                safeDefault: false,
+                description: 'Additionally post Escrow → MerchantPayable for each accrual, which is what makes an accrual settleable.',
+                owner: 'Payments / finance',
+                rolloutStrategy: 'Only after a full report-only cycle has been reconciled. This is the flag that ends report-only mode.',
+                rollbackStrategy: 'Disable the flag; new accruals are recorded report-only and cannot be settled. Accruals already posted keep their ledger entries — reversing those is a compensating posting, not a flag.',
+            ),
+            FeatureFlag::of(
+                key: 'settlement.compute',
+                safeDefault: false,
+                description: 'Build draft settlement runs from unsettled accruals. Drafts are reviewable and move nothing.',
+                owner: 'Payments / finance',
+                rolloutStrategy: 'Enable once accrual posting is on. Review drafts against manual figures for a cycle before enabling execution.',
+                rollbackStrategy: 'Disable the flag; no new drafts are computed. Existing drafts can still be cancelled, and cancelling releases their accruals.',
+            ),
+            FeatureFlag::of(
+                key: 'settlement.execute',
+                safeDefault: false,
+                description: 'Actually transfer money to merchants. The financial kill switch.',
+                owner: 'Payments / finance',
+                rolloutStrategy: 'One merchant, then a small cohort, then all — each stage reconciled before the next. Never enabled at the same time as any other settlement flag.',
+                rollbackStrategy: 'Disable the flag. No new payout attempt is created; attempts already submitted are left alone and reconciled, because abandoning an in-flight transfer is how its outcome becomes unknown.',
+            ),
+            FeatureFlag::of(
+                key: 'settlement.auto_approve',
+                safeDefault: false,
+                description: 'Approve a settlement run without a human when it falls below a configured threshold.',
+                owner: 'Payments / finance',
+                rolloutStrategy: 'Not part of the M27 rollout. Declared so the capability is visible and visibly off; enabling it removes the four-eyes rule for small runs and needs its own decision.',
+                rollbackStrategy: 'Disable the flag; every run needs a named approver again.',
+            ),
+            FeatureFlag::of(
+                key: 'settlement.reconcile',
+                safeDefault: false,
+                description: 'Scheduled reconcilers comparing provider to platform, ledger to wallets, payable to settled, and payments to accruals.',
+                owner: 'Payments / finance',
+                rolloutStrategy: 'Enable read-only alongside compute. Triage the first batch of cases by hand before enabling execution.',
+                rollbackStrategy: 'Disable the flag; the sweeps stop. Cases already opened stay open and are unaffected — a reconciler never closes a case it cannot prove.',
             ),
         ];
     }

@@ -44,9 +44,26 @@ return [
         'notifications.retry' => env('FLAG_NOTIFICATIONS_RETRY'),
         'lifecycle.retention_purge' => env('FLAG_LIFECYCLE_RETENTION_PURGE'),
 
-        // Reserved for M27+. Declared now so the seam exists and the default is
-        // visibly off; the capabilities behind them do not exist yet.
+        // Reserved. Declared so the seam exists and the default is visibly off;
+        // the capability behind it does not exist yet.
         'payments.orchestrator' => env('FLAG_PAYMENTS_ORCHESTRATOR'),
+
+        /*
+        | M27 settlement. Every one of these is unset here, which means every
+        | one of them resolves to its declared safe default of `false`.
+        |
+        | They are listed in the order they may be switched on, and that order
+        | is not a preference: each stage makes the next one's mistakes cheap.
+        | `settlement.execute` is the only one that moves money, and it is the
+        | last. Turning it on before the others have run a full cycle would pay
+        | merchants against figures nobody has checked.
+        */
+        'settlement.accrual' => env('FLAG_SETTLEMENT_ACCRUAL'),
+        'settlement.accrual_posting' => env('FLAG_SETTLEMENT_ACCRUAL_POSTING'),
+        'settlement.compute' => env('FLAG_SETTLEMENT_COMPUTE'),
+        'settlement.reconcile' => env('FLAG_SETTLEMENT_RECONCILE'),
+        'settlement.auto_approve' => env('FLAG_SETTLEMENT_AUTO_APPROVE'),
+        'settlement.execute' => env('FLAG_SETTLEMENT_EXECUTE'),
         'settlement.new_flow' => env('FLAG_SETTLEMENT_NEW_FLOW'),
     ],
 

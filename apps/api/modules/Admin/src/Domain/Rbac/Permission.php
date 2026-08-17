@@ -72,6 +72,77 @@ final class Permission
 
     public const DISPATCH_MANAGE = 'dispatch.manage';
 
+    /*
+     * Finance, split six ways.
+     *
+     * `finance.read` used to guard the whole back-office finance group,
+     * including `POST admin/settlements` — which transfers money to a bank
+     * account. Four roles hold `finance.read`, one of them CustomerSupport,
+     * whose job is answering "where is my refund?". Reading a ledger and moving
+     * money out of it are not the same power, and a permission whose name says
+     * `read` must never have authorised the second.
+     *
+     * The split is by *consequence*, not by screen:
+     *
+     * - `finance.read` sees money. It moves none, and never will again.
+     * - `finance.settle` decides that a computed settlement is correct and may
+     *   proceed. It still moves nothing on its own.
+     * - `finance.payout` performs the transfer. Separated from `settle` so that
+     *   deciding and doing are two acts — and the domain additionally requires
+     *   two *people* (see SeparationOfDuties).
+     * - `finance.reconcile` investigates a discrepancy. Investigation is
+     *   read-heavy and safe, so it is granted more widely than the two above.
+     * - `finance.adjust` closes a discrepancy by posting a compensating entry.
+     *   This is the power to make the books say something different from what
+     *   they said, so it is SuperAdmin only.
+     * - `finance.reverse` undoes a settlement that already paid out. Likewise.
+     */
+    public const FINANCE_SETTLE = 'finance.settle';
+
+    public const FINANCE_PAYOUT = 'finance.payout';
+
+    public const FINANCE_RECONCILE = 'finance.reconcile';
+
+    public const FINANCE_ADJUST = 'finance.adjust';
+
+    public const FINANCE_REVERSE = 'finance.reverse';
+
+    /**
+     * The permissions that authorise money leaving the platform, or the books
+     * being changed to say something new.
+     *
+     * Named as a set rather than left implicit so a test can assert that no
+     * money-moving route is reachable with a read-only permission, and so a
+     * future permission cannot be added to the finance group without a decision
+     * about which side of this line it falls on.
+     *
+     * @return list<string>
+     */
+    public static function moneyMoving(): array
+    {
+        return [
+            self::FINANCE_SETTLE, self::FINANCE_PAYOUT,
+            self::FINANCE_ADJUST, self::FINANCE_REVERSE,
+        ];
+    }
+
+    /**
+     * Every finance permission that authorises a *write* of any kind.
+     *
+     * Wider than {@see moneyMoving()} by exactly one entry: `finance.reconcile`
+     * changes a case's state without moving a penny. The two lists exist
+     * separately because the assertions they back are different — "no money
+     * moves behind a read permission" and "nothing is written behind a read
+     * permission" — and collapsing them would make the second silently weaken
+     * the first.
+     *
+     * @return list<string>
+     */
+    public static function financeWriting(): array
+    {
+        return [...self::moneyMoving(), self::FINANCE_RECONCILE];
+    }
+
     /** @return list<string> every permission the platform defines */
     public static function all(): array
     {
@@ -83,6 +154,8 @@ final class Permission
             self::VERIFICATION_READ, self::VERIFICATION_REVIEW, self::VERIFICATION_PII,
             self::GEO_READ, self::GEO_MANAGE,
             self::DISPATCH_READ, self::DISPATCH_MANAGE,
+            self::FINANCE_SETTLE, self::FINANCE_PAYOUT, self::FINANCE_RECONCILE,
+            self::FINANCE_ADJUST, self::FINANCE_REVERSE,
         ];
     }
 
@@ -100,6 +173,9 @@ final class Permission
                 self::USERS_READ, self::USERS_MODERATE, self::OPS_READ, self::OPS_APPROVE,
                 self::SUPPORT_READ, self::SUPPORT_MANAGE, self::FINANCE_READ, self::AUDIT_READ,
                 self::IMPERSONATE,
+                // FINANCE_READ and no more. A general administrator can see the
+                // ledger, the settlement queue and every payout attempt, and
+                // can move none of it. Moving money is FinanceManager's job.
                 // Deliberately READ and REVIEW without PII: a general
                 // administrator can unblock a merchant or a rider without ever
                 // opening their identity documents.
@@ -115,7 +191,19 @@ final class Permission
                 // Taking the delivery off the rider does not.
                 self::DISPATCH_READ,
             ],
-            AdminRole::FinanceManager => [self::FINANCE_READ, self::AUDIT_READ, self::CONFIG_READ],
+            // The only non-super role that may move money. It holds `settle`
+            // and `payout` as two separate grants rather than one because the
+            // domain requires two different people to use them (see
+            // SeparationOfDuties) — a single "finance.manage" would have made
+            // that rule unenforceable at the permission layer.
+            //
+            // It deliberately does NOT hold `adjust` or `reverse`: changing what
+            // the books say, and clawing back a completed payout, are
+            // SuperAdmin-only.
+            AdminRole::FinanceManager => [
+                self::FINANCE_READ, self::AUDIT_READ, self::CONFIG_READ,
+                self::FINANCE_SETTLE, self::FINANCE_PAYOUT, self::FINANCE_RECONCILE,
+            ],
             AdminRole::RestaurantManager, AdminRole::VendorManager => [
                 self::OPS_READ, self::OPS_APPROVE, self::USERS_READ,
                 // Health and coverage only: a vendor manager can see that

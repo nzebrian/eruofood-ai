@@ -31,21 +31,26 @@ then a caller that omits it is unprotected, and no test can assert otherwise.
 
 ---
 
-## B. Settlement and subscription creation remain non-idempotent
+## B. Subscription creation remains non-idempotent
 
 **Status:** known gap, deliberately not closed.
 
-`POST /api/v1/payments/settlements` and `POST /api/v1/payments/subscriptions`
-have no idempotency scope. A double submission can create duplicate work.
+`POST /api/v1/payments/subscriptions` has no idempotency scope. A double
+submission can create duplicate work.
 
-**Why not now:** settlement is M27-adjacent, and this foundation must not begin
-M27. Both are low-frequency operator or lifecycle paths rather than
-customer-facing taps, so the exposure is materially smaller than the payment
+**Settlement was closed by M27**, though not with an idempotency scope. The new
+path (`POST /api/v1/payments/admin/settlement-runs`) is protected by a partial
+unique index on `(merchant, currency, window)` for live runs, which is stronger:
+it holds regardless of whether the caller supplies a key. An `Idempotency-Key`
+header is honoured additionally when one is sent.
+
+**Why subscriptions are still open:** a low-frequency lifecycle path rather than
+a customer-facing tap, so the exposure is materially smaller than the payment
 initiation gap that *was* closed.
 
-**Pending:** close both in the milestone that owns payment orchestration. The
-scope list in `IdempotencyCoverageTest` is the contract — adding a scope there
-without implementing it fails the suite, and vice versa.
+**Pending:** close subscriptions in the milestone that owns them. The scope list
+in `IdempotencyCoverageTest` is the contract — adding a scope there without
+implementing it fails the suite, and vice versa.
 
 ---
 
@@ -123,3 +128,23 @@ they are deployment-time validations by nature.
 **Pending:** both, as part of a deployment readiness exercise. The RPO/RTO
 figures in `docs/DISASTER_RECOVERY.md` are **targets, not measurements**, until
 that happens.
+
+---
+
+## F. M27 settlement leaves three things to deployment
+
+Recorded in full in `docs/M27_SETTLEMENT_REPORT.md` §9; summarised here so this
+page stays the single index of what is deliberately incomplete.
+
+1. **Merchant bank details are not stored.** A bank payout needs the destination
+   supplied on the execute call. Settling to the merchant's wallet is complete
+   and is the default.
+2. **Provider transfer-status endpoints are unconfigured.** Every real provider
+   therefore answers `Unknown` to a reconciliation query, which escalates to a
+   human rather than resolving anything. That is the safe failure; configuring
+   the per-provider paths is deployment work.
+3. **Historical accruals are not backfilled.** M27 settles only orders accrued
+   after the flag is switched on. The backfill's requirements — reporting-only
+   first, idempotent, reversible, counted, dry-runnable, and above all not
+   double-counting orders already settled through the legacy path — are written
+   down in the report, and the migration is deliberately unwritten.

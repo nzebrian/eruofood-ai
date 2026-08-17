@@ -7,8 +7,13 @@ namespace EruoFood\Payments\Application\Service;
 use EruoFood\Payments\Domain\Method\SavedPaymentMethod;
 use EruoFood\Payments\Domain\Payment\Payment;
 use EruoFood\Payments\Domain\Payment\Refund;
+use EruoFood\Payments\Domain\Settlement\MerchantPayable;
+use EruoFood\Payments\Domain\Settlement\PayableAccrual;
 use EruoFood\Payments\Domain\Settlement\Payout;
+use EruoFood\Payments\Domain\Settlement\PayoutAttempt;
+use EruoFood\Payments\Domain\Settlement\ReconciliationCase;
 use EruoFood\Payments\Domain\Settlement\Settlement;
+use EruoFood\Payments\Domain\Settlement\SettlementRun;
 use EruoFood\Payments\Domain\Subscription\Subscription;
 use EruoFood\Payments\Domain\ValueObject\PaymentSplit;
 use EruoFood\Payments\Domain\Wallet\Wallet;
@@ -120,6 +125,121 @@ final readonly class PaymentsPresenter
             'status' => $p->status()->value,
             'provider_reference' => $p->providerReference(),
             'paid_at' => $p->paidAt()?->format(DATE_ATOM),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function payable(MerchantPayable $payable): array
+    {
+        return [
+            'merchant_type' => $payable->merchantType,
+            'merchant_id' => $payable->merchantId,
+            'payable_minor' => $payable->amount()->minorUnits,
+            'currency' => $payable->amount()->currency,
+            'settleable' => $payable->isSettleable(),
+            'overdrawn' => $payable->isOverdrawn(),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function accrual(PayableAccrual $a): array
+    {
+        return [
+            'id' => $a->id(),
+            'type' => $a->type()->value,
+            'order_id' => $a->orderId(),
+            'gross_minor' => $a->gross()->minorUnits,
+            'commission_minor' => $a->commission()->minorUnits,
+            'fee_minor' => $a->fee()->minorUnits,
+            'net_minor' => $a->net()->minorUnits,
+            'currency' => $a->net()->currency,
+            'commission_rate_bps' => $a->commissionRateBps(),
+            'settleable' => $a->isSettleable(),
+            'accrued_at' => $a->accruedAt()->format(DATE_ATOM),
+        ];
+    }
+
+    /**
+     * A settlement run for an API response.
+     *
+     * Carries `server_phase` alongside the run's own state so a client can
+     * render the right thing without learning ten settlement states — the
+     * projection the cross-cutting foundation exists to provide. It does not
+     * carry `computed_by`/`approved_by`/`executed_by`: who authorised a payout
+     * is audit-trail information, not something to hand to a merchant.
+     *
+     * @return array<string, mixed>
+     */
+    public function settlementRun(SettlementRun $r): array
+    {
+        return [
+            'id' => $r->id(),
+            'merchant_type' => $r->merchantType(),
+            'merchant_id' => $r->merchantId(),
+            'reference' => $r->settlementReference(),
+            'window_start' => $r->windowStart()->format(DATE_ATOM),
+            'window_end' => $r->windowEnd()->format(DATE_ATOM),
+            'gross_minor' => $r->gross()->minorUnits,
+            'commission_minor' => $r->commission()->minorUnits,
+            'fee_minor' => $r->fee()->minorUnits,
+            'net_minor' => $r->net()->minorUnits,
+            'currency' => $r->currency(),
+            'state' => $r->state()->value,
+            'server_phase' => $r->state()->serverPhase()->value,
+            'requires_reconciliation' => $r->state()->requiresReconciliation(),
+            'failure_reason' => $r->failureReason(),
+            'created_at' => $r->createdAt()->format(DATE_ATOM),
+            'updated_at' => $r->updatedAt()->format(DATE_ATOM),
+        ];
+    }
+
+    /**
+     * An operator's view of one transfer attempt.
+     *
+     * The provider reference is included because an operator matching our
+     * records against a provider dashboard needs it. It is an admin surface
+     * only — {@see settlementRun()} is what a merchant sees, and it has none.
+     *
+     * @return array<string, mixed>
+     */
+    public function payoutAttempt(PayoutAttempt $a): array
+    {
+        return [
+            'id' => $a->id(),
+            'settlement_run_id' => $a->settlementRunId(),
+            'attempt_no' => $a->attemptNo(),
+            'provider' => $a->provider()->value,
+            'provider_reference' => $a->providerReference(),
+            'amount_minor' => $a->amount()->minorUnits,
+            'currency' => $a->amount()->currency,
+            'state' => $a->state()->value,
+            'server_phase' => $a->state()->serverPhase()->value,
+            'failure_reason' => $a->failureReason(),
+            'created_at' => $a->createdAt()->format(DATE_ATOM),
+            'submitted_at' => $a->submittedAt()?->format(DATE_ATOM),
+            'settled_at' => $a->settledAt()?->format(DATE_ATOM),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function reconciliationCase(ReconciliationCase $c): array
+    {
+        return [
+            'id' => $c->id(),
+            'kind' => $c->kind()->value,
+            'subject_type' => $c->subjectType(),
+            'subject_id' => $c->subjectId(),
+            'expected_minor' => $c->expected()->minorUnits,
+            'observed_minor' => $c->observed()->minorUnits,
+            'difference_minor' => $c->differenceMinor(),
+            'currency' => $c->expected()->currency,
+            'state' => $c->state()->value,
+            'detail' => $c->detail(),
+            'opened_at' => $c->openedAt()->format(DATE_ATOM),
+            'resolved_at' => $c->resolvedAt()?->format(DATE_ATOM),
+            'resolved_by' => $c->resolvedBy(),
+            'resolution_note' => $c->resolutionNote(),
+            'compensating_posting_id' => $c->compensatingPostingId(),
         ];
     }
 

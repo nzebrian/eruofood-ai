@@ -2834,7 +2834,14 @@ paths:
                   meta: { $ref: "#/components/schemas/PageMeta" }
     post:
       tags: [Payments Admin]
-      summary: Run a settlement for a payee (RBAC)
+      summary: Run a settlement for a payee (requires finance.settle)
+      description: >-
+        The legacy settlement path, retained for compatibility. It now requires
+        the `finance.settle` permission; it was previously reachable with
+        `finance.read`, which is a read permission and must never have
+        authorised a bank transfer. New integrations should use
+        `/v1/payments/admin/settlement-runs`, where the amount is derived from
+        accruals rather than supplied.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -2872,6 +2879,452 @@ paths:
                 properties:
                   data: { type: array, items: { $ref: "#/components/schemas/Payout" } }
                   meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/payments/merchants/{merchantId}/payable:
+    get:
+      tags: [Payments]
+      summary: What a merchant is currently owed
+      description: >-
+        Derived from accrual records, never stored. Scoped to the merchants the
+        authenticated user owns; an unowned or unknown id answers 404 rather
+        than 403, so merchant ids cannot be enumerated.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: merchantId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The derived payable.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/MerchantPayable" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/merchants/{merchantId}/accruals:
+    get:
+      tags: [Payments]
+      summary: A merchant's payable accruals
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: merchantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of accruals.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/PayableAccrual" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/merchants/{merchantId}/settlements:
+    get:
+      tags: [Payments]
+      summary: A merchant's settlement runs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: merchantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of settlement runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/SettlementRun" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/merchants/{merchantId}/settlements/{id}:
+    get:
+      tags: [Payments]
+      summary: One of a merchant's settlement runs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: merchantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The settlement run.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/admin/payables:
+    get:
+      tags: [Payments Admin]
+      summary: Merchants holding a non-zero payable (requires finance.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200":
+          description: The settlement queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      merchants:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            merchant_type: { type: string }
+                            merchant_id: { type: string, format: uuid }
+                            currency: { type: string }
+                            payable_minor: { type: integer }
+                            accruals: { type: integer }
+  /v1/payments/admin/settlement-health:
+    get:
+      tags: [Payments Admin]
+      summary: Settlement health — what is stuck (requires finance.read)
+      description: >-
+        Leads with what needs attention rather than what succeeded. The counts
+        awaiting reconciliation are the ones an operator acts on.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Counts by state, accrual totals and reconciliation backlog.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      runs_by_state: { type: object, additionalProperties: { type: integer } }
+                      attempts_by_state: { type: object, additionalProperties: { type: integer } }
+                      accrual_totals: { type: object, additionalProperties: { type: integer } }
+                      awaiting_reconciliation: { type: integer }
+                      attempts_needing_reconciliation: { type: integer }
+  /v1/payments/admin/payout-attempts:
+    get:
+      tags: [Payments Admin]
+      summary: Every payout attempt, including the ones nobody can account for (requires finance.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of payout attempts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/PayoutAttempt" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/payments/admin/settlement-runs:
+    get:
+      tags: [Payments Admin]
+      summary: Settlement runs (requires finance.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/SettlementRunState" } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of settlement runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/SettlementRun" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [Payments Admin]
+      summary: Compute a draft settlement run (requires finance.settle)
+      description: >-
+        Takes a merchant and a window, and nothing else. There is deliberately
+        no amount field: the figure is derived from the merchant's unsettled
+        accruals, which is what makes it reviewable. The draft reserves those
+        accruals and moves no money.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchant_type, merchant_id, window_start, window_end]
+              properties:
+                merchant_type: { type: string, enum: [vendor, restaurant, driver] }
+                merchant_id: { type: string, format: uuid }
+                window_start: { type: string, format: date-time }
+                window_end: { type: string, format: date-time }
+      responses:
+        "201":
+          description: The draft run.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
+  /v1/payments/admin/settlement-runs/{id}:
+    get:
+      tags: [Payments Admin]
+      summary: One settlement run with its payout attempts (requires finance.read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The run, its attempts and its line count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      run: { $ref: "#/components/schemas/SettlementRun" }
+                      attempts: { type: array, items: { $ref: "#/components/schemas/PayoutAttempt" } }
+                      lines: { type: integer }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/admin/settlement-runs/{id}/approve:
+    post:
+      tags: [Payments Admin]
+      summary: Approve a draft settlement run (requires finance.settle)
+      description: >-
+        The approver is recorded, and the domain refuses to let the same person
+        execute what they approved.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 255 }
+      responses:
+        "200":
+          description: The approved run.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+  /v1/payments/admin/settlement-runs/{id}/cancel:
+    post:
+      tags: [Payments Admin]
+      summary: Cancel a settlement run and release its accruals (requires finance.settle)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 255 }
+      responses:
+        "200":
+          description: The cancelled run.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+  /v1/payments/admin/settlement-runs/{id}/execute:
+    post:
+      tags: [Payments Admin]
+      summary: Move the money (requires finance.payout)
+      description: >-
+        Omit `bank` to credit the merchant's wallet, which is an internal
+        movement that commits atomically. Supply `bank` to transfer through the
+        provider, in which case the outcome may be `unknown` — meaning the
+        transfer was dispatched and no answer came back. An unknown run must be
+        reconciled; it cannot be retried.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bank: { $ref: "#/components/schemas/BankAccount" }
+      responses:
+        "200":
+          description: The run after the attempt, in whatever state it reached.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+  /v1/payments/admin/settlement-runs/{id}/retry:
+    post:
+      tags: [Payments Admin]
+      summary: Retry a failed settlement run (requires finance.payout)
+      description: >-
+        Only a run the provider explicitly declined may be retried. A run whose
+        outcome is unknown is refused, because retrying it could pay the
+        merchant twice. The retry creates a new payout attempt with a new
+        idempotency key; it never resets the old one.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 255 }
+      responses:
+        "200":
+          description: The run, reopened as pending.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+  /v1/payments/admin/settlement-runs/{id}/reconcile:
+    post:
+      tags: [Payments Admin]
+      summary: Ask the provider what happened to this run (requires finance.reconcile)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The run after reconciliation.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+  /v1/payments/admin/settlement-runs/{id}/reverse:
+    post:
+      tags: [Payments Admin]
+      summary: Reverse a completed settlement (requires finance.reverse — SuperAdmin only)
+      description: >-
+        Posts compensating ledger entries. The original posting is never edited.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 255 }
+      responses:
+        "200":
+          description: The reversed run.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/SettlementRun" } } }
+  /v1/payments/admin/reconciliation-cases:
+    get:
+      tags: [Payments Admin]
+      summary: The discrepancy queue (requires finance.reconcile)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/ReconciliationState" } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of reconciliation cases.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/ReconciliationCase" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+  /v1/payments/admin/reconciliation-cases/{id}:
+    get:
+      tags: [Payments Admin]
+      summary: One reconciliation case (requires finance.reconcile)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ReconciliationCase" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/payments/admin/reconciliation-cases/{id}/investigate:
+    post:
+      tags: [Payments Admin]
+      summary: Take a case on (requires finance.reconcile)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The case, under investigation.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ReconciliationCase" } } }
+  /v1/payments/admin/reconciliation-cases/{id}/escalate:
+    post:
+      tags: [Payments Admin]
+      summary: Escalate a case (requires finance.reconcile)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200":
+          description: The escalated case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ReconciliationCase" } } }
+  /v1/payments/admin/reconciliation-cases/{id}/resolve:
+    post:
+      tags: [Payments Admin]
+      summary: Close a case (requires finance.adjust — SuperAdmin only)
+      description: >-
+        `matched` records that the two sides agree after all. `adjusted` records
+        that the books were wrong, and requires the correlation id of a
+        compensating ledger posting that already exists — a case cannot be
+        closed by writing a note.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution, note]
+              properties:
+                resolution: { type: string, enum: [matched, adjusted] }
+                note: { type: string, minLength: 3, maxLength: 500 }
+                compensating_posting_id: { type: string, maxLength: 64 }
+      responses:
+        "200":
+          description: The resolved case.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/ReconciliationCase" } } }
   /v1/payments/admin/providers:
     get:
       tags: [Payments Admin]
@@ -8938,6 +9391,153 @@ components:
         period_start: { type: string, format: date-time }
         period_end: { type: string, format: date-time }
         completed_at: { type: string, format: date-time, nullable: true }
+    SettlementRunState:
+      type: string
+      description: >-
+        Where a settlement run has got to. `unknown` means the transfer was
+        dispatched and no answer came back — it is not a failure, and it has no
+        transition back to `pending`, because retrying it could pay the merchant
+        twice. The only way onward is `reconciling`.
+      enum:
+        - draft
+        - pending
+        - processing
+        - unknown
+        - reconciling
+        - reconciliation_required
+        - succeeded
+        - failed
+        - cancelled
+        - reversed
+    PayoutAttemptState:
+      type: string
+      description: >-
+        One attempt to move money. A retry is always a new attempt, never a
+        reset of an old one, so this sequence is a permanent record of what was
+        tried.
+      enum:
+        - created
+        - submitted
+        - confirmed
+        - rejected
+        - unknown
+        - reconciling
+        - reconciliation_required
+    ReconciliationState:
+      type: string
+      enum:
+        - open
+        - investigating
+        - resolved_matched
+        - resolved_adjusted
+        - escalated
+    MerchantPayable:
+      type: object
+      description: >-
+        What a merchant is owed, derived from accrual records at read time and
+        never stored. `overdrawn` is true when refunds have taken the balance
+        below zero, meaning the platform is owed money back.
+      properties:
+        merchant_type: { type: string }
+        merchant_id: { type: string, format: uuid }
+        payable_minor: { type: integer }
+        currency: { type: string }
+        settleable: { type: boolean }
+        overdrawn: { type: boolean }
+    PayableAccrual:
+      type: object
+      description: >-
+        One line of what a merchant earned, or what a refund took back. Never
+        edited: a refund is recorded as a separate row with a negative net.
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [earning, refund_adjustment] }
+        order_id: { type: string, format: uuid }
+        gross_minor: { type: integer }
+        commission_minor: { type: integer }
+        fee_minor: { type: integer }
+        net_minor: { type: integer }
+        currency: { type: string }
+        commission_rate_bps:
+          type: integer
+          description: The commission rate in force when the sale happened, snapshotted so a later rate change cannot alter it.
+        settleable:
+          type: boolean
+          description: False for a report-only accrual, whose ledger movement was not posted.
+        accrued_at: { type: string, format: date-time }
+    SettlementRun:
+      type: object
+      description: >-
+        One settlement of one merchant over one window. The amounts are derived
+        from accruals; no API accepts them.
+      properties:
+        id: { type: string, format: uuid }
+        merchant_type: { type: string }
+        merchant_id: { type: string, format: uuid }
+        reference:
+          type: string
+          description: Deterministic, provider-safe reference shared with the payout narration.
+        window_start: { type: string, format: date-time }
+        window_end: { type: string, format: date-time }
+        gross_minor: { type: integer }
+        commission_minor: { type: integer }
+        fee_minor: { type: integer }
+        net_minor: { type: integer }
+        currency: { type: string }
+        state: { $ref: "#/components/schemas/SettlementRunState" }
+        server_phase:
+          type: string
+          description: The platform-wide coarse phase, for clients that do not model settlement states.
+          enum: [draft, submitted, pending, processing, confirmed, failed, cancelled, expired]
+        requires_reconciliation: { type: boolean }
+        failure_reason: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PayoutAttempt:
+      type: object
+      description: >-
+        An operator view of one transfer attempt. Not exposed on merchant-facing
+        endpoints — the provider reference is an operational identifier.
+      properties:
+        id: { type: string, format: uuid }
+        settlement_run_id: { type: string, format: uuid }
+        attempt_no: { type: integer }
+        provider: { type: string }
+        provider_reference: { type: string, nullable: true }
+        amount_minor: { type: integer }
+        currency: { type: string }
+        state: { $ref: "#/components/schemas/PayoutAttemptState" }
+        server_phase:
+          type: string
+          enum: [draft, submitted, pending, processing, confirmed, failed, cancelled, expired]
+        failure_reason: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        settled_at: { type: string, format: date-time, nullable: true }
+    ReconciliationCase:
+      type: object
+      description: >-
+        A disagreement between two things that should agree. Closing one as
+        `resolved_adjusted` requires both a named resolver and the correlation
+        id of a compensating ledger posting.
+      properties:
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [payout_state_mismatch, ledger_wallet_drift, payable_drift, missing_accrual, orphan_accrual]
+        subject_type: { type: string }
+        subject_id: { type: string }
+        expected_minor: { type: integer }
+        observed_minor: { type: integer }
+        difference_minor: { type: integer }
+        currency: { type: string }
+        state: { $ref: "#/components/schemas/ReconciliationState" }
+        detail: { type: string, nullable: true }
+        opened_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        resolved_by: { type: string, nullable: true }
+        resolution_note: { type: string, nullable: true }
+        compensating_posting_id: { type: string, nullable: true }
     Payout:
       type: object
       properties:

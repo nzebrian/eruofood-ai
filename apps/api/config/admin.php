@@ -70,5 +70,14 @@ return [
         'verification.subject_verified' => 'ops.verification_subject_verified',
         'verification.subject_rejected' => 'ops.verification_subject_rejected',
         'verification.subject_expired' => 'ops.verification_subject_expired',
+
+        /*
+         * Settlement and payout (M27). One entry, because the event names the
+         * specific action it carries — `finance.settlement_approved`,
+         * `finance.payout_submitted` and so on. The value here is the fallback
+         * for an event that does not, and the presence of the key is what makes
+         * the event audited at all.
+         */
+        'payments.financial_action' => 'finance.action',
     ],
 ];

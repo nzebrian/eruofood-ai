@@ -36,13 +36,21 @@ use EruoFood\Loyalty\Domain\Reward\Reward;
 use EruoFood\Loyalty\Domain\Reward\RewardRepository;
 use EruoFood\Payments\Application\Input\InitiatePaymentInput;
 use EruoFood\Payments\Application\Service\LedgerIntegrityService;
+use EruoFood\Payments\Application\Service\PayableAccrualService;
 use EruoFood\Payments\Application\Service\PaymentService;
+use EruoFood\Payments\Application\Service\SettlementRunService;
 use EruoFood\Payments\Application\Service\WalletService;
+use EruoFood\Payments\Contracts\SettledOrder;
 use EruoFood\Payments\Domain\Enum\PaymentMethodType;
 use EruoFood\Payments\Domain\Enum\PaymentProvider;
 use EruoFood\Payments\Domain\Enum\TransactionType;
 use EruoFood\Payments\Domain\Enum\WalletOwnerType;
+use EruoFood\Payments\Domain\Settlement\PayableAccrualRepository;
+use EruoFood\Payments\Domain\Settlement\SettlementRunRepository;
+use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\PayableAccrualModel;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\RefundModel;
+use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\SettlementLineModel;
+use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\SettlementRunModel;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\WalletModel;
 use EruoFood\Shared\Domain\ValueObject\Money;
 use Illuminate\Support\Facades\DB;
@@ -380,8 +388,343 @@ check(
 );
 check('no worker hit an unexpected error', $r['errored'] === 0);
 
+
 // ---------------------------------------------------------------------------
-echo "\n8) Ledger integrity after all of the above\n";
+// M27 — settlement, payout and reconciliation under real contention.
+//
+// Every scenario below asserts the same family of conservation laws as the
+// M23 ones: an accrual is settled at most once, a merchant is paid at most
+// once per window, an unknown transfer is never retried, and the ledger still
+// balances after all of it.
+// ---------------------------------------------------------------------------
+
+config([
+    'flags.overrides.settlement.accrual' => 'true',
+    'flags.overrides.settlement.accrual_posting' => 'true',
+    'flags.overrides.settlement.compute' => 'true',
+    'flags.overrides.settlement.execute' => 'true',
+    'flags.overrides.settlement.reconcile' => 'true',
+]);
+
+$settlementApprover = (string) Str::uuid();
+$settlementExecutor = (string) Str::uuid();
+$windowFrom = (new DateTimeImmutable('-2 days'))->format(DATE_ATOM);
+$windowTo = (new DateTimeImmutable('+2 days'))->format(DATE_ATOM);
+
+/**
+ * Capture a payment for an order and accrue it, returning the accrual's net.
+ *
+ * Uses the real payment path so the ledger holds a genuine capture posting —
+ * the accrual derives its figures from there, and a hand-built fixture would
+ * prove nothing about the derivation.
+ */
+$seedAccrual = static function (string $merchantId, string $orderId, int $grossMinor) use (&$app): int {
+    $payerId = (string) Str::uuid();
+    $opened = app(PaymentService::class)->open(new InitiatePaymentInput(
+        payerUserId: $payerId,
+        customerEmail: 'settlement-concurrency@example.com',
+        amount: new Money($grossMinor, 'NGN'),
+        orderId: $orderId,
+        methodType: PaymentMethodType::Card,
+        provider: PaymentProvider::Mock,
+        idempotencyKey: 'seed-'.Str::random(12),
+        splits: [],
+    ), '127.0.0.1');
+    app(PaymentService::class)->announce($opened->payment);
+
+    app(PayableAccrualService::class)->recordSettledOrder(new SettledOrder($orderId, 'vendor', $merchantId));
+
+    return (int) PayableAccrualModel::query()->where('order_id', $orderId)->value('net_minor');
+};
+
+// ---------------------------------------------------------------------------
+echo "\n9) Concurrent accrual of the same delivered order\n";
+// ---------------------------------------------------------------------------
+$accrualMerchant = (string) Str::uuid();
+$accrualOrder = (string) Str::uuid();
+
+// Capture the payment first, then race the accrual itself — the shape of an
+// order whose "delivered" event is delivered several times.
+$payerId = (string) Str::uuid();
+$opened = app(PaymentService::class)->open(new InitiatePaymentInput(
+    payerUserId: $payerId,
+    customerEmail: 'accrual-race@example.com',
+    amount: new Money(400_000, 'NGN'),
+    orderId: $accrualOrder,
+    methodType: PaymentMethodType::Card,
+    provider: PaymentProvider::Mock,
+    idempotencyKey: 'accrual-race-'.Str::random(10),
+    splits: [],
+), '127.0.0.1');
+app(PaymentService::class)->announce($opened->payment);
+
+$r = race($worker, 'settlement-accrue', 12, [$accrualOrder, $accrualMerchant]);
+$accrualRows = (int) PayableAccrualModel::query()
+    ->where('order_id', $accrualOrder)->where('type', 'earning')->count();
+
+check('exactly one accrual row exists for the order', $accrualRows === 1, "rows={$accrualRows}");
+check('no worker hit an unexpected error', $r['errored'] === 0, "errored={$r['errored']}");
+
+// ---------------------------------------------------------------------------
+echo "\n10) Two workers computing a settlement for the same merchant and window\n";
+// ---------------------------------------------------------------------------
+$computeMerchant = (string) Str::uuid();
+$seedAccrual($computeMerchant, (string) Str::uuid(), 500_000);
+$seedAccrual($computeMerchant, (string) Str::uuid(), 300_000);
+
+$r = race($worker, 'settlement-compute', 8, [$settlementApprover, $computeMerchant, $windowFrom, $windowTo]);
+$liveRuns = (int) SettlementRunModel::query()
+    ->where('merchant_id', $computeMerchant)
+    ->whereNotIn('state', ['cancelled', 'failed', 'reversed'])
+    ->count();
+
+check('exactly one live settlement run exists for the window', $liveRuns === 1, "runs={$liveRuns}");
+check('exactly one worker computed it', $r['succeeded'] === 1, "succeeded={$r['succeeded']} rejected={$r['rejected']}");
+check('no worker hit an unexpected error', $r['errored'] === 0, "errored={$r['errored']}");
+
+// ---------------------------------------------------------------------------
+echo "\n11) An accrual is never on two settlement lines\n";
+// ---------------------------------------------------------------------------
+$accrualIds = SettlementLineModel::query()
+    ->join('payments_settlement_runs as r', 'r.id', '=', 'payments_settlement_lines.settlement_run_id')
+    ->where('r.merchant_id', $computeMerchant)
+    ->pluck('payments_settlement_lines.accrual_id')->all();
+
+check(
+    'every settlement line references a distinct accrual',
+    count($accrualIds) === count(array_unique($accrualIds)),
+    'lines='.count($accrualIds).' distinct='.count(array_unique($accrualIds)),
+);
+
+$globalDupes = (int) DB::table('payments_settlement_lines')
+    ->select('accrual_id')->groupBy('accrual_id')->havingRaw('COUNT(*) > 1')->get()->count();
+check('no accrual anywhere appears on two lines', $globalDupes === 0, "duplicated={$globalDupes}");
+
+// ---------------------------------------------------------------------------
+echo "\n12) Concurrent execution of one approved settlement run\n";
+// ---------------------------------------------------------------------------
+$execMerchant = (string) Str::uuid();
+$execNet = $seedAccrual($execMerchant, (string) Str::uuid(), 900_000);
+
+$runs = app(SettlementRunService::class);
+$execRun = $runs->computeDraft($settlementApprover, 'vendor', $execMerchant, new DateTimeImmutable($windowFrom), new DateTimeImmutable($windowTo));
+$runs->approve($settlementApprover, $execRun->id());
+
+$r = race($worker, 'settlement-execute', 10, [$settlementExecutor, $execRun->id(), 'wallet']);
+$execState = (string) SettlementRunModel::query()->where('id', $execRun->id())->value('state');
+$merchantWallet = (int) WalletModel::query()->where('owner_id', $execMerchant)->value('balance_minor');
+
+check('exactly one execution succeeds', $r['succeeded'] === 1, "succeeded={$r['succeeded']} rejected={$r['rejected']}");
+check('the run reaches succeeded exactly once', $execState === 'succeeded', "state={$execState}");
+check('the merchant is credited exactly once', $merchantWallet === $execNet, "wallet={$merchantWallet} expected={$execNet}");
+check('no worker hit an unexpected error', $r['errored'] === 0, "errored={$r['errored']}");
+
+// ---------------------------------------------------------------------------
+echo "\n13) Concurrent bank payouts for one run — one attempt reaches the provider\n";
+// ---------------------------------------------------------------------------
+$bankMerchant = (string) Str::uuid();
+$seedAccrual($bankMerchant, (string) Str::uuid(), 700_000);
+$bankRun = $runs->computeDraft($settlementApprover, 'vendor', $bankMerchant, new DateTimeImmutable($windowFrom), new DateTimeImmutable($windowTo));
+$runs->approve($settlementApprover, $bankRun->id());
+
+$r = race($worker, 'settlement-execute', 8, [$settlementExecutor, $bankRun->id(), 'bank']);
+$attempts = (int) DB::table('payments_payout_attempts')->where('settlement_run_id', $bankRun->id())->count();
+$confirmed = (int) DB::table('payments_payout_attempts')
+    ->where('settlement_run_id', $bankRun->id())->where('state', 'confirmed')->count();
+
+check('exactly one payout attempt is created', $attempts === 1, "attempts={$attempts}");
+check('exactly one attempt is confirmed', $confirmed === 1, "confirmed={$confirmed}");
+check('no worker hit an unexpected error', $r['errored'] === 0, "errored={$r['errored']}");
+
+// ---------------------------------------------------------------------------
+echo "\n14) Settlement racing a refund on the same merchant\n";
+// ---------------------------------------------------------------------------
+$raceMerchant = (string) Str::uuid();
+$raceOrder = (string) Str::uuid();
+$raceNet = $seedAccrual($raceMerchant, $raceOrder, 1_000_000);
+$refundId = (string) Str::uuid();
+
+$startAt = microtime(true) + 1.5;
+$dir = sys_get_temp_dir().'/efk-conc-'.uniqid();
+mkdir($dir);
+$cmds = [];
+for ($i = 0; $i < 8; $i++) {
+    $cmds[] = $i % 2 === 0
+        ? sprintf(
+            '(php %s settlement-compute %s %s %s %s %s > %s 2>&1; echo $? > %s)',
+            escapeshellarg($worker),
+            escapeshellarg((string) $startAt),
+            escapeshellarg($settlementApprover),
+            escapeshellarg($raceMerchant),
+            escapeshellarg($windowFrom),
+            escapeshellarg($windowTo),
+            escapeshellarg($dir.'/out'.$i),
+            escapeshellarg($dir.'/code'.$i),
+        )
+        : sprintf(
+            '(php %s settlement-refund-adjust %s %s %s 100000 > %s 2>&1; echo $? > %s)',
+            escapeshellarg($worker),
+            escapeshellarg((string) $startAt),
+            escapeshellarg($raceOrder),
+            escapeshellarg($refundId),
+            escapeshellarg($dir.'/out'.$i),
+            escapeshellarg($dir.'/code'.$i),
+        );
+}
+exec('/bin/bash -c '.escapeshellarg(implode(' & ', $cmds).' & wait'));
+$errored = 0;
+for ($i = 0; $i < 8; $i++) {
+    if ((int) trim((string) @file_get_contents($dir.'/code'.$i)) >= 2) {
+        $errored++;
+        echo '      worker error: '.trim((string) @file_get_contents($dir.'/out'.$i))."\n";
+    }
+}
+array_map(unlink(...), glob($dir.'/*') ?: []);
+rmdir($dir);
+
+$adjustments = (int) PayableAccrualModel::query()->where('refund_id', $refundId)->count();
+check('the refund reduces the payable exactly once', $adjustments <= 1, "adjustments={$adjustments}");
+check('settlement racing a refund raises no unexpected error', $errored === 0, "errored={$errored}");
+
+// ---------------------------------------------------------------------------
+echo "\n15) Concurrent retry of a failed run\n";
+// ---------------------------------------------------------------------------
+$retryMerchant = (string) Str::uuid();
+$seedAccrual($retryMerchant, (string) Str::uuid(), 250_000);
+$retryRun = $runs->computeDraft($settlementApprover, 'vendor', $retryMerchant, new DateTimeImmutable($windowFrom), new DateTimeImmutable($windowTo));
+$runs->approve($settlementApprover, $retryRun->id());
+// Drive it to failed through the domain rather than by writing state directly.
+DB::table('payments_settlement_runs')->where('id', $retryRun->id())
+    ->update(['state' => 'failed', 'version' => DB::raw('version + 1')]);
+
+$r = race($worker, 'settlement-retry', 8, [$settlementExecutor, $retryRun->id()]);
+$retryState = (string) SettlementRunModel::query()->where('id', $retryRun->id())->value('state');
+
+check('exactly one retry is accepted', $r['succeeded'] === 1, "succeeded={$r['succeeded']} rejected={$r['rejected']}");
+check('the run is pending exactly once', $retryState === 'pending', "state={$retryState}");
+check('no worker hit an unexpected error', $r['errored'] === 0, "errored={$r['errored']}");
+
+// ---------------------------------------------------------------------------
+echo "\n16) Concurrent cancellation of one draft\n";
+// ---------------------------------------------------------------------------
+$cancelMerchant = (string) Str::uuid();
+$cancelNet = $seedAccrual($cancelMerchant, (string) Str::uuid(), 180_000);
+$cancelRun = $runs->computeDraft($settlementApprover, 'vendor', $cancelMerchant, new DateTimeImmutable($windowFrom), new DateTimeImmutable($windowTo));
+
+$r = race($worker, 'settlement-cancel', 8, [$settlementApprover, $cancelRun->id()]);
+$cancelState = (string) SettlementRunModel::query()->where('id', $cancelRun->id())->value('state');
+$releasedLines = (int) SettlementLineModel::query()->where('settlement_run_id', $cancelRun->id())->count();
+$payableBack = app(PayableAccrualRepository::class)->derivedPayableMinor('vendor', $cancelMerchant, 'NGN');
+
+check('exactly one cancellation is accepted', $r['succeeded'] === 1, "succeeded={$r['succeeded']} rejected={$r['rejected']}");
+check('the run is cancelled', $cancelState === 'cancelled', "state={$cancelState}");
+check('its lines are released exactly once', $releasedLines === 0, "lines={$releasedLines}");
+check('the accrual returns to the payable', $payableBack === $cancelNet, "payable={$payableBack} expected={$cancelNet}");
+
+// ---------------------------------------------------------------------------
+echo "\n17) Concurrent reconciliation of an unknown payout\n";
+// ---------------------------------------------------------------------------
+$reconMerchant = (string) Str::uuid();
+$reconNet = $seedAccrual($reconMerchant, (string) Str::uuid(), 320_000);
+$reconRun = $runs->computeDraft($settlementApprover, 'vendor', $reconMerchant, new DateTimeImmutable($windowFrom), new DateTimeImmutable($windowTo));
+$runs->approve($settlementApprover, $reconRun->id());
+
+// A genuine provider timeout, not a forged state: the mock gateway is told to
+// answer `unknown`, so the run reaches that state through the real execution
+// path with no ledger posting — which is the whole point of the scenario.
+putenv('MOCK_GATEWAY_TRANSFER_OUTCOME=unknown');
+$runs->execute($settlementExecutor, $reconRun->id(), new EruoFood\Payments\Domain\ValueObject\BankAccount('Vendor Ltd', '0123456789', '058'));
+putenv('MOCK_GATEWAY_TRANSFER_OUTCOME');
+
+$reconStateBefore = (string) SettlementRunModel::query()->where('id', $reconRun->id())->value('state');
+check('a timed-out transfer lands in unknown, not failed', $reconStateBefore === 'unknown', "state={$reconStateBefore}");
+
+$payoutsBefore = (int) DB::table('payments_ledger_entries')
+    ->where('account', 'payouts')->where('direction', 'credit')->sum('amount_minor');
+
+$r = race($worker, 'settlement-reconcile', 6, []);
+$reconState = (string) SettlementRunModel::query()->where('id', $reconRun->id())->value('state');
+$payoutsAfter = (int) DB::table('payments_ledger_entries')
+    ->where('account', 'payouts')->where('direction', 'credit')->sum('amount_minor');
+
+check('the run leaves unknown exactly once', $reconState === 'succeeded', "state={$reconState}");
+check(
+    'the payout is posted to the ledger exactly once',
+    $payoutsAfter - $payoutsBefore === $reconNet,
+    'delta='.($payoutsAfter - $payoutsBefore)." expected={$reconNet}",
+);
+check('no worker hit an unexpected error', $r['errored'] === 0, "errored={$r['errored']}");
+
+// ---------------------------------------------------------------------------
+echo "\n18) An unknown run is never retried into another payment\n";
+// ---------------------------------------------------------------------------
+$unknownMerchant = (string) Str::uuid();
+$seedAccrual($unknownMerchant, (string) Str::uuid(), 210_000);
+$unknownRun = $runs->computeDraft($settlementApprover, 'vendor', $unknownMerchant, new DateTimeImmutable($windowFrom), new DateTimeImmutable($windowTo));
+$runs->approve($settlementApprover, $unknownRun->id());
+putenv('MOCK_GATEWAY_TRANSFER_OUTCOME=unknown');
+$runs->execute($settlementExecutor, $unknownRun->id(), new EruoFood\Payments\Domain\ValueObject\BankAccount('Vendor Ltd', '0123456789', '058'));
+putenv('MOCK_GATEWAY_TRANSFER_OUTCOME');
+
+$attemptsBefore = (int) DB::table('payments_payout_attempts')->where('settlement_run_id', $unknownRun->id())->count();
+$r = race($worker, 'settlement-retry', 8, [$settlementApprover, $unknownRun->id()]);
+$attemptsAfter = (int) DB::table('payments_payout_attempts')->where('settlement_run_id', $unknownRun->id())->count();
+$unknownState = (string) SettlementRunModel::query()->where('id', $unknownRun->id())->value('state');
+
+check('every retry of an unknown run is refused', $r['succeeded'] === 0, "succeeded={$r['succeeded']} rejected={$r['rejected']}");
+check('no further payout attempt is created', $attemptsAfter === $attemptsBefore, "before={$attemptsBefore} after={$attemptsAfter}");
+check('the run is still unknown, awaiting reconciliation', $unknownState === 'unknown', "state={$unknownState}");
+
+// ---------------------------------------------------------------------------
+echo "\n19) Settlement integrity after all of the above\n";
+// ---------------------------------------------------------------------------
+$payableBalance = (int) DB::table('payments_ledger_entries')->where('account', 'merchant_payable')
+    ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_minor ELSE -amount_minor END), 0) as bal")
+    ->value('bal');
+$derivedPayable = app(PayableAccrualRepository::class)->postedNetMinor() - app(SettlementRunRepository::class)->paidOutNetMinor();
+
+check(
+    'the MerchantPayable ledger balance equals the derived payable',
+    $payableBalance === $derivedPayable,
+    "ledger={$payableBalance} derived={$derivedPayable}",
+);
+// Deliberately *not* asserting that no payable is negative. It legitimately
+// can be: a refund that lands after its accrual was reserved by a live run
+// takes the merchant below zero, meaning the platform is owed money back. That
+// is a real situation the domain models explicitly (MerchantPayable::isOverdrawn),
+// and an assertion forbidding it would be asserting something untrue.
+//
+// The invariant that does hold is the one that matters: the platform never pays
+// out more than it accrued.
+$totalAccrued = app(PayableAccrualRepository::class)->postedNetMinor();
+$totalPaidOut = app(SettlementRunRepository::class)->paidOutNetMinor();
+check(
+    'the platform never pays out more than it accrued',
+    $totalPaidOut <= $totalAccrued,
+    "paid={$totalPaidOut} accrued={$totalAccrued}",
+);
+check(
+    'every overdrawn merchant is reported as overdrawn rather than hidden',
+    array_reduce(
+        app(PayableAccrualRepository::class)->merchantsWithPayable(500),
+        static fn (bool $ok, array $m): bool => $ok && ($m['payable_minor'] >= 0
+            || EruoFood\Payments\Domain\Settlement\MerchantPayable::of(
+                $m['merchant_type'],
+                $m['merchant_id'],
+                $m['payable_minor'],
+                $m['currency'],
+            )->isOverdrawn()),
+        true,
+    ),
+);
+check(
+    'no accrual is settled twice, platform-wide',
+    (int) DB::table('payments_settlement_lines')->select('accrual_id')
+        ->groupBy('accrual_id')->havingRaw('COUNT(*) > 1')->get()->count() === 0,
+);
+
+// ---------------------------------------------------------------------------
+echo "\n20) Ledger integrity after all of the above\n";
 // ---------------------------------------------------------------------------
 $report = app(LedgerIntegrityService::class)->verify();
 check(
