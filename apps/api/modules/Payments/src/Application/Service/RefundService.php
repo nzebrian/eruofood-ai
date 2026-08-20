@@ -20,6 +20,8 @@ use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\Paginated;
 use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Domain\ValueObject\Money;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * Full and partial refunds. Refunds go back through the same provider that
@@ -53,6 +55,8 @@ final readonly class RefundService
         private PaymentNotifier $notifier,
         private EventBus $events,
         private TransactionManager $transactions,
+        private PayableAccrualService $accruals,
+        private LoggerInterface $log,
         private string $currency,
     ) {
     }
@@ -144,6 +148,28 @@ final readonly class RefundService
                 ! $fully || $refund->isPartial(),
             )];
         });
+
+        // A refund reduces what the merchant is owed, and the reduction is a
+        // second accrual row rather than an edit to the first — so it can only
+        // be written once the refund itself has committed.
+        //
+        // Outside the transaction, and swallowing its own failure, for the same
+        // reason the notifier is: the customer has their money back, and that
+        // must not be undone because settlement bookkeeping had a problem. A
+        // missed adjustment is visible (the payable/ledger reconciler compares
+        // exactly these two numbers) and recoverable; an un-refunded customer
+        // is neither.
+        if ($completed->orderId() !== null) {
+            try {
+                $this->accruals->recordRefund($completed->orderId(), $completed->id(), $completed->amount());
+            } catch (Throwable $e) {
+                $this->log->error('payments.refund.payable_adjustment_failed', [
+                    'refund_id' => $completed->id(),
+                    'order_id' => $completed->orderId(),
+                    'exception' => $e::class,
+                ]);
+            }
+        }
 
         // Side effects only after the transaction commits — a subscriber must not
         // react to a refund a rollback is about to erase.

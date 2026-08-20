@@ -36,6 +36,13 @@ final readonly class EventAuditTranslator
         $vars = $this->scalarVars($event);
         [$subjectType, $subjectId] = $this->subjectOf($vars);
 
+        // An event may name the specific action it represents. The map still
+        // decides *whether* an event is audited — an unmapped event is ignored
+        // exactly as before — but a context that emits many distinct privileged
+        // actions through one event class can say which one this was, instead of
+        // needing a separate class and map entry per action.
+        $action = $this->firstOf($vars, ['auditAction', 'audit_action']) ?? $action;
+
         $this->audit->record(
             // Most published events are system-originated and carry no actor.
             // Some — a privileged read of identity data, for one — name the
@@ -60,6 +67,16 @@ final readonly class EventAuditTranslator
      */
     private function subjectOf(array $vars): array
     {
+        // An event that states its own subject type is believed. Without this,
+        // anything not in the list below was recorded as type "external", which
+        // makes a compliance query for "every action against settlement run X"
+        // impossible to write.
+        $declaredType = $this->firstOf($vars, ['subjectType', 'subject_type']);
+        $declaredId = $this->firstOf($vars, ['subjectId', 'subject_id']);
+        if ($declaredType !== null && $declaredId !== null) {
+            return [$declaredType, $declaredId];
+        }
+
         $byType = [
             'verification_case' => ['caseId', 'case_id'],
             'user' => ['userId', 'user_id'],
@@ -89,6 +106,7 @@ final readonly class EventAuditTranslator
             'ops' => AuditCategory::Operations,
             'content' => AuditCategory::Content,
             'support' => AuditCategory::Support,
+            'finance' => AuditCategory::Finance,
             default => AuditCategory::Users,
         };
     }

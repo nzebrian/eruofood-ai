@@ -32,6 +32,17 @@ interface PaymentRepository
 
     public function findByProviderReference(string $provider, string $reference): ?Payment;
 
+    /**
+     * The succeeded payment for an order, if there is one.
+     *
+     * Returns the earliest succeeded payment rather than the latest. An order
+     * with two succeeded payments is a double-charge that must be reconciled,
+     * not silently resolved in favour of whichever came last — and accruing
+     * against a stable choice makes the duplicate visible as an orphan rather
+     * than changing which payment the merchant was paid for between runs.
+     */
+    public function findCapturedForOrder(string $orderId): ?Payment;
+
     /** @return Paginated<Payment> */
     public function forPayer(string $payerUserId, int $page, int $perPage): Paginated;
 

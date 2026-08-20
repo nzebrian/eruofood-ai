@@ -56,9 +56,10 @@ final class StripeGateway extends AbstractHttpGateway
 
     public function transfer(BankAccount $destination, Money $amount, string $reference): GatewayResult
     {
-        $res = $this->client()->asForm()->post('/payouts', ['amount' => $amount->minorUnits, 'currency' => strtolower($amount->currency)]);
-
-        return $this->result($res->successful(), $reference, $res->successful() ? 'processing' : 'failed');
+        return $this->transferResult($reference, fn () => $this->client()->asForm()->post(
+            '/payouts',
+            ['amount' => $amount->minorUnits, 'currency' => strtolower($amount->currency)],
+        ));
     }
 
     public function parseWebhook(string $rawBody, string $signature): WebhookPayload

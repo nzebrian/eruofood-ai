@@ -68,6 +68,20 @@ final class EloquentPaymentRepository implements PaymentRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    public function findCapturedForOrder(string $orderId): ?Payment
+    {
+        $m = PaymentModel::query()
+            ->where('order_id', $orderId)
+            ->where('status', PaymentStatus::Succeeded->value)
+            // Oldest first, and tie-broken by id, so the answer is stable
+            // across runs even for two payments captured in the same second.
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->first();
+
+        return $m !== null ? $this->toDomain($m) : null;
+    }
+
     public function forPayer(string $payerUserId, int $page, int $perPage): Paginated
     {
         $paginator = PaymentModel::query()->where('payer_user_id', $payerUserId)

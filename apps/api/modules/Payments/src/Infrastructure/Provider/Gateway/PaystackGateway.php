@@ -54,14 +54,12 @@ final class PaystackGateway extends AbstractHttpGateway
 
     public function transfer(BankAccount $destination, Money $amount, string $reference): GatewayResult
     {
-        $res = $this->client()->post('/transfer', [
+        return $this->transferResult($reference, fn () => $this->client()->post('/transfer', [
             'source' => 'balance',
             'amount' => $amount->minorUnits,
             'reference' => $reference,
             'recipient' => $destination->accountNumber,
-        ]);
-
-        return $this->result($res->successful(), $reference, $res->successful() ? 'processing' : 'failed');
+        ]));
     }
 
     public function parseWebhook(string $rawBody, string $signature): WebhookPayload

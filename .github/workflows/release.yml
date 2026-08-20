@@ -73,6 +73,9 @@ jobs:
       - name: Redis primitives — MANDATORY
         run: php scripts/redis_validation.php
       - name: Financial concurrency (locking / atomicity / idempotency) — MANDATORY
+        # Offline provider only — see the equivalent step in ci-api.yml.
+        env:
+          PAYMENTS_PROVIDER: mock
         run: |
           php artisan migrate:fresh --force
           php scripts/financial_concurrency_validation.php

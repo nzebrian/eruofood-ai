@@ -192,6 +192,14 @@ jobs:
       # cannot cover this: RefreshDatabase wraps each test in a transaction, so
       # no second connection ever sees the contention.
       - name: Financial concurrency — locking, atomicity and idempotency
+        # PAYMENTS_PROVIDER is pinned to the offline mock. `.env.example` sets
+        # APP_ENV=local, under which payments.default resolves to a *live*
+        # provider — so this harness was attempting real bank transfers and
+        # reporting the resulting failures as concurrency defects. The script
+        # now refuses to start against a live provider; this makes the intent
+        # explicit rather than relying on that refusal.
+        env:
+          PAYMENTS_PROVIDER: mock
         run: |
           php artisan migrate:fresh --force
           php scripts/financial_concurrency_validation.php
