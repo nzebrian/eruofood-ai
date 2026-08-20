@@ -150,6 +150,14 @@ jobs:
       - name: Copy environment
         run: cp .env.example .env && php artisan key:generate
 
+      # M28. The committed development template, judged by the same policy a
+      # deploy is judged by. This is the gate that would have caught M27's CI
+      # failure on the day it was introduced: `.env.example` set APP_ENV=local
+      # and pinned no provider, so `payments.default` resolved to a live
+      # gateway and the concurrency harness attempted real bank transfers.
+      - name: Environment separation and financial safety configuration
+        run: php artisan ops:verify-environment
+
       - name: Coding standards (Pint)
         run: composer run lint
 

@@ -6,6 +6,7 @@ namespace EruoFood\Shared\Infrastructure\Provider;
 
 use EruoFood\Shared\Domain\Clock;
 use EruoFood\Shared\Domain\DataLifecycle\RetentionRegistry;
+use EruoFood\Shared\Domain\Environment\EnvironmentPolicy;
 use EruoFood\Shared\Domain\EventBus;
 use EruoFood\Shared\Domain\Flag\FeatureFlag;
 use EruoFood\Shared\Domain\Flag\FlagEvaluator;
@@ -17,6 +18,7 @@ use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Infrastructure\Bus\LaravelEventBus;
 use EruoFood\Shared\Infrastructure\Clock\SystemClock;
 use EruoFood\Shared\Infrastructure\Console\TimezoneManifestCommand;
+use EruoFood\Shared\Infrastructure\Console\VerifyEnvironmentCommand;
 use EruoFood\Shared\Infrastructure\Correlation\PropagatesCorrelationToQueue;
 use EruoFood\Shared\Infrastructure\Flag\ConfigFlagEvaluator;
 use EruoFood\Shared\Infrastructure\Idempotency\EloquentIdempotencyStore;
@@ -62,6 +64,10 @@ final class SharedServiceProvider extends ServiceProvider
             $this->app->make(FlagRegistry::class),
             $this->app->make('config'),
         ));
+
+        // Stateless rules; a singleton so the console command and any future
+        // readiness probe judge a deployment by exactly the same policy.
+        $this->app->singleton(EnvironmentPolicy::class);
 
         // The abuse-detection seam. Allows everything until M29 provides a
         // real evaluator; binding one is then a container change rather than a
@@ -231,7 +237,7 @@ final class SharedServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__.'/../Persistence/Migration');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([TimezoneManifestCommand::class]);
+            $this->commands([TimezoneManifestCommand::class, VerifyEnvironmentCommand::class]);
         }
 
         // Correlation across the queue boundary. Registered in boot() rather

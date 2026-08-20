@@ -47,4 +47,24 @@ return [
         */
         'ttl' => (int) env('IDEMPOTENCY_TTL', 86400),
     ],
+
+    /*
+    | Transport-security settings that `ops:verify-environment` judges.
+    |
+    | These three live here rather than being read at the point of use because
+    | the framework's default database and logging config does not surface all
+    | of them, and because a value read with env() outside the config directory
+    | is null once config is cached — so the verifier would report a correctly
+    | configured production box as unconfigured. Config is the only place that
+    | survives caching.
+    |
+    | Nothing consumes these but the verifier. They describe the deployment; the
+    | connections themselves are still configured by the framework defaults from
+    | the same variables.
+    */
+    'environment' => [
+        'log_level' => env('LOG_LEVEL'),
+        'db_sslmode' => env('DB_SSLMODE'),
+        'redis_scheme' => env('REDIS_SCHEME'),
+    ],
 ];
