@@ -76,11 +76,12 @@ it left nothing at all.
 
 ## 3. Defects found during implementation
 
-Four were found by running the gates rather than by reading the code, and each
+Six were found by running the gates rather than by reading the code, and each
 would have reached production.
 
 | # | Defect | Found by | Consequence if shipped |
 |---|---|---|---|
+| 0 | Every HTTP provider adapter reported a transport failure on `transfer()` as `failed`, and let a connection exception escape the method entirely | **CI**, via a concurrency run that reached a live gateway | **The F3/F4 defect, still live in the five real adapters.** A 502 or a timeout on a bank transfer read as a *decline*, which is retryable — so the same money could go out twice. An escaping exception was worse: the payout attempt stayed `created` with the run stuck in `processing`, money possibly gone and nothing recorded to reconcile against. |
 | 1 | `pg_advisory_xact_lock` was given a `crc32()` value up to 2³²−1, but the parameter is signed `int4` | PostgreSQL concurrency harness | Roughly **half of all merchant ids** would crash the settlement lock outright. Invisible to unit tests: it depends which uuid you hash. |
 | 2 | The payable reconciler compared the ledger against lines from *reserved* runs, but the ledger only debits on success | Concurrency harness, scenario 19 | A false `PayableDrift` case for **every settlement in flight** — an alarm generator firing hardest when settlement is busiest. Renamed to `paidOutNetMinor()`, counting succeeded runs only. |
 | 3 | The reversal posting used `"<run-id>:reversal"` as a correlation id; the column is `uuid` | PostgreSQL test suite | **Every reversal would fail** on the production engine and pass on SQLite. |
@@ -94,6 +95,10 @@ is now `NOT NULL` with stable literal subjects (`merchant_payable`, `whole_book`
 Numbers 3 and 4 are the argument for running both engines: SQLite is permissive
 about types and about failed statements inside transactions, and both defects
 passed the fast suite cleanly.
+
+Number 0 was found last and matters most. It is the argument for running the
+gate in CI rather than only on a developer machine — and for the harness stating
+its preconditions. See §11.
 
 ---
 
@@ -212,7 +217,7 @@ are proven by the concurrency harness.
 | OpenAPI TS generation | passes |
 | migrate → rollback → re-migrate | clean, 145 migrations, all five M27 migrations reversible |
 | M23 financial concurrency | 23/23 |
-| **M27 concurrency (real OS processes, PostgreSQL)** | **57/57 passed, 0 failed** |
+| **M27 concurrency (real OS processes, PostgreSQL)** | **57/57 passed, 0 failed** — under the CI environment, with `PAYMENTS_PROVIDER=mock`. See §11: the first CI run scored 51/57 because the harness reached a live provider. |
 | M23/M24/M25/M26 regression | inside the suites above, green |
 | Cross-cutting regression | inside the suites above, green |
 | Security / authorization | 9 tests, including a structural route sweep |
@@ -325,3 +330,43 @@ switch is visible and visibly off.
 5. `routes.php` — that no mutating route sits under `finance.read`.
 6. `scripts/m27_negative_control_audit.php` — run it; every protection above
    should fail its test when removed.
+
+---
+
+## 11. The concurrency gate must run against the offline provider
+
+The first CI run of this branch reported `51 passed, 6 failed` on the financial
+concurrency step, while the same commit gave 57/57 locally. Both runs were real;
+the environments differed, and the difference mattered.
+
+**Why.** CI copies `.env.example`, which sets `APP_ENV=local`. Under that,
+`config('payments.default')` resolves to `paystack`, not the offline mock — so
+the harness was issuing **real bank transfer requests to a live provider
+endpoint** with no credentials. Every settlement scenario that moves money
+through a provider failed, and the failures looked like concurrency defects.
+They were not. Locally the runs passed only because `APP_ENV=testing` was
+exported, which forces the mock.
+
+`MOCK_GATEWAY_TRANSFER_OUTCOME` — the cross-process hook that makes scenarios 17
+and 18 simulate a timeout — was never read for the same reason: `MockGateway`
+was never instantiated. That is the whole of the "CI is not receiving the
+intended UNKNOWN outcome" question.
+
+**Two fixes, because there were two problems.**
+
+1. **The harness now refuses to start** unless the resolved gateway is the
+   offline mock, naming what it resolved and how to correct it. A refusal, not a
+   silent override: forcing the mock internally would have hidden the
+   misconfiguration and left the gate quietly meaningless. Both workflows that
+   run it now pin `PAYMENTS_PROVIDER=mock` explicitly.
+2. **The adapters were genuinely wrong**, and the harness only revealed it.
+   `transfer()` on all five HTTP providers now routes through
+   `AbstractHttpGateway::transferResult()`: a 2xx is `Processing`, and every
+   other status *and every thrown exception* is `Unknown`. A bare HTTP status is
+   not evidence about what the provider did — proxies and WAFs emit 4xx, a 409
+   often means the transfer already exists — so only the reconciler, which asks
+   the provider directly, may conclude a transfer did not happen.
+
+The second fix is a production defect closed, not test scaffolding. Before it,
+a timed-out payout to a real merchant through a real provider would have been
+marked retryable.

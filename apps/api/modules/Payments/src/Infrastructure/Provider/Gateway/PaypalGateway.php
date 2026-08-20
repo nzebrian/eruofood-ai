@@ -61,15 +61,13 @@ final class PaypalGateway extends AbstractHttpGateway
 
     public function transfer(BankAccount $destination, Money $amount, string $reference): GatewayResult
     {
-        $res = $this->client()->post('/v1/payments/payouts', [
+        return $this->transferResult($reference, fn () => $this->client()->post('/v1/payments/payouts', [
             'sender_batch_header' => ['sender_batch_id' => $reference],
             'items' => [[
                 'amount' => ['value' => number_format($amount->minorUnits / 100, 2, '.', ''), 'currency' => $amount->currency],
                 'receiver' => $destination->accountNumber,
             ]],
-        ]);
-
-        return $this->result($res->successful(), $reference, $res->successful() ? 'processing' : 'failed');
+        ]));
     }
 
     public function parseWebhook(string $rawBody, string $signature): WebhookPayload

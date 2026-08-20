@@ -35,6 +35,7 @@ use EruoFood\Loyalty\Application\Service\LoyaltyService;
 use EruoFood\Loyalty\Domain\Reward\Reward;
 use EruoFood\Loyalty\Domain\Reward\RewardRepository;
 use EruoFood\Payments\Application\Input\InitiatePaymentInput;
+use EruoFood\Payments\Application\Port\PaymentGatewayFactory;
 use EruoFood\Payments\Application\Service\LedgerIntegrityService;
 use EruoFood\Payments\Application\Service\PayableAccrualService;
 use EruoFood\Payments\Application\Service\PaymentService;
@@ -52,6 +53,7 @@ use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\RefundModel;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\SettlementLineModel;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\SettlementRunModel;
 use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\WalletModel;
+use EruoFood\Payments\Infrastructure\Provider\Gateway\MockGateway;
 use EruoFood\Shared\Domain\ValueObject\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -60,6 +62,40 @@ $driver = DB::connection()->getDriverName();
 if ($driver !== 'pgsql') {
     fwrite(STDERR, "This script requires PostgreSQL (got: {$driver}).\n");
     fwrite(STDERR, "SQLite serialises all writers, so it cannot demonstrate row-level contention.\n");
+    exit(2);
+}
+
+/*
+ * Refuse to run against a real payment provider.
+ *
+ * This harness executes settlement and payout paths for real. If the configured
+ * default provider is a live one, it will attempt genuine bank transfers with
+ * whatever credentials the environment holds — and, failing that, produce
+ * results that say nothing about the platform's locking and idempotency.
+ *
+ * That is not hypothetical. CI copies `.env.example`, which sets
+ * `APP_ENV=local`, so `payments.default` resolved to `paystack` rather than the
+ * offline mock. Six settlement checks failed for that reason alone, and the
+ * failure looked like a concurrency defect. The harness now states its
+ * precondition instead of assuming it.
+ *
+ * Deliberately a refusal rather than a silent override: forcing the mock here
+ * would hide exactly the misconfiguration that caused the confusion, and the
+ * next person would have no way to know the gate had stopped meaning anything.
+ */
+$gateway = app(PaymentGatewayFactory::class)->default();
+if (! $gateway instanceof MockGateway) {
+    fwrite(STDERR, sprintf(
+        "This harness must run against the offline mock provider; it resolved %s.\n",
+        $gateway::class,
+    ));
+    fwrite(STDERR, sprintf(
+        "APP_ENV=%s, payments.default=%s.\n",
+        (string) config('app.env'),
+        (string) config('payments.default'),
+    ));
+    fwrite(STDERR, "Re-run with PAYMENTS_PROVIDER=mock (or APP_ENV=testing).\n");
+    fwrite(STDERR, "Refusing to attempt real bank transfers from a test harness.\n");
     exit(2);
 }
 

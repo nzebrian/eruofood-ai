@@ -53,15 +53,13 @@ final class FlutterwaveGateway extends AbstractHttpGateway
 
     public function transfer(BankAccount $destination, Money $amount, string $reference): GatewayResult
     {
-        $res = $this->client()->post('/transfers', [
+        return $this->transferResult($reference, fn () => $this->client()->post('/transfers', [
             'account_bank' => $destination->bankCode,
             'account_number' => $destination->accountNumber,
             'amount' => $amount->minorUnits / 100,
             'reference' => $reference,
             'currency' => $amount->currency,
-        ]);
-
-        return $this->result($res->successful(), $reference, $res->successful() ? 'processing' : 'failed');
+        ]));
     }
 
     public function parseWebhook(string $rawBody, string $signature): WebhookPayload

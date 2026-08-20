@@ -59,6 +59,71 @@ abstract class AbstractHttpGateway implements PaymentGateway, PayoutGateway
     }
 
     /**
+     * Perform a money-moving transfer and classify the outcome honestly.
+     *
+     * ## Why every adapter must route `transfer()` through this
+     *
+     * Each adapter previously ended with:
+     *
+     * ```php
+     * return $this->result($res->successful(), $reference, $res->successful() ? 'processing' : 'failed');
+     * ```
+     *
+     * Two things are wrong with that, and both can pay a merchant twice.
+     *
+     * 1. **A thrown exception escapes entirely.** A timeout, a reset connection
+     *    or a DNS failure propagates out of `transfer()`, past the settlement
+     *    service's outcome handling, and leaves the payout attempt sitting in
+     *    `created` with the run stuck in `processing` — the money possibly gone
+     *    and nothing recorded. That is precisely the crash window M27 exists to
+     *    close, reached without a crash.
+     * 2. **Every non-2xx became `failed`.** `failed` means the provider
+     *    declined, which makes the transfer safe to retry. A 502, a timeout, or
+     *    a 403 from an intermediary is not a decline — it is silence — and
+     *    retrying it is how the same money goes out twice.
+     *
+     * ## The classification, and why it is deliberately conservative
+     *
+     * - **2xx → `Processing`.** The provider accepted the instruction.
+     *   Confirmation arrives by webhook or by {@see fetchTransferStatus()}.
+     * - **Everything else → `Unknown`.** Every other status, and every thrown
+     *   exception.
+     *
+     * Treating 4xx as `Failed` is tempting and unsafe. A bare status line is not
+     * evidence about what the *provider* did: proxies, load balancers and WAFs
+     * all emit 4xx, a 409 frequently means "this reference already exists"
+     * (i.e. the transfer *did* happen), and a 403 may never have reached the
+     * provider at all. `Unknown` costs a reconciliation; a wrong `Failed` costs
+     * a duplicate payout. Only the reconciler, which asks the provider
+     * directly, may conclude that a transfer did not happen.
+     *
+     * This is the same rule {@see GatewayOutcome::fromLegacy()} applies to
+     * legacy results, now enforced at the point the network call is made.
+     *
+     * @param callable(): \Illuminate\Http\Client\Response $send
+     */
+    protected function transferResult(string $reference, callable $send): GatewayResult
+    {
+        try {
+            $response = $send();
+        } catch (Throwable $e) {
+            // The class, never the message: provider exceptions have been known
+            // to echo the request back, and a transfer request contains an
+            // account number.
+            return GatewayResult::unknown($reference, 'Transfer outcome unknown: '.$e::class);
+        }
+
+        if ($response->successful()) {
+            return GatewayResult::of(GatewayOutcome::Processing, $reference, 'Transfer accepted by the provider.');
+        }
+
+        return GatewayResult::unknown(
+            $reference,
+            'Transfer outcome unknown: provider returned HTTP '.$response->status().'.',
+        );
+    }
+
+    /**
      * @param array<string, mixed> $raw
      */
     protected function result(bool $success, string $reference, string $status, ?string $url = null, array $raw = []): GatewayResult
