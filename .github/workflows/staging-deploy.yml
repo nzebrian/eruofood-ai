@@ -103,9 +103,9 @@ jobs:
           # Secrets are expected to already live in the cluster's secret store
           # (External Secrets / sealed-secrets); we only roll the image tags.
           kubectl -n "$NS" apply -f infra/k8s/            # NetworkPolicy, etc.
-          kubectl -n "$NS" set image deploy/api    api=${REGISTRY}/${IMAGE_PREFIX}/api:$TAG || true
-          kubectl -n "$NS" set image deploy/worker worker=${REGISTRY}/${IMAGE_PREFIX}/api:$TAG || true
-          kubectl -n "$NS" set image deploy/web    web=${REGISTRY}/${IMAGE_PREFIX}/web:$TAG || true
+          kubectl -n "$NS" set image deploy/api    api="${REGISTRY}/${IMAGE_PREFIX}/api:$TAG" || true
+          kubectl -n "$NS" set image deploy/worker worker="${REGISTRY}/${IMAGE_PREFIX}/api:$TAG" || true
+          kubectl -n "$NS" set image deploy/web    web="${REGISTRY}/${IMAGE_PREFIX}/web:$TAG" || true
           # Expand-only migrations as a one-off Job (single runner).
           kubectl -n "$NS" apply -f infra/k8s/jobs/migrate.yaml || echo "add infra/k8s/jobs/migrate.yaml"
           kubectl -n "$NS" rollout status deploy/api --timeout=180s
