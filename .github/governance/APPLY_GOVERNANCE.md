@@ -54,10 +54,55 @@ write down the accounts.
 
 ## 1. Replace the CODEOWNERS placeholders
 
-Open `.github/CODEOWNERS`. Every rule is commented out and every owner is a
-`<OWNER:...>` token.
+Since M29-B this is a two-step: write the identities down in one place, then let
+the substitution be checked rather than typed. Doing it by hand still works, and
+step 1.2 checks it either way — but hand-substitution is how one wrong handle
+gets into a file that reads as correct, which is the failure this whole
+directory exists because of.
 
-1. Map each token to a real handle:
+### 1.1 Supply the identities
+
+```bash
+cp .github/governance/identities.example.json .github/governance/identities.json
+# edit: delete "_example", replace every <EXAMPLE:...> value
+php apps/api/scripts/verify_governance_identities.php
+```
+
+Keep going until it reports `READY FOR ACTIVATION`. It will refuse a missing
+role, an empty handle, a placeholder, a username GitHub would reject, a release
+actor given as a handle rather than a numeric id, and the example file used
+unchanged.
+
+Two rules that are stricter than they look, both deliberate:
+
+- **`FINANCE` may not be the repository owner.** GitHub forbids approving your
+  own pull request, so an owner who authors every change is not a second pair of
+  eyes on the money-moving paths — they are none, silently. Hard error.
+- **The release actor is a numeric `actor_id`**, not `@somebody`. Ruleset bypass
+  actors are identified numerically; a handle validates in any schema that
+  treats all identities alike, and is then rejected by the API.
+
+Then render a proposed CODEOWNERS somewhere you can read it:
+
+```bash
+php apps/api/scripts/verify_governance_identities.php \
+    --identities=.github/governance/identities.json \
+    --render-codeowners=/tmp/CODEOWNERS.proposed
+
+diff .github/CODEOWNERS /tmp/CODEOWNERS.proposed
+```
+
+The renderer will not write to the live `.github/CODEOWNERS`, will not overwrite
+an existing file, and has no `--force`. Copy the result in yourself, having read
+the diff. A generated CODEOWNERS is still a claim about who is accountable for
+the money-moving paths.
+
+### 1.2 Check the result
+
+Every owner is a `<OWNER:...>` token until this is done, and every rule is
+commented out.
+
+1. The token-to-domain map, if you are substituting by hand:
 
    | Token | Domain |
    |---|---|
@@ -85,11 +130,14 @@ Open `.github/CODEOWNERS`. Every rule is commented out and every owner is a
 5. Confirm locally:
 
    ```bash
-   php apps/api/scripts/verify_repository_governance.php
+   php apps/api/scripts/verify_repository_governance.php \
+     --codeowners-errors=<(gh api /repos/nzebrian/eruofood-ai/codeowners/errors)
    ```
 
-   The CODEOWNERS placeholder check moves from EXTERNAL/ADMIN REQUIRED to PASS
-   only when no `<OWNER:...>` token remains **and** at least one rule is active.
+   That check passes only when GitHub reports zero unknown owners **and** at
+   least one rule is active. Zero errors on its own is not enough: a
+   fully commented-out file also returns zero, which is exactly the state this
+   step is trying to leave.
 
 ---
 
@@ -127,11 +175,18 @@ jq '.rulesets[1]' .github/governance/production-tags-ruleset.json \
   | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -
 ```
 
-Before running 3a, add each release actor to `rulesets[0].bypass_actors`:
+Before running 3a, add each release actor to `rulesets[0].bypass_actors` — the
+same entries validated in §1.1 and recorded in `identities.json`:
 
 ```json
-{ "actor_id": 12345, "actor_type": "Team", "bypass_mode": "always" }
+{ "actor_id": 12345, "actor_type": "Integration", "bypass_mode": "always" }
 ```
+
+`rulesets[1].bypass_actors` stays `[]`. Not "stays empty for now" — stays empty.
+`verify_repository_governance.php` and `verify_governance_identities.php` both
+fail if an actor appears there, and the second one fails specifically when it is
+an actor that also holds creation authority, because that combination reads as
+correct in each file examined alone.
 
 Applied with an empty `bypass_actors`, 3a denies tag creation to **everyone**.
 That is the safe failure direction, but it does stop releases — so it should be

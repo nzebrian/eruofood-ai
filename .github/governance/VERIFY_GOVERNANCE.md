@@ -46,15 +46,44 @@ It checks:
 Anything depending on GitHub state is reported as **EXTERNAL / ADMIN REQUIRED**
 and never as PASS.
 
+### 1.1 Identity and activation readiness (M29-B)
+
+```bash
+php apps/api/scripts/verify_governance_identities.php
+```
+
+Reports `UNCONFIGURED`, `INCOMPLETE`, or `READY FOR ACTIVATION`. There is no
+state meaning *active*, and `READY FOR ACTIVATION` is a statement about this
+repository only.
+
+It checks that every role has a resolvable identity, that the release actor is a
+numeric actor id rather than a handle, that no placeholder or example value has
+survived into an active configuration, and that no active CODEOWNERS rule names
+an owner that cannot resolve. The `identities.example.json` template is rejected
+outright if used as the live file.
+
+An absent `identities.json` exits 0. Nobody has claimed an owner, so nothing is
+claiming falsely.
+
 ### Optional: feed it live GitHub data
 
 ```bash
 gh api /repos/nzebrian/eruofood-ai/rulesets > /tmp/rulesets.json
-php apps/api/scripts/verify_repository_governance.php --rulesets=/tmp/rulesets.json
+gh api /repos/nzebrian/eruofood-ai/codeowners/errors > /tmp/codeowners-errors.json
+
+php apps/api/scripts/verify_repository_governance.php \
+  --rulesets=/tmp/rulesets.json \
+  --codeowners-errors=/tmp/codeowners-errors.json
 ```
 
-With that file present, the external checks are evaluated for real rather than
-deferred.
+With those files present, the matching external checks are evaluated for real
+rather than deferred. Everything still unanswered stays EXTERNAL — supplying one
+file does not resolve the others.
+
+Note what the CODEOWNERS check does with a clean result: zero errors is treated
+as a **failure** while no rule is active, because a fully commented-out file also
+returns zero. Passing on that would mean this validator confirming that review
+routing works on a file which routes nothing — §2.7 below, made non-optional.
 
 ---
 
@@ -154,7 +183,8 @@ The API says what is configured. Only these say what happens. Re-run
 |---|---|
 | After any ruleset change | §1, §2, §3 |
 | After editing any workflow trigger | §1 — a re-added `paths:` filter silently breaks a required check |
-| After changing CODEOWNERS | §2.7 and §3 |
+| After changing identities.json | §1.1, then §2.7 once applied |
+| After changing CODEOWNERS | §1.1, §2.7 and §3 |
 | Monthly | §1 and §2 |
 | After every break-glass | §1, §2, §3 in full, per `BREAK_GLASS.md` |
 | Before enabling `settlement.execute` | everything, plus the M28 exit gate |

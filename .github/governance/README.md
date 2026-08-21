@@ -1,6 +1,6 @@
 # Repository Governance
 
-Prepared by **M29-A**. **Nothing here has been applied.**
+Prepared by **M29-A**, extended by **M29-B**. **Nothing here has been applied.**
 
 Every file in this directory describes protection that GitHub is *not* currently
 enforcing. They exist so that when an administrator with the right credential
@@ -56,6 +56,7 @@ which from reading the file. See `.github/CODEOWNERS`.
 | `main-ruleset.json` | The `refs/heads/main` ruleset, as a `POST /rulesets` body |
 | `production-tags-ruleset.json` | Two `refs/tags/v*` rulesets — restricted creation, and immutability |
 | `required-checks.json` | The seven check contexts, and why the other three are excluded |
+| `identities.example.json` | **M29-B.** The shape of the identity configuration. Names nobody |
 | `APPLY_GOVERNANCE.md` | Step-by-step for an administrator, including how to test each protection |
 | `VERIFY_GOVERNANCE.md` | How to confirm it is actually enforced afterwards |
 | `BREAK_GLASS.md` | The auditable emergency procedure, and why there is no standing bypass |
@@ -71,6 +72,51 @@ and **EXTERNAL / ADMIN REQUIRED** for everything that depends on GitHub state or
 on identities nobody has supplied. It will not call a policy enforced because a
 JSON file describing it exists.
 
+## The activation layer (M29-B)
+
+M29-A stopped in the right place — CODEOWNERS inert, every owner an
+`<OWNER:...>` token — but it left an obvious next failure. Somebody eventually
+substitutes handles by hand, gets one wrong, uncomments the rules, and the
+repository is back to a CODEOWNERS file that reads as configured and resolves to
+nobody: the M29-A defect, restored by the act of fixing it.
+
+So substitution has a gate:
+
+```bash
+php apps/api/scripts/verify_governance_identities.php
+```
+
+It reports one of three states, and there is deliberately no fourth:
+
+| State | Meaning |
+|---|---|
+| `UNCONFIGURED` | No `identities.json`. **The correct state today** — exits 0 |
+| `INCOMPLETE` | A configuration exists and cannot be used. Exits 1 |
+| `READY FOR ACTIVATION` | Every identity resolves *locally*. GitHub has still not been asked |
+
+There is no `ACTIVE`. Whether governance is active is a fact about GitHub, and
+adding a state for it here would rebuild the original defect one layer up — with
+the validator itself doing the asserting.
+
+To supply identities: copy `identities.example.json` to `identities.json`, drop
+the `_example` key, replace every `<EXAMPLE:...>` value, and run the script. It
+refuses the example three separate ways (the marker, the placeholder prefix, and
+the filename), because activating the shipped template by accident is the
+mistake with the longest feedback loop — nothing breaks until a real pull request
+needs a real reviewer.
+
+Rendering a CODEOWNERS from it is possible and fenced:
+
+```bash
+php apps/api/scripts/verify_governance_identities.php \
+    --identities=.github/governance/identities.json \
+    --render-codeowners=/tmp/CODEOWNERS.proposed
+```
+
+Both paths must be explicit, the target may never be the live
+`.github/CODEOWNERS`, an existing file is never overwritten, and there is no
+`--force`. Read the diff and commit it deliberately.
+
 ## What is still missing
 
 These are inputs, not tasks — nobody in this repository can derive them:
@@ -85,3 +131,7 @@ These are inputs, not tasks — nobody in this repository can derive them:
 4. **The release actor(s)** permitted to create `v*.*.*` tags.
 5. **An admin credential.** The M29-A session had `admin: false`; every
    governance write returned `403 Resource not accessible by integration`.
+
+M29-B did not resolve any of these — it built the place they go and the gate
+they pass through. Items 2 and 4 are now typed inputs with a validator attached
+rather than prose in a header comment; they are still unsupplied.

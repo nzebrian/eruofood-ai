@@ -27,22 +27,46 @@ declare(strict_types=1);
  * ## Feeding it real data
  *
  *   gh api /repos/{owner}/{repo}/rulesets > rulesets.json
- *   php scripts/verify_repository_governance.php --rulesets=rulesets.json
+ *   gh api /repos/{owner}/{repo}/codeowners/errors > codeowners-errors.json
+ *   php scripts/verify_repository_governance.php \
+ *       --rulesets=rulesets.json --codeowners-errors=codeowners-errors.json
  *
- * With that, the external checks are evaluated for real rather than deferred.
+ * With those, the matching external checks are evaluated for real rather than
+ * deferred. Everything still unanswered stays EXTERNAL — supplying one file
+ * does not resolve the others.
  *
  * Exit 0 when every repository-side check passes. A zero exit says nothing
  * about whether GitHub is enforcing anything.
+ *
+ * M29-B added section 7: the identity configuration that fills in the
+ * `<OWNER:...>` tokens, and the activation readiness that follows from it. The
+ * two-category rule is unchanged there — a resolved identity file is still not
+ * evidence that the account exists or can push.
  */
+
+require __DIR__.'/../vendor/autoload.php';
+
+use EruoFood\Shared\Domain\Governance\ActivationState;
+use EruoFood\Shared\Domain\Governance\GovernanceRole;
+use EruoFood\Shared\Domain\Governance\IdentityFinding;
+use EruoFood\Shared\Domain\Governance\IdentityPolicy;
 
 // scripts -> api -> apps -> <repo root>. Three levels, not two: apps/api is
 // the Laravel root, but governance artifacts live across the whole repository.
 $repoRoot = dirname(__DIR__, 3);
 
+// Live GitHub data, supplied as files rather than fetched. Read-only by
+// construction: this script has no way to reach GitHub, so it has no way to
+// change anything there. Whoever runs `gh api` decides what it sees.
 $rulesetsFile = null;
+$codeownerErrorsFile = null;
+
 foreach ($GLOBALS['argv'] ?? [] as $arg) {
     if (str_starts_with((string) $arg, '--rulesets=')) {
         $rulesetsFile = substr((string) $arg, strlen('--rulesets='));
+    }
+    if (str_starts_with((string) $arg, '--codeowners-errors=')) {
+        $codeownerErrorsFile = substr((string) $arg, strlen('--codeowners-errors='));
     }
 }
 
@@ -142,6 +166,7 @@ $requiredArtifacts = [
     'main-ruleset.json',
     'production-tags-ruleset.json',
     'required-checks.json',
+    'identities.example.json',
     'README.md',
     'APPLY_GOVERNANCE.md',
     'VERIFY_GOVERNANCE.md',
@@ -158,11 +183,13 @@ verify('every governance artifact exists', function () use ($governanceDir, $req
 });
 
 verify('every JSON artifact parses', function () use ($governanceDir): array {
-    foreach (['main-ruleset.json', 'production-tags-ruleset.json', 'required-checks.json'] as $file) {
+    $files = ['main-ruleset.json', 'production-tags-ruleset.json', 'required-checks.json', 'identities.example.json'];
+
+    foreach ($files as $file) {
         readJson($governanceDir.'/'.$file);
     }
 
-    return [true, '3 files'];
+    return [true, count($files).' files'];
 });
 
 // -- 2. main ruleset ----------------------------------------------------------
@@ -277,6 +304,7 @@ verify('commit signatures are NOT yet required', function () use ($mainRuleset):
 section('3) The prepared tag rulesets protect the production release path');
 
 $tagRulesets = [];
+$tagDoc = [];
 
 try {
     $tagDoc = readJson($governanceDir.'/production-tags-ruleset.json');
@@ -338,6 +366,42 @@ verify('the immutability ruleset has no bypass actor', function () use ($tagRule
     }
 
     return [$tagRulesets !== [], ''];
+});
+
+verify('creation authority and immutability are not in the same ruleset', function () use ($tagRulesets): array {
+    // M29-B. The failure this forbids does not look like a failure: one ruleset
+    // that both restricts creation and forbids deletion has to carry the release
+    // actors as bypass_actors to be usable at all — and bypass_actors is scoped
+    // to the whole ruleset, so those actors become exempt from deletion and
+    // update too. The configuration then reads "release tags are protected" and
+    // means "the release actor may delete any release tag".
+    foreach ($tagRulesets as $rs) {
+        if (ruleOfType($rs, 'creation') === null) {
+            continue;
+        }
+
+        foreach (['deletion', 'non_fast_forward', 'update'] as $type) {
+            if (ruleOfType($rs, $type) !== null) {
+                return [false, '"'.($rs['name'] ?? '?').'" restricts creation and enforces '.$type];
+            }
+        }
+    }
+
+    return [$tagRulesets !== [], 'the two-ruleset split holds'];
+});
+
+verify('the creation ruleset carries no bypass actor yet', function () use ($tagRulesets): array {
+    // Not a permanent invariant — this is where release actors legitimately go.
+    // It is checked so that the day one appears, it appears because somebody
+    // decided to put it there, having read production-tags-ruleset.json's
+    // actor_placeholder_contract.
+    foreach ($tagRulesets as $rs) {
+        if (ruleOfType($rs, 'creation') !== null && ($rs['bypass_actors'] ?? null) !== []) {
+            return [false, '"'.($rs['name'] ?? '?').'" already names release actors — confirm each is intended'];
+        }
+    }
+
+    return [$tagRulesets !== [], 'no release actor configured yet (tag creation denied to everyone)'];
 });
 
 // -- 4. Required checks -------------------------------------------------------
@@ -577,9 +641,178 @@ verify('it forbids a standing bypass', function () use ($governanceDir): array {
     ];
 });
 
-// -- 7. What only GitHub can answer -------------------------------------------
+// -- 7. Identity configuration and activation readiness (M29-B) ---------------
 
-section('7) GitHub-side — not provable from this repository');
+section('7) Identity configuration and activation readiness');
+
+$identitiesPath = $governanceDir.'/identities.json';
+$examplePath = $governanceDir.'/identities.example.json';
+
+$appliesTo = is_string($tagDoc['_meta']['applies_to'] ?? null) ? $tagDoc['_meta']['applies_to'] : '';
+$identityPolicy = new IdentityPolicy(explode('/', $appliesTo)[0] ?? '');
+
+$activeIdentities = null;
+$identitiesReadable = true;
+
+if (is_file($identitiesPath)) {
+    try {
+        $activeIdentities = readJson($identitiesPath);
+    } catch (Throwable) {
+        $identitiesReadable = false;
+    }
+}
+
+$assessment = $identityPolicy->evaluate(
+    $activeIdentities,
+    is_file($codeownersPath) ? (string) file_get_contents($codeownersPath) : '',
+    array_values(array_filter($tagRulesets, 'is_array')),
+);
+
+verify('the identity example is present and parses', function () use ($examplePath): array {
+    $doc = readJson($examplePath);
+
+    return [$doc !== [], basename($examplePath)];
+});
+
+verify('the example cannot be mistaken for an active configuration', function () use ($examplePath): array {
+    // Three independent signals, because this is the mistake with the longest
+    // feedback loop: nothing breaks until a real pull request needs a real
+    // reviewer, and by then nobody is looking at this file.
+    $doc = readJson($examplePath);
+    $problems = [];
+
+    if (($doc['_example'] ?? null) !== true) {
+        $problems[] = 'no "_example": true marker';
+    }
+
+    $body = (string) file_get_contents($examplePath);
+    if (! str_contains($body, '<EXAMPLE:')) {
+        $problems[] = 'no <EXAMPLE:...> placeholder values';
+    }
+
+    if (! str_contains(basename($examplePath), '.example.')) {
+        $problems[] = 'filename does not say example';
+    }
+
+    return [$problems === [], $problems === [] ? 'marker, placeholders and filename' : implode('; ', $problems)];
+});
+
+verify('the example names nobody', function () use ($examplePath, $identityPolicy): array {
+    // Run the real policy over the example and require it to be rejected. If the
+    // shipped template ever became activatable, somebody would activate it — and
+    // a CODEOWNERS full of plausible handles that resolve to nothing is the
+    // M29-A defect with better spelling.
+    $doc = readJson($examplePath);
+    $result = $identityPolicy->evaluate($doc, '', []);
+
+    $codes = array_map(static fn (IdentityFinding $f): string => $f->code, $result->errors());
+
+    return [
+        in_array('IDENTITY_EXAMPLE_USED_AS_ACTIVE', $codes, true) && ! $result->isReadyForActivation(),
+        'rejected as: '.(implode(', ', $codes) ?: 'nothing — the example is activatable, which it must not be'),
+    ];
+});
+
+verify('the identity policy agrees CODEOWNERS claims no unresolvable owner', function () use ($assessment): array {
+    // A cross-check, not a repeat of section 5. That check uses a deliberately
+    // loose handle pattern as a backstop; this one uses the strict rules that
+    // gate substitution. Agreement between them is the property worth having —
+    // if they ever diverge, a handle could pass the gate and fail the backstop,
+    // or worse, the other way round.
+    $offenders = array_values(array_filter(
+        $assessment->errors(),
+        static fn (IdentityFinding $f): bool => $f->code === 'CODEOWNERS_PLACEHOLDER_ACTIVE',
+    ));
+
+    return [
+        $offenders === [],
+        $offenders === []
+            ? 'both implementations agree'
+            : implode('; ', array_map(static fn (IdentityFinding $f): string => $f->summary, $offenders)),
+    ];
+});
+
+verify('the active identity configuration, if any, has no errors', function () use ($assessment, $identitiesReadable, $identitiesPath): array {
+    if (! $identitiesReadable) {
+        return [false, basename($identitiesPath).' does not parse'];
+    }
+
+    $errors = $assessment->errors();
+
+    return [
+        $errors === [],
+        $errors === []
+            ? $assessment->state->value
+            : implode('; ', array_map(static fn (IdentityFinding $f): string => $f->code.': '.$f->summary, $errors)),
+    ];
+});
+
+printf(
+    "  ACTIVATION STATE  %s — %s\n",
+    strtoupper(str_replace('_', ' ', $assessment->state->value)),
+    $assessment->state->summary(),
+);
+
+foreach (GovernanceRole::cases() as $role) {
+    $handles = $assessment->resolved[$role->value] ?? null;
+    printf("    %-14s %s\n", $role->value, $handles === null ? 'unresolved' : implode(' ', $handles));
+}
+
+foreach ($assessment->warnings() as $warning) {
+    printf("  WARNING %s  %s\n", $warning->code, $warning->summary);
+}
+
+// Even a flawless identity file leaves these open, and there is no code path
+// that removes one. See IdentityAssessment::externalRequirements(). They are
+// deferred unless somebody supplies GitHub's own answer; a file in this
+// repository is never that answer.
+$liveCodeownerErrors = null;
+
+if ($codeownerErrorsFile !== null) {
+    try {
+        $decoded = json_decode((string) file_get_contents($codeownerErrorsFile), true, 512, JSON_THROW_ON_ERROR);
+        $liveCodeownerErrors = is_array($decoded) ? $decoded : null;
+    } catch (Throwable $e) {
+        printf("  FAIL could not read --codeowners-errors file  (%s)\n", $e->getMessage());
+        $failed++;
+    }
+}
+
+foreach ($assessment->externalRequirements() as $requirement) {
+    if (! str_contains($requirement, 'codeowners/errors') || $liveCodeownerErrors === null) {
+        externalCheck($requirement);
+
+        continue;
+    }
+
+    externalCheck($requirement, function () use ($liveCodeownerErrors, $activeCodeownerRules): array {
+        $errors = is_array($liveCodeownerErrors['errors'] ?? null) ? $liveCodeownerErrors['errors'] : [];
+        $activeRules = count($activeCodeownerRules());
+
+        // Zero errors is necessary and not sufficient, and the insufficiency is
+        // the whole M29-A story: a fully commented-out file also reports zero.
+        // Reporting that as a pass would mean this validator confirming review
+        // routing works on a file that routes nothing.
+        if ($errors !== []) {
+            return [false, count($errors).' unknown owner(s): '.json_encode(array_slice($errors, 0, 3))];
+        }
+
+        if ($activeRules === 0) {
+            return [false, 'zero errors, but no rule is active — a commented-out file also reports zero'];
+        }
+
+        return [true, "zero errors across {$activeRules} active rule(s)"];
+    });
+}
+
+if ($assessment->state === ActivationState::ReadyForActivation) {
+    echo "\n  READY FOR ACTIVATION is a statement about this repository, not about\n";
+    echo "  GitHub. Nothing above upgrades an EXTERNAL item to a PASS.\n";
+}
+
+// -- 8. What only GitHub can answer -------------------------------------------
+
+section('8) GitHub-side — not provable from this repository');
 
 $liveRulesets = null;
 
@@ -644,9 +877,8 @@ if ($liveRulesets === null) {
     externalCheck('branch protection is effective (direct push and force-push refused)');
 }
 
-externalCheck('reviewer identities are configured (a second account with write access)');
-externalCheck('CODEOWNER identities resolve (GET /codeowners/errors returns zero)');
-externalCheck('release actor identities are configured for v*.*.* tag creation');
+// The identity-side externals are reported in section 7, from the assessment
+// itself, so they are not repeated here.
 
 // -- Result -------------------------------------------------------------------
 

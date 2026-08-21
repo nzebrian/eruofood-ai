@@ -1,0 +1,98 @@
+{
+  "_example": true,
+  "_meta": {
+    "artifact": "identities.example",
+    "status": "EXAMPLE — NOT ACTIVE. THIS FILE NAMES NOBODY.",
+    "purpose": "The shape of the identity configuration that fills in every <OWNER:...> token left in .github/CODEOWNERS by M29-A, plus the release actor that production-tags-ruleset.json needs before any release tag can be created.",
+    "prepared_by": "M29-B",
+    "prepared_against_main_sha": "cbdc2ab445ba157c1d4b2bccb5f766f81b6b0c31",
+
+    "how_to_use": [
+      "1. Copy this file to .github/governance/identities.json.",
+      "2. Delete the \"_example\" key. The validator rejects any configuration that still carries it, whatever the filename.",
+      "3. Replace every <EXAMPLE:...> value with a real handle or a real numeric actor id.",
+      "4. Run: php apps/api/scripts/verify_governance_identities.php",
+      "5. Only when that reports READY FOR ACTIVATION, follow .github/governance/APPLY_GOVERNANCE.md."
+    ],
+
+    "why_this_file_names_nobody": "M29-A found .github/CODEOWNERS naming six @eruofood/* teams that had never been able to resolve — the repository is owned by a user account, and user accounts cannot have teams. The file had read as configured for months. Shipping an example with plausible-looking handles would rebuild that defect with better spelling: somebody copies it, the handles look like people, and the file is wrong in exactly the way that takes months to notice. So every value here is a token that cannot be mistaken for an account, and the validator refuses three separate ways to activate this file by accident: the \"_example\" marker, the <EXAMPLE:...> placeholder prefix, and the actor_id type.",
+
+    "two_shapes_not_one": "A code owner is an @handle in a text file. A release actor is a numeric actor_id plus an actor_type inside a ruleset's bypass_actors. GitHub accepts neither in place of the other, so they are configured separately here rather than unified into something tidier that would validate locally and be rejected by the API.",
+
+    "roles_are_a_closed_set": "Unknown keys under \"codeowners\" are rejected rather than ignored. A typo like FINANC would otherwise leave the real role unfilled while the file looked complete. Adding a role means adding a GovernanceRole enum case and a <OWNER:...> token to CODEOWNERS in the same change.",
+
+    "what_this_file_cannot_establish": [
+      "that any named account exists",
+      "that any named account has write access — GitHub silently ignores a code owner who cannot push",
+      "that CODEOWNERS resolves (GET /repos/{owner}/{repo}/codeowners/errors)",
+      "that the actor_id is one GitHub will accept in bypass_actors",
+      "that any ruleset has been created, or is enforcing anything"
+    ],
+    "those_remain": "EXTERNAL / ADMIN REQUIRED. A resolved identity file records who somebody intends to be responsible. It is not evidence of a permission."
+  },
+
+  "repository": "nzebrian/eruofood-ai",
+
+  "codeowners": {
+    "MAINTAINERS": {
+      "paths": ["*"],
+      "handles": ["<EXAMPLE:catch-all-reviewer>"]
+    },
+    "API": {
+      "paths": ["/apps/api/", "/packages/api-contracts/"],
+      "handles": ["<EXAMPLE:api-reviewer>"]
+    },
+    "FINANCE": {
+      "paths": [
+        "/apps/api/modules/Payments/",
+        "/apps/api/config/payments.php",
+        "/apps/api/scripts/financial_concurrency_validation.php",
+        "/apps/api/scripts/financial_concurrency_worker.php",
+        "/apps/api/scripts/m27_negative_control_audit.php",
+        "/apps/api/scripts/restore_verification.php"
+      ],
+      "handles": ["<EXAMPLE:finance-reviewer>"],
+      "note": "The money-moving surface. This role may not be the repository owner: GitHub forbids approving your own pull request, so an owner who authors every change reviewing their own financial code is not four-eyes, it is none. The validator makes that a hard error for this role and a warning for the others."
+    },
+    "WEB": {
+      "paths": ["/apps/web/", "/packages/api-contracts/"],
+      "handles": ["<EXAMPLE:web-reviewer>"]
+    },
+    "MOBILE": {
+      "paths": ["/apps/mobile/"],
+      "handles": ["<EXAMPLE:mobile-reviewer>"]
+    },
+    "PLATFORM": {
+      "paths": [
+        "/infra/",
+        "/docker-compose.yml",
+        "/docker-compose.ci.yml",
+        "/.github/workflows/",
+        "/docs/PRODUCTION_DEPLOYMENT.md",
+        "/docs/PRODUCTION_RELEASE_CHECKLIST.md",
+        "/docs/GA_RELEASE_CHECKLIST.md",
+        "/docs/ROLLBACK_PLAN.md",
+        "/docs/DISASTER_RECOVERY.md",
+        "/docs/BACKUP_RESTORE.md",
+        "/docs/INCIDENT_RESPONSE.md",
+        "/docs/ENVIRONMENT_SEPARATION.md"
+      ],
+      "handles": ["<EXAMPLE:platform-reviewer>"],
+      "note": "Owns the workflow files. A change there can stop a required check reporting, which GitHub treats as pending rather than failed — the same as switching the gate off, without the gate ever going red."
+    },
+    "GOVERNANCE": {
+      "paths": ["/.github/governance/", "/.github/CODEOWNERS"],
+      "handles": ["<EXAMPLE:governance-reviewer>"],
+      "note": "CODEOWNERS is listed last in the file so this rule wins over every rule above it. Governance that can be widened by editing the file that enforces it is not governance."
+    }
+  },
+
+  "release_actors": [
+    {
+      "actor_id": "<EXAMPLE:numeric-actor-id>",
+      "actor_type": "<EXAMPLE:Integration|RepositoryRole|Team>",
+      "bypass_mode": "always",
+      "note": "Goes into rulesets[0] of production-tags-ruleset.json — the creation ruleset — and nowhere else. Never into rulesets[1], the immutability ruleset, whose bypass_actors must stay []. Authority to create a release tag is not authority to unmake one. actor_type OrganizationAdmin is rejected: 'whoever happens to be an admin' is a category whose membership changes without anybody deciding that release authority should change with it."
+    }
+  ]
+}
