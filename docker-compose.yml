@@ -13,7 +13,7 @@ x-app-env: &app-env
   APP_ENV: ${APP_ENV:-local}
   DB_HOST: postgres
   DB_PORT: 5432
-  DB_DATABASE: ${POSTGRES_DB:-eruofood}
+  DB_DATABASE: ${POSTGRES_DB:-eruofood_local}
   DB_USERNAME: ${POSTGRES_USER:-eruofood}
   DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
   REDIS_HOST: redis
@@ -86,7 +86,7 @@ services:
   postgres:
     image: postgres:${POSTGRES_IMAGE_TAG:-16-alpine}
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-eruofood}
+      POSTGRES_DB: ${POSTGRES_DB:-eruofood_local}
       POSTGRES_USER: ${POSTGRES_USER:-eruofood}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
     volumes:

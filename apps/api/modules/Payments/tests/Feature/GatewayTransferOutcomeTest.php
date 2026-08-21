@@ -41,11 +41,20 @@ function gatewayFor(PaymentProvider $provider, int|ConnectionException $response
     // falls through to a default empty 200 — which silently made the "accepted
     // transfer" case look broken and, more dangerously, could have made the
     // failure cases pass for the wrong reason.
-    Http::fake(static fn (): mixed => $response instanceof ConnectionException
+    //
+    // And a fresh factory each time, not the container's shared one. Illuminate
+    // registers fake stubs cumulatively with first-match-wins, so a second
+    // Http::fake() inside one test is ignored: the sweeps below built five
+    // gateways and unknowingly answered all five from the first provider's
+    // stub, testing one adapter five times. Found in M28 while extending this
+    // file; the assertions were right, the coverage was not.
+    $http = new Illuminate\Http\Client\Factory();
+
+    $http->fake(static fn (): mixed => $response instanceof ConnectionException
         ? throw $response
         : Http::response(['ok' => $response < 400], $response));
 
-    return (new GatewayFactory(app(Illuminate\Http\Client\Factory::class), [
+    return (new GatewayFactory($http, [
         'default' => $provider->value,
         'providers' => [$provider->value => [
             'enabled' => true,

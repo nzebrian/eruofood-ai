@@ -25,6 +25,20 @@ return [
     */
     'default' => env('PAYMENTS_PROVIDER', env('APP_ENV') === 'testing' ? 'mock' : 'paystack'),
 
+    /*
+    | Did somebody *choose* the provider above, or did they inherit it?
+    |
+    | `default` cannot answer that: "paystack because the operator set it" and
+    | "paystack because nobody set anything" are the same string. M27's CI
+    | failure was the second case — the concurrency harness attempted real bank
+    | transfers because the fallback happened to be a live gateway.
+    |
+    | Recorded here rather than read with env() at the point of use, because
+    | env() returns null once config is cached — which is exactly the situation
+    | in production, where getting this wrong matters most.
+    */
+    'provider_pinned' => trim((string) env('PAYMENTS_PROVIDER', '')) !== '',
+
     /** @var list<string> */
     'fallbacks' => array_values(array_filter(explode(',', (string) env('PAYMENTS_FALLBACKS', 'flutterwave,moniepoint')))),
 

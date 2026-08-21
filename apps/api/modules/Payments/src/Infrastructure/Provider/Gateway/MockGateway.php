@@ -38,6 +38,17 @@ final class MockGateway implements PaymentGateway, PayoutGateway
     /** @var array<string, GatewayOutcome> providerReference => status answer */
     private static array $statusAnswers = [];
 
+    /**
+     * How many times a transfer has actually been attempted.
+     *
+     * Exists so a test can assert the negative: that a kill switch stopped the
+     * platform *before* it reached the provider, rather than after. The absence
+     * of a payout row proves nothing was recorded; only this proves nothing was
+     * sent. With a real gateway those two are the same question asked before and
+     * after the money leaves.
+     */
+    private static int $transferCount = 0;
+
     /** Make the next transfer return $outcome instead of succeeding. */
     public static function nextTransfer(GatewayOutcome $outcome): void
     {
@@ -50,10 +61,17 @@ final class MockGateway implements PaymentGateway, PayoutGateway
         self::$statusAnswers[$reference] = $outcome;
     }
 
+    /** Transfers attempted since the last {@see reset()}. */
+    public static function transferCount(): int
+    {
+        return self::$transferCount;
+    }
+
     public static function reset(): void
     {
         self::$transferOutcomes = [];
         self::$statusAnswers = [];
+        self::$transferCount = 0;
     }
 
     public function provider(): PaymentProvider
@@ -84,6 +102,8 @@ final class MockGateway implements PaymentGateway, PayoutGateway
 
     public function transfer(BankAccount $destination, Money $amount, string $reference): GatewayResult
     {
+        self::$transferCount++;
+
         $outcome = array_shift(self::$transferOutcomes)
             ?? self::fromEnvironment('MOCK_GATEWAY_TRANSFER_OUTCOME')
             ?? GatewayOutcome::Succeeded;

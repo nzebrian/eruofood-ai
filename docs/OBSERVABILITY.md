@@ -77,3 +77,69 @@ cover exactly the signals the milestone requires:
 | Metrics endpoints + exporters | NOT VALIDATED (deployment-time; series names specified) |
 | Alert rules | STATIC VALIDATION ONLY (authored, deployment-ready — `infra/monitoring/alert-rules.yaml`) |
 | Distributed tracing / Sentry | NOT VALIDATED (env templated; wire at deploy) |
+
+## 8. Financial and security alerting (M28)
+
+Sections 1–7 watch whether the platform is **up**. They were written in M21 and,
+like every other operations document in this repository, predate M27 — so when
+settlement shipped, the entire financial subsystem arrived unmonitored. Nothing
+watched for an unknown transfer outcome, a ledger that stopped balancing, or a
+payout attempted twice.
+
+Two groups in `infra/monitoring/alert-rules.yaml` close that:
+
+### `eruofood-financial`
+
+| Signal | Alert | Severity |
+|---|---|---|
+| UNKNOWN transfer outcome | `SettlementUnknownOutcome` (`for: 0m`) | critical |
+| Unknowns not being resolved | `SettlementUnknownBacklog` (2h) | critical |
+| Duplicate payout attempted | `DuplicatePayoutAttempted` | critical |
+| Ledger does not net to zero | `LedgerImbalance` | critical |
+| Payable ≠ derived payable | `PayableDrift` | critical |
+| Reconciliation backlog | `ReconciliationBacklog` | warning |
+| Settlement failure rate | `SettlementFailureRate` | warning |
+| Provider unreachable | `PaymentProviderUnreachable` | critical |
+| Abnormal payout volume | `AbnormalPayoutVolume` | critical |
+| Financial job on a timer | `FinancialScheduleUnexpectedlyEnabled` | critical |
+
+### `eruofood-security`
+
+| Signal | Alert | Severity |
+|---|---|---|
+| Denied finance permission | `PrivilegedFinancialAccessDenied` | warning |
+| Money moved out of hours | `FinancialActionOutsideBusinessHours` | warning |
+| Break-glass access used | `BreakGlassAccessUsed` | critical |
+| Adjustment or reversal performed | `SuperAdminFinancialOverride` | warning |
+| Unsafe configuration detected | `ConfigurationChangeUnverified` | critical |
+
+### Actionable, not decorative
+
+Every rule in both groups carries an `owner` label and a `response` annotation
+saying what the responder should actually do — including, where it is the right
+first move, *disable `settlement.execute` before investigating*.
+`AlertRuleCoverageTest` fails the build if a rule loses its owner, its response,
+or its severity, if any required signal disappears, or if one of the four
+un-tunable alerts is softened below critical.
+
+`SettlementUnknownOutcome` fires at `for: 0m`. Waiting even five minutes to
+mention that a transfer's outcome is unknown is five minutes in which somebody
+could retry it.
+
+### Required metrics
+
+These series must be emitted by the app exporter for the rules above to fire.
+Until settlement is enabled they are all flat at zero, which is the point — the
+alerts are in place *before* the first live payout, not after the first incident:
+
+`eruofood_settlement_runs_total{state}`, `eruofood_settlement_runs_unknown`,
+`eruofood_payout_duplicate_rejected_total`, `eruofood_ledger_net_minor`,
+`eruofood_payable_ledger_minor`, `eruofood_payable_derived_minor`,
+`eruofood_reconciliation_cases_open`, `eruofood_gateway_transport_errors_total`,
+`eruofood_payout_amount_minor_total`, `eruofood_scheduled_financial_tasks_enabled`,
+`eruofood_authz_denied_total{permission}`, `eruofood_financial_actions_total{action}`,
+`eruofood_break_glass_total`, `eruofood_environment_verification_failures`.
+
+**Status: the exporter does not emit these yet.** The rules are authored and
+tested; wiring the metrics is deployment-time work and is a precondition for
+enabling `settlement.execute`, not for this milestone.
