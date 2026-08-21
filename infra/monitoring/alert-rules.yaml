@@ -109,3 +109,207 @@ groups:
         for: 5m
         labels: { severity: warning }
         annotations: { summary: "Object-storage errors (media uploads degrading)" }
+
+  # ---------------------------------------------------------------------------
+  # M28 — financial alerts.
+  #
+  # The groups above watch whether the platform is *up*. These watch whether the
+  # money is *right*, which is a different question with a different owner and a
+  # different response. None of them existed before M28: every ops document in
+  # this repository predates M27, so the entire settlement subsystem shipped
+  # unmonitored.
+  #
+  # Every rule below names what the responder should do. An alert that fires at
+  # 3am and says only "reconciliation backlog high" costs more than it saves.
+  #
+  # These series are emitted by the app exporter. Until settlement is enabled
+  # they are all flat at zero, which is the point: the alerts are in place
+  # *before* the first live payout, not after the first incident.
+  # ---------------------------------------------------------------------------
+  - name: eruofood-financial
+    rules:
+      - alert: SettlementUnknownOutcome
+        # The one that matters most. An unknown transfer may already have paid
+        # the merchant; nothing may retry it, and only reconciliation can say.
+        expr: increase(eruofood_settlement_runs_total{state="unknown"}[15m]) > 0
+        for: 0m
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "A settlement run entered UNKNOWN — a transfer's outcome is not known"
+          response: >-
+            Do NOT retry the run; the platform will refuse anyway. Confirm the
+            reconciler is running, then check the provider dashboard for the
+            payout reference. The run leaves UNKNOWN only via reconciliation.
+          runbook: "docs/DISASTER_RECOVERY.md#financial-safety-during-an-outage"
+
+      - alert: SettlementUnknownBacklog
+        # One unknown is an incident. Several that stay unknown means the
+        # reconciler is not resolving them, and merchant money is in limbo.
+        expr: eruofood_settlement_runs_unknown > 0
+        for: 2h
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "Settlement runs have been UNKNOWN for over 2 hours"
+          response: >-
+            The reconciler is not clearing them. Check settlement.reconcile is
+            enabled and that transfer_status_path is configured for the active
+            provider — an adapter that cannot ask returns UNKNOWN forever.
+
+      - alert: DuplicatePayoutAttempted
+        # The database makes this structurally impossible, so a non-zero value
+        # means a unique constraint is missing, not that a payout succeeded twice.
+        expr: increase(eruofood_payout_duplicate_rejected_total[5m]) > 0
+        for: 0m
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "A duplicate payout was attempted and rejected"
+          response: >-
+            The rejection is the safety net working; the attempt is the defect.
+            Find the caller. Then verify the unique constraints are still present
+            with `php scripts/restore_verification.php`.
+
+      - alert: LedgerImbalance
+        # Double-entry either balances or the book is wrong. There is no
+        # tolerance band and no "small" imbalance.
+        expr: eruofood_ledger_net_minor != 0
+        for: 5m
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "The double-entry ledger does not net to zero"
+          response: >-
+            Freeze settlement (FLAG_SETTLEMENT_EXECUTE=false) before anything
+            else. Run `php artisan payments:verify-ledger` to find the unbalanced
+            correlation. Do not settle again until it is explained.
+
+      - alert: PayableDrift
+        # Two independent derivations of the same number disagreeing. One of the
+        # two writes went missing and neither can be trusted.
+        expr: abs(eruofood_payable_ledger_minor - eruofood_payable_derived_minor) > 0
+        for: 15m
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "MerchantPayable ledger balance disagrees with the derived payable"
+          response: >-
+            Freeze settlement. The ledger and the accrual records are two
+            derivations of the same figure; when they differ, a posting or an
+            accrual is missing. Reconcile before any further payout.
+
+      - alert: ReconciliationBacklog
+        expr: eruofood_reconciliation_cases_open > 25
+        for: 1h
+        labels: { severity: warning, owner: finance }
+        annotations:
+          summary: "Open reconciliation cases above threshold"
+          response: >-
+            Triage by kind. A rising OrphanAccrual count usually means an
+            upstream event stopped firing; rising ProviderMismatch means the
+            provider and the platform disagree about what was paid.
+
+      - alert: SettlementFailureRate
+        expr: >-
+          increase(eruofood_settlement_runs_total{state="failed"}[30m])
+          / clamp_min(increase(eruofood_settlement_runs_total[30m]), 1) > 0.1
+        for: 15m
+        labels: { severity: warning, owner: finance }
+        annotations:
+          summary: "More than 10% of settlement runs are failing"
+          response: >-
+            Check provider health first. Note that FAILED means the provider
+            declined — genuinely retryable. UNKNOWN is the alert above and is not.
+
+      - alert: PaymentProviderUnreachable
+        expr: increase(eruofood_gateway_transport_errors_total[10m]) > 5
+        for: 5m
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "Payment provider communication failing"
+          response: >-
+            Every transfer attempted during this window resolves to UNKNOWN by
+            design, so expect SettlementUnknownOutcome to follow. Consider
+            disabling settlement.execute until the provider recovers, to stop
+            creating unknowns faster than reconciliation clears them.
+
+      - alert: AbnormalPayoutVolume
+        # Deliberately crude and deliberately present. The failure this guards
+        # against is a loop paying the same cohort repeatedly, which looks
+        # healthy on every other metric.
+        expr: >-
+          increase(eruofood_payout_amount_minor_total[1h])
+          > 3 * (increase(eruofood_payout_amount_minor_total[24h] offset 24h) / 24)
+        for: 10m
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "Payout volume is more than 3x the trailing hourly average"
+          response: >-
+            Treat as a possible runaway settlement. Set FLAG_SETTLEMENT_EXECUTE=false
+            first and investigate second — in-flight attempts are left alone and
+            reconciled, which is safe; abandoning them is not.
+
+      - alert: FinancialScheduleUnexpectedlyEnabled
+        # Money never moves on a timer in M27. If this fires, configuration
+        # drifted.
+        expr: eruofood_scheduled_financial_tasks_enabled > 0
+        for: 0m
+        labels: { severity: critical, owner: finance }
+        annotations:
+          summary: "A scheduled financial job is enabled"
+          response: >-
+            Confirm this was a deliberate, approved change. Both settlement tasks
+            are registered disabled in code; enabling one requires a code change,
+            so a change here means someone deployed one.
+
+  - name: eruofood-security
+    rules:
+      - alert: PrivilegedFinancialAccessDenied
+        expr: increase(eruofood_authz_denied_total{permission=~"finance\\..*"}[10m]) > 3
+        for: 5m
+        labels: { severity: warning, owner: security }
+        annotations:
+          summary: "Repeated denied attempts at a finance permission"
+          response: >-
+            Identify the actor. A support account repeatedly hitting finance.payout
+            is either a broken UI or someone probing the separation of duties.
+
+      - alert: FinancialActionOutsideBusinessHours
+        expr: >-
+          increase(eruofood_financial_actions_total{action=~"settle|payout|adjust|reverse"}[15m]) > 0
+          and on() (hour() < 6 or hour() > 20)
+        for: 0m
+        labels: { severity: warning, owner: security }
+        annotations:
+          summary: "Money-moving action performed outside business hours"
+          response: >-
+            Not inherently wrong — incidents happen at night. Confirm the actor
+            and the reason against the audit log entry, which records both.
+
+      - alert: BreakGlassAccessUsed
+        expr: increase(eruofood_break_glass_total[5m]) > 0
+        for: 0m
+        labels: { severity: critical, owner: security }
+        annotations:
+          summary: "Break-glass access was used"
+          response: >-
+            Page the on-call security owner regardless of hour. Confirm the
+            session against the audit log and revoke when the incident closes.
+
+      - alert: SuperAdminFinancialOverride
+        # adjust and reverse are SuperAdmin-only and rewrite financial history.
+        expr: increase(eruofood_financial_actions_total{action=~"adjust|reverse"}[15m]) > 0
+        for: 0m
+        labels: { severity: warning, owner: finance }
+        annotations:
+          summary: "A financial adjustment or reversal was performed"
+          response: >-
+            These are the only actions that alter a settled figure. Verify the
+            recorded reason and the compensating posting exist.
+
+      - alert: ConfigurationChangeUnverified
+        expr: eruofood_environment_verification_failures > 0
+        for: 10m
+        labels: { severity: critical, owner: platform }
+        annotations:
+          summary: "ops:verify-environment is reporting unsafe configuration"
+          response: >-
+            Run `php artisan ops:verify-environment` on the affected deployment
+            and read the remedy on each finding. A live provider outside
+            production, or settlement flags out of order, are stop-the-line.
