@@ -48,7 +48,7 @@ jobs:
 
       - name: Wait for health (postgres, redis, api)
         run: |
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             unhealthy=$(docker compose ps --format '{{.Name}} {{.Health}}' | grep -E 'starting|unhealthy' || true)
             if [ -z "$unhealthy" ]; then echo "All services healthy."; break; fi
             echo "still starting: $unhealthy"; sleep 5

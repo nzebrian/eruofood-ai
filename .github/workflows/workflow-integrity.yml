@@ -1,0 +1,74 @@
+name: CI · Workflow Integrity
+
+# Every other workflow in this repository is checked by CI. Until M29-E, the
+# workflows themselves were not, and it cost the project its production release
+# gate: `release.yml` was invalid YAML from 2026-08-04 until M29-D, and GitHub
+# could not load it. Thirty-odd pushes — on main, on feature branches, on every
+# dependabot branch — each produced an instant zero-job startup failure.
+#
+# Nobody caught it because the symptom is camouflaged. In the Actions tab a
+# workflow that cannot be parsed looks exactly like a gate that ran and failed.
+# The file described itself as a MANDATORY production gate throughout.
+#
+# So this job asks the one question nothing was asking: can GitHub actually
+# parse and run what is in .github/workflows?
+
+on:
+  pull_request:
+    paths: [".github/workflows/**"]
+  push:
+    branches: [main]
+    paths: [".github/workflows/**"]
+
+# Read-only. This job inspects files and runs a linter; it needs nothing else,
+# and a workflow-validation job holding write scope would be a strange thing to
+# hand a future contributor's pull request.
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-integrity-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned exactly, and verified. A floating tag would mean the gate guarding
+  # the workflows is itself fetched from a moving target.
+  ACTIONLINT_VERSION: "1.7.7"
+  ACTIONLINT_SHA256: "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+
+jobs:
+  actionlint:
+    name: Validate · actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install actionlint (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+
+          # Verify before extracting, not after. An archive that fails this
+          # check is never unpacked, so nothing from it can run.
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --strict
+
+          tar -xzf "$archive" actionlint
+          ./actionlint --version
+
+      - name: Validate every workflow
+        # Every file, not only the ones this pull request touched. A change to
+        # workflow A can invalidate workflow B — a reusable workflow signature,
+        # a renamed job another workflow needs — and the defect that started
+        # this had sat in an untouched file for months.
+        run: ./actionlint -color .github/workflows/*.yml
+
+      - name: Negative control — prove the gate rejects what it should
+        # A validator whose subject is already clean passes for two
+        # indistinguishable reasons: it works, or it checks nothing. This feeds
+        # it the historical defect plus two relatives, requires each to be
+        # rejected by name, and requires a well-formed workflow to be accepted.
+        env:
+          ACTIONLINT: ${{ github.workspace }}/actionlint
+        run: .github/scripts/workflow_integrity_negative_control.sh
