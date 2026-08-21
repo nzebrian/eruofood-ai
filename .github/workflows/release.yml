@@ -132,7 +132,15 @@ jobs:
         with: { fetch-depth: 0 }
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
-        env: { GITHUB_TOKEN: ${{ github.token }} }
+        # Block style, not `env: { GITHUB_TOKEN: ${{ github.token }} }`. Inside a
+        # YAML flow mapping the `{` of `${{` opens a nested mapping, so that line
+        # is not valid YAML — and GitHub could not load this workflow at all
+        # because of it. Every push to every branch since 2026-08-04 produced an
+        # instant zero-job startup failure, which reads in the Actions tab like a
+        # failing gate rather than a gate that never ran. In block context the
+        # expression is an ordinary scalar and the trap does not exist.
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
       - name: Composer audit
         working-directory: apps/api
         run: |
