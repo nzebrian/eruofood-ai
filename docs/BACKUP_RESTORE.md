@@ -118,3 +118,103 @@ point-in-time recovery via WAL replay remain deployment-time validations against
 managed infrastructure — they cannot be exercised in a single-node container,
 and this document does not claim otherwise.
 
+
+## 5. Financial and audit records — what a restore must additionally prove
+
+Sections 1–4 cover getting the bytes back. For a platform that moves merchant
+money, that is the easy half. `pg_restore` exiting zero says nothing about
+whether the ledger still balances, whether a settlement line survived without
+the run it belongs to, or whether the constraints that make a second payout
+structurally impossible came back with the data. A restore that quietly dropped
+a unique index looks exactly like a good one — until the first duplicate payout.
+
+### Additional backup scope
+
+These are covered by the PostgreSQL backup above, and are called out because
+their **retention** is driven by finance and compliance rather than by RPO:
+
+| Records | Tables | Retain |
+|---|---|---|
+| Payable accruals | `payments_payable_accruals` | 7 years (financial record) |
+| Settlement runs and lines | `payments_settlement_runs`, `payments_settlement_lines` | 7 years |
+| Payout attempts | `payments_payout_attempts` | 7 years |
+| Reconciliation cases | `payments_reconciliation_cases` | 7 years |
+| Double-entry ledger | `payments_ledger_entries` | 7 years, append-only |
+| Privileged action audit | `admin_audit_log` | 7 years, append-only |
+
+The two append-only tables carry database triggers that refuse `UPDATE` and
+`DELETE`. Those triggers are part of the backup and must come back with it —
+see the verification below.
+
+### Verification — `scripts/restore_verification.php`
+
+Run against the **restored copy**, never production:
+
+```bash
+DB_DATABASE=<restored-copy> php scripts/restore_verification.php
+```
+
+It is read-only and exits non-zero on any failure. It asks six questions:
+
+1. **Schema head** — migrations recorded, every financial table present, all
+   five M27 migrations applied.
+2. **Readability** — application data comes back, not just the schema.
+3. **Referential integrity** — no orphaned settlement line, no orphaned payout
+   attempt, no ledger entry without a correlation id.
+4. **Financial consistency** — every accrual and run's net equals gross minus
+   commission minus fee; every run's net equals the sum of the lines it reserved.
+5. **Ledger integrity** — the book nets to zero, *and every correlation balances
+   on its own*. A ledger can net to zero while individual events are broken,
+   because two opposite errors cancel.
+6. **Duplicate-payout safety** — no accrual on two lines, no run with two
+   settled attempts, and the unique indexes, CHECK constraints and append-only
+   triggers that guarantee it are all still present.
+
+Point 6 is the one that distinguishes this from a smoke test. The data being
+clean today is not the guarantee; the constraint is.
+
+### Drill record
+
+| | |
+|---|---|
+| Date | 2026-08-21 |
+| Source | `eruofood_concurrency` — 11 accruals, 7 settlement runs, 7 lines, 3 payout attempts, 74 ledger entries |
+| Method | `pg_dump --format=custom --no-owner` → 364 KB |
+| Target | `eruofood_restore_drill`, created empty |
+| Dump duration | 1.09 s |
+| Restore duration | 1.21 s |
+| Verification | **25 checks passed, 0 failed** (0.07 s) |
+| Environment | Non-production. No production data was involved. |
+
+**Negative controls.** A verifier that passes on a broken restore is worse than
+none, so the drill also damaged copies of the restored database and confirmed
+each check bites:
+
+| Damage | Caught by |
+|---|---|
+| Unique constraint on `settlement_lines.accrual_id` dropped | duplicate-payout safety |
+| Settlement run deleted | referential integrity (2 orphaned lines) |
+| Accrual deleted | referential integrity (1 orphaned line) |
+| Ledger amount altered | ledger integrity (net=1, 1 unbalanced correlation) |
+| Accrual figures made inconsistent | financial consistency |
+| Four-eyes CHECK dropped | duplicate-payout safety |
+| Append-only trigger dropped | duplicate-payout safety |
+
+Two of the intended controls **could not be applied at all**: the append-only
+trigger refused the ledger `UPDATE`, and the `net_derived` CHECK refused the
+inconsistent accrual. That is the protection working. It is also what prompted
+adding the append-only trigger check — a restore that lost those triggers would
+leave the ledger rewritable with nothing to say so.
+
+### Limitations of this drill
+
+Stated so the record is not read as more than it is:
+
+- It restored a **non-production database of test data**, not a production
+  backup. The RTO figures above are therefore not a production RTO.
+- It exercised **logical restore** (`pg_dump`/`pg_restore`). Point-in-time
+  recovery from WAL, which is what delivers the ≤5 min RPO, has **not** been
+  drilled — it needs the managed instance and is a deployment-time exercise.
+- Object storage and Redis restore were not exercised.
+- The monthly drill in §1 remains required, and must be run against a real
+  production backup before the first live payout.

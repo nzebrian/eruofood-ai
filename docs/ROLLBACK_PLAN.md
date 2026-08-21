@@ -72,3 +72,39 @@ php artisan migrate:rollback --step=<N> --force
 If the fault is small and understood, a **roll-forward** patch release (hotfix
 tag through the same gated pipeline) can be preferable to a rollback — decided by
 on-call based on blast radius and time-to-fix.
+
+## 7. Rolling back a milestone merge (M27 settlement baseline)
+
+The sections above roll back a *release*. This rolls back a *merge*, which is
+what you want when a milestone has landed on `main` but nothing has been
+deployed from it yet.
+
+**M27 verified settlement baseline**
+
+| | |
+|---|---|
+| Merge commit | `8a2a2e8d90e51f45f00be56316304f1788621c55` |
+| `main` before the merge | `fc412dcd9721fd9d3fb48f4b81f804819bdf014f` |
+| Branch merged | `claude/m27-settlement` @ `77a8526`, retained on origin |
+| Revert | `git revert -m 1 8a2a2e8` — restores tree `090e6542`, identical to `fc412dc` |
+
+`-m 1` is not optional: it selects the first parent, which is the pre-merge
+`main`. Reverting the wrong parent keeps M27 and discards everything `main` had.
+
+**No database rollback is required.** M27 is expand-only: all five of its
+migrations create new tables and none alter or drop an existing one, so the
+pre-M27 code runs unchanged against the post-M27 schema. The new tables simply
+stop being written to.
+
+**What a revert does not undo.** Nothing, currently — every settlement flag is
+off, so no accrual, run, payout or ledger posting from M27 exists in production.
+That stops being true the moment `settlement.accrual_posting` is enabled: from
+then on, reverting the code leaves accrual rows and `MerchantPayable` postings
+behind, and removing those is a compensating posting rather than a revert.
+Before enabling that flag, this section needs a data-rollback plan; a code revert
+alone is no longer sufficient.
+
+**Prefer the flag to the revert.** For anything financial, disabling
+`FLAG_SETTLEMENT_EXECUTE` is faster, needs no deploy, and leaves in-flight
+transfers to be reconciled rather than abandoned — which is the difference
+between a payout with a known outcome and one with an unknown one.

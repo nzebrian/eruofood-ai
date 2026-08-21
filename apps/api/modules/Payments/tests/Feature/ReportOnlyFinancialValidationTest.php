@@ -80,7 +80,7 @@ function roPostingMode(): void
 }
 
 /** Take a real payment through capture, then mark the order financially final. */
-function roCapture(object $test, string $orderId, int $grossMinor, string $email): void
+function m28Capture(object $test, string $orderId, int $grossMinor, string $email): void
 {
     Mail::fake();
     $token = $test->postJson('/api/v1/auth/register', [
@@ -112,7 +112,7 @@ describe('the chain, link by link', function (): void {
         roReportOnlyMode();
         $ledger = app(LedgerService::class);
 
-        roCapture($this, '8a000000-0000-4000-8000-000000000001', 1_000_000, 'ro-capture@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000001', 1_000_000, 'ro-capture@example.com');
 
         // Link 1→2: the payment produced double-entry postings.
         expect($ledger->balanceOf(LedgerAccount::Escrow))->toBeGreaterThan(0)
@@ -123,7 +123,7 @@ describe('the chain, link by link', function (): void {
 
     it('derives the accrual from the ledger capture, not from anything supplied', function (): void {
         roReportOnlyMode();
-        roCapture($this, '8a000000-0000-4000-8000-000000000002', 1_000_000, 'ro-derive@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000002', 1_000_000, 'ro-derive@example.com');
 
         $accrual = app(PayableAccrualRepository::class)
             ->findEarningForOrder('8a000000-0000-4000-8000-000000000002');
@@ -147,8 +147,8 @@ describe('the chain, link by link', function (): void {
         // ledger, these would not differ in step.
         roReportOnlyMode();
 
-        roCapture($this, '8a000000-0000-4000-8000-000000000003', 1_000_000, 'ro-track-a@example.com');
-        roCapture($this, '8a000000-0000-4000-8000-000000000004', 250_000, 'ro-track-b@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000003', 1_000_000, 'ro-track-a@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000004', 250_000, 'ro-track-b@example.com');
 
         $accruals = app(PayableAccrualRepository::class);
         $big = $accruals->findEarningForOrder('8a000000-0000-4000-8000-000000000003');
@@ -166,7 +166,7 @@ describe('the chain, link by link', function (): void {
         // `amount_minor` is the *charge*, and the merchant's share is derived
         // from what the ledger recorded, never echoed back from the request.
         roReportOnlyMode();
-        roCapture($this, '8a000000-0000-4000-8000-000000000005', 800_000, 'ro-supplied@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000005', 800_000, 'ro-supplied@example.com');
 
         $accrual = app(PayableAccrualRepository::class)
             ->findEarningForOrder('8a000000-0000-4000-8000-000000000005');
@@ -182,7 +182,7 @@ describe('the chain, link by link', function (): void {
 describe('report-only stage — recorded, not settleable', function (): void {
     it('marks every accrual report-only while posting is off', function (): void {
         roReportOnlyMode();
-        roCapture($this, '8a000000-0000-4000-8000-000000000006', 900_000, 'ro-flagoff@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000006', 900_000, 'ro-flagoff@example.com');
 
         $accrual = app(PayableAccrualRepository::class)
             ->findEarningForOrder('8a000000-0000-4000-8000-000000000006');
@@ -195,7 +195,7 @@ describe('report-only stage — recorded, not settleable', function (): void {
 
     it('refuses to compute a settlement from report-only accruals', function (): void {
         roReportOnlyMode();
-        roCapture($this, '8a000000-0000-4000-8000-000000000007', 900_000, 'ro-nocompute@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000007', 900_000, 'ro-nocompute@example.com');
 
         expect(fn () => app(SettlementRunService::class)->computeDraft(
             RO_ACTOR,
@@ -210,8 +210,8 @@ describe('report-only stage — recorded, not settleable', function (): void {
 
     it('reports totals finance can compare by hand, and moves nothing doing it', function (): void {
         roReportOnlyMode();
-        roCapture($this, '8a000000-0000-4000-8000-000000000008', 500_000, 'ro-report-a@example.com');
-        roCapture($this, '8a000000-0000-4000-8000-000000000009', 300_000, 'ro-report-b@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000008', 500_000, 'ro-report-a@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000009', 300_000, 'ro-report-b@example.com');
 
         $totals = app(PayableAccrualRepository::class)->totals();
 
@@ -225,7 +225,7 @@ describe('report-only stage — recorded, not settleable', function (): void {
 
     it('prints the report without writing anything', function (): void {
         roReportOnlyMode();
-        roCapture($this, '8a000000-0000-4000-8000-00000000000a', 500_000, 'ro-cmd@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-00000000000a', 500_000, 'ro-cmd@example.com');
 
         $this->artisan('payments:settlement-report')->assertSuccessful();
 
@@ -236,7 +236,7 @@ describe('report-only stage — recorded, not settleable', function (): void {
 describe('posting stage — settleable, still unpayable', function (): void {
     it('makes the MerchantPayable ledger balance equal the derived payable', function (): void {
         roPostingMode();
-        roCapture($this, '8a000000-0000-4000-8000-00000000000b', 1_000_000, 'ro-posted@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-00000000000b', 1_000_000, 'ro-posted@example.com');
 
         $accrual = app(PayableAccrualRepository::class)
             ->findEarningForOrder('8a000000-0000-4000-8000-00000000000b');
@@ -251,8 +251,8 @@ describe('posting stage — settleable, still unpayable', function (): void {
 
     it('computes a draft whose total is the sum of accruals, with no amount supplied', function (): void {
         roPostingMode();
-        roCapture($this, '8a000000-0000-4000-8000-00000000000c', 600_000, 'ro-draft-a@example.com');
-        roCapture($this, '8a000000-0000-4000-8000-00000000000d', 400_000, 'ro-draft-b@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-00000000000c', 600_000, 'ro-draft-a@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-00000000000d', 400_000, 'ro-draft-b@example.com');
 
         $run = app(SettlementRunService::class)->computeDraft(
             RO_ACTOR,
@@ -271,7 +271,7 @@ describe('posting stage — settleable, still unpayable', function (): void {
 
     it('still refuses to pay the draft it just computed', function (): void {
         roPostingMode();
-        roCapture($this, '8a000000-0000-4000-8000-00000000000e', 600_000, 'ro-nopay@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-00000000000e', 600_000, 'ro-nopay@example.com');
 
         $run = app(SettlementRunService::class)->computeDraft(
             RO_ACTOR,
@@ -292,7 +292,7 @@ describe('posting stage — settleable, still unpayable', function (): void {
 describe('reconciliation comparison and discrepancy report', function (): void {
     it('finds no discrepancy on a healthy book', function (): void {
         roPostingMode();
-        roCapture($this, '8a000000-0000-4000-8000-00000000000f', 750_000, 'ro-clean@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-00000000000f', 750_000, 'ro-clean@example.com');
 
         expect(app(SettlementReconciliationService::class)->reconcileLedgerAgainstPayable())->toBeNull();
 
@@ -303,7 +303,7 @@ describe('reconciliation comparison and discrepancy report', function (): void {
         // The control. Without it, "no discrepancy found" is indistinguishable
         // from a reconciler that cannot find one.
         roPostingMode();
-        roCapture($this, '8a000000-0000-4000-8000-000000000010', 750_000, 'ro-drift@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000010', 750_000, 'ro-drift@example.com');
 
         // Move MerchantPayable without an accrual behind it — a balanced
         // posting that nothing in the accrual records can explain, which is
@@ -324,7 +324,7 @@ describe('reconciliation comparison and discrepancy report', function (): void {
 
     it('never closes a case it cannot prove, and never moves money to fix one', function (): void {
         roPostingMode();
-        roCapture($this, '8a000000-0000-4000-8000-000000000011', 500_000, 'ro-nofix@example.com');
+        m28Capture($this, '8a000000-0000-4000-8000-000000000011', 500_000, 'ro-nofix@example.com');
 
         $ledger = app(LedgerService::class);
         $posting = $ledger->newPosting((string) Illuminate\Support\Str::uuid(), TransactionType::EscrowRelease, 'm28-drift-2');
@@ -349,7 +349,7 @@ it('completes an entire report-only cycle without one transfer', function (): vo
     roReportOnlyMode();
 
     foreach (range(1, 5) as $i) {
-        roCapture(
+        m28Capture(
             $this,
             sprintf('8a000000-0000-4000-8000-0000000001%02d', $i),
             100_000 * $i,
