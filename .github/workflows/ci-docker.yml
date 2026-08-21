@@ -15,12 +15,22 @@ on:
       - "apps/api/**"
       - "apps/web/**"
       - ".github/workflows/ci-docker.yml"
+  # No `paths:` here, deliberately (M29-A).
+  #
+  # GitHub treats a required status check that never reports as PENDING, not as
+  # satisfied. Filtering `pull_request` by path meant this workflow stayed
+  # silent on unrelated pull requests — so the moment its job became a required
+  # check, every such pull request would wait for a conclusion that was never
+  # coming. A gate that blocks everything is as broken as one that blocks
+  # nothing; it just fails in the other direction.
+  #
+  # A clean compose build, boot and migrate does not depend on which files a pull
+  # request touched.
+  # Running it always costs a little CI time and buys a check that can actually
+  # be required. `push` below stays filtered, so post-merge runs remain narrow.
+  #
+  # See .github/governance/required-checks.json.
   pull_request:
-    paths:
-      - "docker-compose.yml"
-      - "docker-compose.ci.yml"
-      - "infra/**"
-      - ".github/workflows/ci-docker.yml"
 
 jobs:
   boot:

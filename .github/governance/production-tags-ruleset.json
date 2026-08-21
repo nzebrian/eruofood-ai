@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "artifact": "production-tags-ruleset",
+    "purpose": "Repository rulesets protecting refs/tags/v* — the tags that cut a production release. Prepared by M29-A; NOT APPLIED.",
+    "applies_to": "nzebrian/eruofood-ai",
+    "prepared_against_main_sha": "cbdc2ab445ba157c1d4b2bccb5f766f81b6b0c31",
+    "api": "POST /repos/{owner}/{repo}/rulesets",
+    "why_this_matters": "`.github/workflows/release.yml` triggers on `push: tags: [\"v*.*.*\"]` and every job in it is a mandatory production gate that ends in building and promoting a container image. As audited on 2026-08-21, `GET /repos/nzebrian/eruofood-ai/tags/protection` returned 404 and `GET /rulesets` returned an empty list: tag creation is completely unrestricted. A production release is currently one `git push --tags` away, with no review, no approval and no required check.",
+    "why_two_rulesets": "GitHub applies bypass_actors to an entire ruleset, not to individual rules. Restricting *who may create* a release tag requires a `creation` rule plus bypass actors who are exempt from it — and those actors would then also be exempt from every other rule in the same ruleset, including deletion. Splitting the policy keeps tag immutability absolute: the release actors may create tags, and nobody may delete or move one.",
+    "apply_commands": [
+      "jq '.rulesets[0]' .github/governance/production-tags-ruleset.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -",
+      "jq '.rulesets[1]' .github/governance/production-tags-ruleset.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -"
+    ],
+    "unresolved_administrator_inputs": [
+      "The identity of the release actor(s) permitted to create v*.*.* tags. Supplied as bypass_actors on the FIRST ruleset only. Until supplied, that ruleset denies tag creation to everyone — which is the correct failure direction, but it does stop releases, so it is an explicit decision rather than a silent default."
+    ],
+    "actor_placeholder_contract": "Each entry in rulesets[0].bypass_actors must name a real GitHub actor: {\"actor_id\": <int>, \"actor_type\": \"Team\" | \"Integration\" | \"OrganizationAdmin\" | \"RepositoryRole\", \"bypass_mode\": \"always\"}. No wildcard, no RepositoryRole covering all writers, and no `actor_type: \"OrganizationAdmin\"` used as a shortcut for 'whoever happens to be an admin'. Release authority is a named grant or it is not a grant.",
+    "unresolved_placeholder_token": "<RELEASE_ACTOR_UNRESOLVED>"
+  },
+  "rulesets": [
+    {
+      "name": "production release tags — restricted creation",
+      "target": "tag",
+      "enforcement": "active",
+      "bypass_actors": [],
+      "conditions": {
+        "ref_name": {
+          "include": ["refs/tags/v*"],
+          "exclude": []
+        }
+      },
+      "rules": [
+        {
+          "type": "creation"
+        }
+      ]
+    },
+    {
+      "name": "production release tags — immutable",
+      "target": "tag",
+      "enforcement": "active",
+      "bypass_actors": [],
+      "conditions": {
+        "ref_name": {
+          "include": ["refs/tags/v*"],
+          "exclude": []
+        }
+      },
+      "rules": [
+        {
+          "type": "deletion"
+        },
+        {
+          "type": "non_fast_forward"
+        },
+        {
+          "type": "update"
+        }
+      ]
+    }
+  ]
+}

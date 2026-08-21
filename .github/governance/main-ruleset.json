@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "artifact": "main-ruleset",
+    "purpose": "Repository ruleset protecting refs/heads/main. Prepared by M29-A; NOT APPLIED.",
+    "applies_to": "nzebrian/eruofood-ai",
+    "prepared_against_main_sha": "cbdc2ab445ba157c1d4b2bccb5f766f81b6b0c31",
+    "api": "POST /repos/{owner}/{repo}/rulesets",
+    "apply_command": "jq '.rulesets[0]' .github/governance/main-ruleset.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -",
+    "requires": "A credential with repository ADMIN. The M29-A session credential had admin=false and every write returned 403.",
+    "unresolved_administrator_inputs": [
+      "Whether the repository moves to a GitHub organization (decides teams vs individual usernames in CODEOWNERS).",
+      "At least one reviewer account with write access other than the pull request author — required_approving_review_count: 1 is unsatisfiable on a single-maintainer repository, because GitHub does not permit self-approval."
+    ],
+    "deliberate_omissions": [
+      {
+        "rule": "required_signatures",
+        "omitted_because": "Commit signing is not configured for this repository or for its automation. Enabling it before signing works would block every subsequent commit, including the ones that would fix it. Enable only after signing is verified end to end."
+      },
+      {
+        "rule": "required_linear_history",
+        "omitted_because": "The repository's established convention is merge commits — PRs #14, #15, #16, #19, #20 and #21 all landed as two-parent merges, and M28's rollback procedure (docs/ROLLBACK_PLAN.md section 7) depends on `git revert -m 1`. Requiring linear history would forbid the workflow the project already runs on."
+      },
+      {
+        "rule": "merge_queue",
+        "omitted_because": "Not needed at current merge volume, and it changes how required checks are evaluated. Add deliberately, not as part of a hardening sweep."
+      }
+    ],
+    "notes_on_bypass": "bypass_actors is empty and must stay empty. An administrator who needs to bypass follows .github/governance/BREAK_GLASS.md, which disables the ruleset for a recorded window rather than granting a standing exemption. The difference is that a disable-and-restore appears in the audit log and a standing bypass does not."
+  },
+  "rulesets": [
+    {
+      "name": "main — protected branch",
+      "target": "branch",
+      "enforcement": "active",
+      "bypass_actors": [],
+      "conditions": {
+        "ref_name": {
+          "include": ["refs/heads/main"],
+          "exclude": []
+        }
+      },
+      "rules": [
+        {
+          "type": "deletion"
+        },
+        {
+          "type": "non_fast_forward"
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 1,
+            "dismiss_stale_reviews_on_push": true,
+            "require_code_owner_review": true,
+            "require_last_push_approval": true,
+            "required_review_thread_resolution": false,
+            "allowed_merge_methods": ["merge", "squash", "rebase"]
+          }
+        },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              { "context": "Lint · Analyse · Test" },
+              { "context": "Tests · SQLite" },
+              { "context": "Secret scanning" },
+              { "context": "Dependency audit" },
+              { "context": "Lint · Typecheck · Test · Build" },
+              { "context": "Lint spec · Generate types" },
+              { "context": "Build · Boot · Migrate · Healthcheck" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "_meta": {
+    "artifact": "required-checks",
+    "purpose": "The exact check contexts that main's ruleset requires, and the workflow trigger conditions that make each one reportable on every pull request. Prepared by M29-A.",
+    "prepared_against_main_sha": "cbdc2ab445ba157c1d4b2bccb5f766f81b6b0c31",
+    "context_names_are_job_names": "A required status check context is the *job* name, not the workflow name. These strings must match byte for byte.",
+    "middle_dot_warning": "Five of the seven contexts contain U+00B7 MIDDLE DOT (·), not a hyphen and not a full stop. Copy them; do not retype them. A mistyped context never reports, and a required check that never reports leaves every pull request pending forever — the same end state as a broken gate, reached by a different route.",
+    "the_path_filter_trap": "GitHub treats a required check that does not report as PENDING, never as satisfied. Before M29-A, four of the five workflows below filtered their `pull_request` trigger by path, so a documentation-only pull request would have hung indefinitely waiting for checks that were never going to run. M29-A removes `paths:` from `pull_request` in those workflows while keeping it on `push`, so every check reports a conclusion on every pull request and post-merge runs stay narrow."
+  },
+  "required": [
+    {
+      "context": "Lint · Analyse · Test",
+      "workflow": ".github/workflows/ci-api.yml",
+      "workflow_name": "CI · API (Laravel)",
+      "covers": "Pint, PHPStan level 8, Pest on PostgreSQL 16 + Redis, migrate-from-empty, Redis validation, the M23/M27 financial concurrency gate, and the M28 environment-separation gate.",
+      "pull_request_path_filtered": false,
+      "note": "The financial gate that M27 and M28 rest on. If exactly one check is ever required, it is this one."
+    },
+    {
+      "context": "Tests · SQLite",
+      "workflow": ".github/workflows/ci-api.yml",
+      "workflow_name": "CI · API (Laravel)",
+      "covers": "The full Pest suite on the engine developers run locally.",
+      "pull_request_path_filtered": false
+    },
+    {
+      "context": "Secret scanning",
+      "workflow": ".github/workflows/security.yml",
+      "workflow_name": "CI · Security",
+      "covers": "Gitleaks across full history (fetch-depth: 0).",
+      "pull_request_path_filtered": false,
+      "note": "Was already unfiltered before M29-A."
+    },
+    {
+      "context": "Dependency audit",
+      "workflow": ".github/workflows/security.yml",
+      "workflow_name": "CI · Security",
+      "covers": "npm audit and composer audit.",
+      "pull_request_path_filtered": false,
+      "note": "Was already unfiltered before M29-A."
+    },
+    {
+      "context": "Lint · Typecheck · Test · Build",
+      "workflow": ".github/workflows/ci-web.yml",
+      "workflow_name": "CI · Web (React)",
+      "covers": "ESLint, TypeScript, Vitest, production build.",
+      "pull_request_path_filtered": false,
+      "note": "Ran in ~36s on PR #21's baseline. Unfiltered on pull_request by M29-A."
+    },
+    {
+      "context": "Lint spec · Generate types",
+      "workflow": ".github/workflows/contracts.yml",
+      "workflow_name": "CI · API Contracts (OpenAPI)",
+      "covers": "Redocly lint of the OpenAPI document and TypeScript type generation.",
+      "pull_request_path_filtered": false,
+      "note": "Ran in ~20s. Unfiltered on pull_request by M29-A."
+    },
+    {
+      "context": "Build · Boot · Migrate · Healthcheck",
+      "workflow": ".github/workflows/ci-docker.yml",
+      "workflow_name": "CI · Docker Clean Boot",
+      "covers": "Compose build, container boot, migrations against a clean database, healthcheck.",
+      "pull_request_path_filtered": false
+    }
+  ],
+  "deliberately_not_required": [
+    {
+      "context": "GA Docker Certification",
+      "workflow": ".github/workflows/ga-docker-certification.yml",
+      "reason": "Fails on main today and failed identically at cbdc2ab, 8a2a2e8, 4615bdc, beb5c09 and fc412dc. Requiring a check that is already red would block every pull request on a pre-existing condition M29-A did not introduce and does not fix.",
+      "follow_up": "Diagnose separately. It should become required once it is green, and its current state is itself worth an investigation."
+    },
+    {
+      "context": "release.yml (any job)",
+      "workflow": ".github/workflows/release.yml",
+      "reason": "Tag-triggered only (`push: tags: [\"v*.*.*\"]`). It produces a zero-job startup-failure entry on every branch push and has done so on every merge to main since at least beb5c09. It cannot report on a pull request, so requiring it would leave every pull request pending forever.",
+      "governed_instead_by": ".github/governance/production-tags-ruleset.json"
+    },
+    {
+      "context": "CI · Mobile (Flutter)",
+      "workflow": ".github/workflows/ci-mobile.yml",
+      "reason": "Not part of the M28 evidence set and not analysed by M29-A. Left out rather than required on an assumption.",
+      "follow_up": "Audit its trigger conditions and job name before considering it."
+    }
+  ],
+  "verification": {
+    "after_applying": "GET /repos/{owner}/{repo}/rulesets/{id} and compare rules[].parameters.required_status_checks[].context against `required[].context` above, exactly.",
+    "local": "php apps/api/scripts/verify_repository_governance.php",
+    "what_local_cannot_prove": "That GitHub is enforcing any of it. The validator checks that the contexts exist as job names and that the workflows will report on pull requests; whether the ruleset is active is an EXTERNAL / ADMIN REQUIRED item and is never reported as PASS."
+  }
+}
