@@ -1,11 +1,108 @@
 # EruoFood AI — code ownership for review routing.
-# Replace the placeholder team with real GitHub teams/handles.
+#
+# ============================================================================
+# STATUS: NO OWNERS ARE ACTIVE. EVERY RULE BELOW IS DELIBERATELY COMMENTED OUT.
+# ============================================================================
+#
+# Why this file claims nobody
+# ---------------------------
+# It previously named six teams — @eruofood/maintainers, /backend, /frontend,
+# /mobile, /platform — and GitHub rejected every one of them. `GET /repos/
+# nzebrian/eruofood-ai/codeowners/errors` returned 8 "Unknown owner" errors,
+# one per reference.
+#
+# That was not a typo. `nzebrian/eruofood-ai` is owned by a **user account**
+# (`owner.type: "User"`), and GitHub teams exist only inside organizations. The
+# `@eruofood/*` handles could not be created even if somebody wanted to. The
+# file had been asserting an ownership structure that has never existed.
+#
+# A CODEOWNERS file full of unresolvable owners is worse than an empty one. It
+# reads, to anyone opening it, as though review routing is configured. Enable
+# "require review from Code Owners" against it and the rule matches owners who
+# cannot approve, so it either blocks every pull request or silently enforces
+# nothing — and which of those you get is not obvious until you try it.
+#
+# So the rules are commented out. The file is syntactically valid, resolves
+# zero owners, and claims nothing. `codeowners/errors` returns empty.
+#
+# What has to happen before these are enabled
+# -------------------------------------------
+# 1. Decide whether the repository moves to a GitHub organization. Teams
+#    (`@org/team`) require one. Under a personal account, CODEOWNERS may name
+#    **individual usernames only**.
+# 2. Obtain the real handles. Every `<OWNER:...>` token below is an unresolved
+#    input owned by the repository administrator. Do not guess them, and do not
+#    substitute the repository owner's own handle merely to make the file
+#    resolve — an owner who is always the pull request author cannot review it.
+# 3. Give each named owner **write access**. GitHub ignores a code owner who
+#    cannot push to the repository, without telling you.
+# 4. Uncomment the rules, replace the tokens, and verify with
+#    `GET /repos/{owner}/{repo}/codeowners/errors` — it must return zero errors.
+# 5. Only then set `require_code_owner_review: true` in the `main` ruleset.
+#
+# `apps/api/scripts/verify_repository_governance.php` reports every remaining
+# placeholder, and refuses to call CODEOWNER routing configured while any
+# survives. See `.github/governance/APPLY_GOVERNANCE.md` for the full sequence.
+#
+# ============================================================================
+# Ownership domains — preserved, unassigned
+# ============================================================================
+#
+# Ordering matters: in CODEOWNERS the *last* matching rule wins, so the
+# catch-all comes first and the most specific rules come last. Keep that order
+# when uncommenting.
 
-*                       @eruofood/maintainers
+# ---- Catch-all -------------------------------------------------------------
+# * <OWNER:MAINTAINERS>
 
-/apps/api/              @eruofood/backend
-/apps/web/              @eruofood/frontend
-/apps/mobile/           @eruofood/mobile
-/packages/api-contracts/ @eruofood/backend @eruofood/frontend
-/infra/                 @eruofood/platform
-/.github/               @eruofood/platform
+# ---- API (application code) ------------------------------------------------
+# /apps/api/ <OWNER:API>
+
+# ---- Financial, payment and settlement code --------------------------------
+# The money-moving surface. M27 split finance permissions by consequence and
+# M28 proved the kill switches stop payment; the point of owning these paths is
+# that neither can be undone by a change nobody with financial context read.
+# /apps/api/modules/Payments/ <OWNER:FINANCE>
+# /apps/api/config/payments.php <OWNER:FINANCE>
+# /apps/api/scripts/financial_concurrency_validation.php <OWNER:FINANCE>
+# /apps/api/scripts/financial_concurrency_worker.php <OWNER:FINANCE>
+# /apps/api/scripts/m27_negative_control_audit.php <OWNER:FINANCE>
+# /apps/api/scripts/restore_verification.php <OWNER:FINANCE>
+
+# ---- Web -------------------------------------------------------------------
+# /apps/web/ <OWNER:WEB>
+
+# ---- Mobile ----------------------------------------------------------------
+# /apps/mobile/ <OWNER:MOBILE>
+
+# ---- API contracts (shared surface; two audiences) --------------------------
+# /packages/api-contracts/ <OWNER:API> <OWNER:WEB>
+
+# ---- Infrastructure --------------------------------------------------------
+# /infra/ <OWNER:PLATFORM>
+# /docker-compose.yml <OWNER:PLATFORM>
+# /docker-compose.ci.yml <OWNER:PLATFORM>
+
+# ---- CI / workflows --------------------------------------------------------
+# A change here can make a required check stop reporting, which is the same as
+# switching it off — see .github/governance/required-checks.json.
+# /.github/workflows/ <OWNER:PLATFORM>
+
+# ---- Governance ------------------------------------------------------------
+# The rulesets, the apply/verify runbooks and the break-glass procedure.
+# /.github/governance/ <OWNER:GOVERNANCE>
+
+# ---- Production runbooks ---------------------------------------------------
+# /docs/PRODUCTION_DEPLOYMENT.md <OWNER:PLATFORM>
+# /docs/PRODUCTION_RELEASE_CHECKLIST.md <OWNER:PLATFORM>
+# /docs/GA_RELEASE_CHECKLIST.md <OWNER:PLATFORM>
+# /docs/ROLLBACK_PLAN.md <OWNER:PLATFORM>
+# /docs/DISASTER_RECOVERY.md <OWNER:PLATFORM>
+# /docs/BACKUP_RESTORE.md <OWNER:PLATFORM>
+# /docs/INCIDENT_RESPONSE.md <OWNER:PLATFORM>
+# /docs/ENVIRONMENT_SEPARATION.md <OWNER:PLATFORM>
+
+# ---- This file -------------------------------------------------------------
+# Last, so it wins over every rule above. Governance that can be widened by
+# editing the file that enforces it is not governance.
+# /.github/CODEOWNERS <OWNER:GOVERNANCE>
