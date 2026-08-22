@@ -57,6 +57,18 @@ final class IdentityPolicy
          * place the repository identity is written down.
          */
         private readonly string $repositoryOwner,
+        /**
+         * How many humans govern this repository.
+         *
+         * Changes one rule and one rule only: whether FINANCE naming the
+         * repository owner is an error or a recorded deferral. It relaxes
+         * nothing else, and it cannot — every other check here is about whether
+         * a handle is real, which does not depend on how many people there are.
+         *
+         * Defaults to MULTI_PERSON so that a caller which forgets to pass a mode
+         * gets the strict policy rather than the permissive one.
+         */
+        private readonly OwnershipMode $mode = OwnershipMode::MultiPerson,
     ) {
     }
 
@@ -279,6 +291,20 @@ final class IdentityPolicy
             )];
         }
 
+        // An assistant cannot review a pull request or be accountable for a
+        // change that moves money, but its handle would satisfy every other
+        // check here — syntax, resolvability, not-the-owner. Rejected
+        // explicitly, because the one thing a fabricated reviewer reliably does
+        // is make the reports look finished.
+        if (OwnershipDeclaration::isNonHuman($handle)) {
+            return [IdentityFinding::error(
+                'IDENTITY_NOT_HUMAN',
+                sprintf('Role %s names "%s", which is an AI assistant or bot rather than a person.', $role->value, $handle),
+                'Name a real human. Claude and ChatGPT contributed code to this repository; neither may be represented as a code owner, reviewer, release actor or approver. A synthetic second reviewer passes every check and provides none of the review it simulates.',
+                $role,
+            )];
+        }
+
         $findings = [];
 
         // GitHub usernames: alphanumeric and single hyphens, no leading or
@@ -310,19 +336,31 @@ final class IdentityPolicy
         // An owner who authors every pull request cannot review one. GitHub does
         // not warn about this; it just stops requesting the review.
         if ($isUser && strcasecmp(ltrim($handle, '@'), $this->repositoryOwner) === 0) {
-            $findings[] = $role->guardsFinancialPaths()
-                ? IdentityFinding::error(
-                    'FINANCE_OWNER_IS_REPOSITORY_OWNER',
-                    sprintf('Role %s is the repository owner, "%s".', $role->value, $handle),
-                    'Name somebody else. This role owns the money-moving paths, and GitHub forbids approving your own pull request — so the owner of the repository reviewing their own financial changes is not four-eyes, it is none. M27 split finance permissions by consequence precisely so that one person could not do this.',
-                    $role,
-                )
-                : IdentityFinding::warning(
+            if (! $role->guardsFinancialPaths()) {
+                $findings[] = IdentityFinding::warning(
                     'IDENTITY_IS_REPOSITORY_OWNER',
                     sprintf('Role %s is the repository owner, "%s".', $role->value, $handle),
                     'Acceptable on a single-maintainer repository, but code-owner review is inert for these paths whenever that account is the author. Record the decision, or name a second reviewer.',
                     $role,
                 );
+            } elseif ($this->mode->requiresIndependentFinanceOwner()) {
+                $findings[] = IdentityFinding::error(
+                    'FINANCE_OWNER_IS_REPOSITORY_OWNER',
+                    sprintf('Role %s is the repository owner, "%s".', $role->value, $handle),
+                    'Name somebody else. This role owns the money-moving paths, and GitHub forbids approving your own pull request — so the owner of the repository reviewing their own financial changes is not four-eyes, it is none. M27 split finance permissions by consequence precisely so that one person could not do this.',
+                    $role,
+                );
+            } else {
+                // SOLE_OWNER. The requirement is not dropped and not quietly
+                // met — it is recorded as absent, every run, so no report can be
+                // read as evidence of a second pair of eyes that does not exist.
+                $findings[] = IdentityFinding::warning(
+                    'FINANCE_FOUR_EYES_DEFERRED',
+                    sprintf('Role %s is the repository owner, "%s", and four-eyes review on the money-moving paths is NOT ACTIVE.', $role->value, $handle),
+                    'Deferred under SOLE_OWNER mode because the repository has one human participant, not because the risk went away. Compensating controls: every settlement flag ships false, financial scheduled work is registered disabled, and the financial concurrency gate runs on every pull request. Resolve by granting a second real human write access and moving ownership.json to MULTI_PERSON. Do not resolve it by naming an assistant or a second account of the same person.',
+                    $role,
+                );
+            }
         }
 
         return $findings;

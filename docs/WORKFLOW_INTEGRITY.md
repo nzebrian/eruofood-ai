@@ -58,29 +58,31 @@ patterns, `runs-on` labels and `if:` conditions.
 
 | Event | Condition |
 |---|---|
-| `pull_request` | any change under `.github/workflows/**` |
+| `pull_request` | **every pull request** — no path filter (M29-I) |
 | `push` to `main` | any change under `.github/workflows/**` |
 
-### ⚠️ The path filter and required checks
+### Why `pull_request` is not filtered
 
-This workflow filters `pull_request` by path. That is correct for a check that
-only needs to run when workflows change — and it makes the check **unsafe to
-mark as required in its current form**.
+It was, originally. That was correct for a check nobody required and wrong the
+moment anybody wanted to.
 
 GitHub treats a required status check that never reports as **pending, not
 satisfied**. A required, path-filtered check leaves every pull request that does
 *not* touch `.github/workflows/**` waiting forever for a conclusion that is never
 coming, with no error message anywhere. M29-A removed exactly these filters from
-ci-api, ci-web, contracts and ci-docker for that reason.
+ci-api, ci-web, contracts and ci-docker for that reason; M29-I removed this one
+for the same reason.
 
-So:
+The job downloads one 2 MB binary and lints thirteen files — six seconds on the
+run that merged it. Running it on every pull request costs almost nothing and
+buys a check that can actually be required.
 
-- **Do not** add `CI · Workflow Integrity` to
-  `.github/governance/required-checks.json` while the `paths:` filter is present.
-- **If** it is to become required, remove the `pull_request` `paths:` filter
-  first, exactly as M29-A did for the other four. The job takes seconds; running
-  it on every pull request costs little and buys a check that can actually be
-  required.
+`push` stays filtered. Nothing waits on a post-merge run, so narrowing it is free.
+
+**`CI · Workflow Integrity` is now eligible to be a required check but is not yet
+one.** Adding it to `.github/governance/required-checks.json` is a one-line
+change and a separate decision; the blocker that previously prevented it is
+gone.
 
 ## Permissions
 
@@ -198,5 +200,6 @@ it, and a naive scan would fail on the very file that was fixed.
 - **It is not merge-blocking.** No branch protection or ruleset exists on this
   repository yet, so every check here — this one included — is advisory. It
   becomes merge-blocking only once live GitHub governance is activated per
-  `.github/governance/APPLY_GOVERNANCE.md`, and only after the path-filter
-  caveat above is resolved.
+  `.github/governance/APPLY_GOVERNANCE.md`, and only once it is added to
+  `required-checks.json`. The path-filter blocker that previously stood in the
+  way was removed in M29-I.

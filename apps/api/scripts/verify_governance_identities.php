@@ -48,6 +48,7 @@ use EruoFood\Shared\Domain\Governance\ActivationState;
 use EruoFood\Shared\Domain\Governance\GovernanceRole;
 use EruoFood\Shared\Domain\Governance\IdentityFinding;
 use EruoFood\Shared\Domain\Governance\IdentityPolicy;
+use EruoFood\Shared\Domain\Governance\OwnershipDeclaration;
 
 // scripts -> api -> apps -> <repo root>.
 $repoRoot = dirname(__DIR__, 3);
@@ -144,9 +145,43 @@ foreach (is_array($tagDoc['rulesets'] ?? null) ? $tagDoc['rulesets'] : [] as $rs
 $appliesTo = is_string($tagDoc['_meta']['applies_to'] ?? null) ? $tagDoc['_meta']['applies_to'] : '';
 $repositoryOwner = explode('/', $appliesTo)[0] ?? '';
 
+// -- Ownership mode -----------------------------------------------------------
+
+// Read before anything is judged: whether FINANCE naming the repository owner
+// is a defect or a recorded deferral depends entirely on how many humans there
+// are, and that is a declared fact rather than something inferable from files.
+$ownershipPath = $governanceDir.'/ownership.json';
+$ownershipDoc = null;
+
+if (is_file($ownershipPath)) {
+    try {
+        $ownershipDoc = readJsonOrFail($ownershipPath);
+    } catch (Throwable $e) {
+        printf("\nFAIL  the ownership declaration does not parse  (%s)\n", $e->getMessage());
+        exit(1);
+    }
+}
+
+$ownership = OwnershipDeclaration::fromArray($ownershipDoc);
+
+echo "\n0) Governance ownership\n";
+
+foreach ($ownership->mode->summaryLines() as $line) {
+    printf("  %s\n", $line);
+}
+
+printf("  Repository owner:        %s\n", $ownership->repositoryOwner === '' ? '(undeclared)' : $ownership->repositoryOwner);
+printf("  Human participants:      %s\n", implode(', ', $ownership->humanParticipants) ?: '(none declared)');
+printf("  Ruleset that applies:    %s\n", $ownership->mode->mainRulesetArtifact());
+
+foreach ($ownership->findings as $finding) {
+    printf("  %-7s %s  %s\n", strtoupper($finding->severity->value), $finding->code, $finding->summary);
+    printf("          -> %s\n", $finding->remedy);
+}
+
 // -- Evaluate -----------------------------------------------------------------
 
-$assessment = (new IdentityPolicy($repositoryOwner))->evaluate($identities, $codeownersBody, $tagRulesets);
+$assessment = (new IdentityPolicy($repositoryOwner, $ownership->mode))->evaluate($identities, $codeownersBody, $tagRulesets);
 
 echo "\n1) Identity configuration\n";
 
@@ -237,7 +272,10 @@ if (isset($options['render-codeowners'])) {
 
 // -- Result -------------------------------------------------------------------
 
-$errors = $assessment->errors();
+// Ownership errors are governance errors: a declaration naming a mode nobody
+// implemented, or an assistant as a participant, must fail the run rather than
+// be printed above and then forgotten in the exit code.
+$errors = array_merge($ownership->errors(), $assessment->errors());
 $warnings = $assessment->warnings();
 
 echo "\n", str_repeat('=', 72), "\n";
@@ -253,6 +291,12 @@ if ($assessment->state === ActivationState::ReadyForActivation) {
     echo "It does not mean the repository is protected. Every item in section 4 is\n";
     echo "still outstanding, and each one is a fact about GitHub that no file here\n";
     echo "can establish. See .github/governance/APPLY_GOVERNANCE.md.\n";
+}
+
+if (! $ownership->mode->supportsIndependentReview()) {
+    echo "\nIndependent human review is NOT ACTIVE on this repository. That is a\n";
+    echo "declared deferral under SOLE_OWNER mode, not a passed check. Nothing above\n";
+    echo "should be read as evidence that a second person reviewed anything.\n";
 }
 
 exit($errors === [] ? 0 : 1);

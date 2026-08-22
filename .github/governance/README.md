@@ -1,6 +1,6 @@
 # Repository Governance
 
-Prepared by **M29-A**, extended by **M29-B**. **Nothing here has been applied.**
+Prepared by **M29-A**, extended by **M29-B** and **M29-I**. **Nothing here has been applied.**
 
 Every file in this directory describes protection that GitHub is *not* currently
 enforcing. They exist so that when an administrator with the right credential
@@ -57,6 +57,8 @@ which from reading the file. See `.github/CODEOWNERS`.
 | `production-tags-ruleset.json` | Two `refs/tags/v*` rulesets — restricted creation, and immutability |
 | `required-checks.json` | The seven check contexts, and why the other three are excluded |
 | `identities.example.json` | **M29-B.** The shape of the identity configuration. Names nobody |
+| `ownership.json` | **M29-I.** How many humans govern this repository, and what is deferred as a result |
+| `main-ruleset.sole-owner.json` | **M29-I.** The `main` ruleset for SOLE_OWNER mode |
 | `APPLY_GOVERNANCE.md` | Step-by-step for an administrator, including how to test each protection |
 | `VERIFY_GOVERNANCE.md` | How to confirm it is actually enforced afterwards |
 | `BREAK_GLASS.md` | The auditable emergency procedure, and why there is no standing bypass |
@@ -71,6 +73,60 @@ It reports **PASS** only for things it can genuinely check from the repository,
 and **EXTERNAL / ADMIN REQUIRED** for everything that depends on GitHub state or
 on identities nobody has supplied. It will not call a policy enforced because a
 JSON file describing it exists.
+
+## Ownership mode (M29-I)
+
+`.github/governance/ownership.json` declares how many humans govern this
+repository, because most of the rest only makes sense relative to that.
+
+| Mode | Approvals | CODEOWNERS | Finance four-eyes | Ruleset applied |
+|---|---|---|---|---|
+| `SOLE_OWNER` | 0 | deferred | deferred | `main-ruleset.sole-owner.json` |
+| `MULTI_PERSON` | 1 | required | required | `main-ruleset.json` |
+
+**Current mode: `SOLE_OWNER`.** The repository has one human participant,
+`nzebrian`. M29-A prepared its ruleset assuming several: one approving review,
+code-owner review required, FINANCE forbidden from being the repository owner.
+Applied unchanged here that policy does not produce strong governance — it
+produces a repository nobody can merge into, because GitHub forbids approving
+your own pull request, and a code-owner requirement pointed at a CODEOWNERS file
+in which every rule is commented out.
+
+**Deferred is not satisfied.** SOLE_OWNER switches off no automated control.
+Lint, static analysis, tests, migrations, Redis, financial concurrency, secret
+scanning, dependency audit and workflow integrity all still run and still gate a
+merge, and `verify_repository_governance.php` asserts that the two rulesets are
+byte-identical apart from three review parameters. What is deferred is the part
+that needs a second human to exist, and both validators print it on every run:
+
+```
+SOLE_OWNER MODE
+Automated controls:      ACTIVE
+Independent human review: DEFERRED
+CODEOWNERS enforcement:   DEFERRED
+Finance four-eyes review: DEFERRED
+Reason: repository currently has one real human owner
+```
+
+**No synthetic participants.** Claude and ChatGPT contributed a large share of
+this governance. Neither is, or may be represented as, a collaborator, code
+owner, reviewer, release actor or approver — and that is enforced, not merely
+requested: `OWNERSHIP_PARTICIPANT_NOT_HUMAN` and `IDENTITY_NOT_HUMAN` reject
+assistant handles wherever an identity is expected. A fabricated second reviewer
+would satisfy every other check in this repository and provide none of the
+review it simulates.
+
+### Moving to MULTI_PERSON
+
+1. Grant a second real human write access.
+2. Set `mode` to `MULTI_PERSON` in `ownership.json` and add them to
+   `human_participants`. Declaring it without a second person is a hard error.
+3. Create `identities.json`; FINANCE must not be the repository owner.
+4. `php apps/api/scripts/verify_governance_identities.php` → `READY FOR ACTIVATION`.
+5. Apply `main-ruleset.json` instead of `main-ruleset.sole-owner.json`.
+
+Organization migration remains supported and is explicitly deferred; teams
+require one, and `owner.type` is currently `User`.
 
 ## The activation layer (M29-B)
 

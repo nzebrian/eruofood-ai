@@ -50,6 +50,7 @@ use EruoFood\Shared\Domain\Governance\ActivationState;
 use EruoFood\Shared\Domain\Governance\GovernanceRole;
 use EruoFood\Shared\Domain\Governance\IdentityFinding;
 use EruoFood\Shared\Domain\Governance\IdentityPolicy;
+use EruoFood\Shared\Domain\Governance\OwnershipDeclaration;
 
 // scripts -> api -> apps -> <repo root>. Three levels, not two: apps/api is
 // the Laravel root, but governance artifacts live across the whole repository.
@@ -167,6 +168,8 @@ $requiredArtifacts = [
     'production-tags-ruleset.json',
     'required-checks.json',
     'identities.example.json',
+    'ownership.json',
+    'main-ruleset.sole-owner.json',
     'README.md',
     'APPLY_GOVERNANCE.md',
     'VERIFY_GOVERNANCE.md',
@@ -183,7 +186,7 @@ verify('every governance artifact exists', function () use ($governanceDir, $req
 });
 
 verify('every JSON artifact parses', function () use ($governanceDir): array {
-    $files = ['main-ruleset.json', 'production-tags-ruleset.json', 'required-checks.json', 'identities.example.json'];
+    $files = ['main-ruleset.json', 'main-ruleset.sole-owner.json', 'production-tags-ruleset.json', 'required-checks.json', 'identities.example.json', 'ownership.json'];
 
     foreach ($files as $file) {
         readJson($governanceDir.'/'.$file);
@@ -641,15 +644,145 @@ verify('it forbids a standing bypass', function () use ($governanceDir): array {
     ];
 });
 
-// -- 7. Identity configuration and activation readiness (M29-B) ---------------
+// Read before section 7 uses it: the mode decides how several later checks are
+// judged, so it has to be established before any of them run.
+$appliesTo = is_string($tagDoc['_meta']['applies_to'] ?? null) ? $tagDoc['_meta']['applies_to'] : '';
+$ownershipDoc = null;
 
-section('7) Identity configuration and activation readiness');
+try {
+    $ownershipDoc = readJson($governanceDir.'/ownership.json');
+} catch (Throwable) {
+    $ownershipDoc = null;
+}
+
+$ownership = OwnershipDeclaration::fromArray($ownershipDoc);
+$identityPolicy = new IdentityPolicy(explode('/', $appliesTo)[0] ?? '', $ownership->mode);
+
+// -- 7. Governance ownership mode (M29-I) -------------------------------------
+
+section('7) Governance ownership mode');
+
+verify('the ownership declaration is usable', function () use ($ownership): array {
+    $errors = $ownership->errors();
+
+    return [
+        $errors === [],
+        $errors === []
+            ? 'mode='.$ownership->mode->value.' owner='.$ownership->repositoryOwner
+            : implode('; ', array_map(static fn (IdentityFinding $f): string => $f->code.': '.$f->summary, $errors)),
+    ];
+});
+
+verify('the declared owner matches the repository the artifacts describe', function () use ($ownership, $appliesTo): array {
+    // Two files name the repository. If they ever disagree, the owner-comparison
+    // rules are being applied against the wrong account and every result that
+    // depends on them is quietly meaningless.
+    $expected = explode('/', $appliesTo)[0] ?? '';
+
+    return [
+        $expected !== '' && strcasecmp($expected, $ownership->repositoryOwner) === 0,
+        "ownership.json={$ownership->repositoryOwner} production-tags-ruleset.json={$expected}",
+    ];
+});
+
+verify('no participant is an AI assistant or bot', function () use ($ownership): array {
+    // Claude and ChatGPT wrote much of this governance. Neither can hold
+    // repository access, approve a pull request, or be accountable for a change
+    // that moves money — and a synthetic reviewer would satisfy every other
+    // check in this file while providing none of the review it simulates.
+    $offenders = array_values(array_filter(
+        $ownership->humanParticipants,
+        static fn (string $h): bool => OwnershipDeclaration::isNonHuman($h),
+    ));
+
+    return [$offenders === [], $offenders === [] ? count($ownership->humanParticipants).' human participant(s)' : 'non-human: '.implode(', ', $offenders)];
+});
+
+verify('the ruleset for the declared mode matches that mode', function () use ($ownership, $governanceDir): array {
+    // The whole point of declaring a mode is that the ruleset actually applied
+    // agrees with it. SOLE_OWNER with one required approval blocks every merge;
+    // MULTI_PERSON with zero silently discards the review it claims to require.
+    $doc = readJson($governanceDir.'/'.$ownership->mode->mainRulesetArtifact());
+    $rule = ruleOfType($doc['rulesets'][0] ?? [], 'pull_request');
+    $p = $rule['parameters'] ?? [];
+
+    $problems = [];
+    $expectedCount = $ownership->mode->requiredApprovingReviewCount();
+
+    if (($p['required_approving_review_count'] ?? null) !== $expectedCount) {
+        $problems[] = sprintf('required_approving_review_count=%s, expected %d', json_encode($p['required_approving_review_count'] ?? null), $expectedCount);
+    }
+
+    if (($p['require_code_owner_review'] ?? null) !== $ownership->mode->supportsCodeOwnerReview()) {
+        $problems[] = 'require_code_owner_review='.json_encode($p['require_code_owner_review'] ?? null);
+    }
+
+    return [
+        $problems === [],
+        $problems === []
+            ? $ownership->mode->mainRulesetArtifact().': approvals='.$expectedCount.', code-owner review='.var_export($ownership->mode->supportsCodeOwnerReview(), true)
+            : implode('; ', $problems),
+    ];
+});
+
+verify('the sole-owner ruleset relaxes only the two human-review parameters', function () use ($governanceDir): array {
+    // Everything except the review parameters must be byte-identical to the
+    // multi-person policy. A "mode" that quietly dropped a status check or
+    // opened a bypass would be far worse than no mode at all.
+    $multi = readJson($governanceDir.'/main-ruleset.json')['rulesets'][0] ?? [];
+    $sole = readJson($governanceDir.'/main-ruleset.sole-owner.json')['rulesets'][0] ?? [];
+
+    $problems = [];
+
+    if (($sole['bypass_actors'] ?? null) !== []) {
+        $problems[] = 'sole-owner ruleset carries bypass actors';
+    }
+
+    if (array_column($multi['rules'] ?? [], 'type') !== array_column($sole['rules'] ?? [], 'type')) {
+        $problems[] = 'rule types differ';
+    }
+
+    if (($multi['conditions'] ?? null) !== ($sole['conditions'] ?? null)) {
+        $problems[] = 'conditions differ';
+    }
+
+    if (ruleOfType($multi, 'required_status_checks') !== ruleOfType($sole, 'required_status_checks')) {
+        $problems[] = 'required status checks differ — the automated gates must be identical in both modes';
+    }
+
+    $mp = ruleOfType($multi, 'pull_request')['parameters'] ?? [];
+    $sp = ruleOfType($sole, 'pull_request')['parameters'] ?? [];
+
+    foreach (array_keys($mp) as $key) {
+        $relaxable = in_array($key, ['required_approving_review_count', 'require_code_owner_review', 'require_last_push_approval'], true);
+
+        if (! $relaxable && ($mp[$key] ?? null) !== ($sp[$key] ?? null)) {
+            $problems[] = "pull_request.{$key} differs and is not a review parameter";
+        }
+    }
+
+    return [$problems === [], $problems === [] ? 'only the review parameters differ' : implode('; ', $problems)];
+});
+
+foreach ($ownership->mode->summaryLines() as $line) {
+    printf("  %s\n", $line);
+}
+
+if (! $ownership->mode->supportsIndependentReview()) {
+    // Printed rather than passed. A reader skimming a green run must not be
+    // able to come away thinking a second person reviewed anything.
+    externalCheck('independent human review (DEFERRED under SOLE_OWNER — requires a second real human)');
+    externalCheck('CODEOWNERS enforcement (DEFERRED under SOLE_OWNER — CODEOWNERS is inert)');
+    externalCheck('finance four-eyes review (DEFERRED under SOLE_OWNER — one human participant)');
+}
+
+// -- 8. Identity configuration and activation readiness (M29-B) ---------------
+
+section('8) Identity configuration and activation readiness');
 
 $identitiesPath = $governanceDir.'/identities.json';
 $examplePath = $governanceDir.'/identities.example.json';
 
-$appliesTo = is_string($tagDoc['_meta']['applies_to'] ?? null) ? $tagDoc['_meta']['applies_to'] : '';
-$identityPolicy = new IdentityPolicy(explode('/', $appliesTo)[0] ?? '');
 
 $activeIdentities = null;
 $identitiesReadable = true;
@@ -810,9 +943,9 @@ if ($assessment->state === ActivationState::ReadyForActivation) {
     echo "  GitHub. Nothing above upgrades an EXTERNAL item to a PASS.\n";
 }
 
-// -- 8. What only GitHub can answer -------------------------------------------
+// -- 9. What only GitHub can answer -------------------------------------------
 
-section('8) GitHub-side — not provable from this repository');
+section('9) GitHub-side — not provable from this repository');
 
 $liveRulesets = null;
 

@@ -50,6 +50,48 @@ function m29eWorkflow(): string
     return (string) file_get_contents($path);
 }
 
+/**
+ * The `on:` triggers of workflow-integrity.yml, as a shape rather than a string.
+ *
+ * PHP here has neither `ext-yaml` nor `symfony/yaml`, so this parses the one
+ * block it needs: everything indented under a top-level trigger key, with
+ * comments stripped. `null` means the trigger carries no configuration at all —
+ * which for `pull_request` is exactly the property that makes the check safe to
+ * require.
+ *
+ * @return array<string, string|null>
+ */
+function m29eWorkflowTriggers(): array
+{
+    $body = m29eWorkflow();
+
+    if (preg_match('/^on:\s*$\n((?:^(?:\s+.*|\s*)$\n)*)/m', $body, $m) !== 1) {
+        return [];
+    }
+
+    $triggers = [];
+    $current = null;
+
+    foreach (explode("\n", $m[1]) as $line) {
+        if (trim($line) === '' || preg_match('/^\s*#/', $line) === 1) {
+            continue;
+        }
+
+        if (preg_match('/^  ([a-z_]+):\s*(.*)$/', $line, $t) === 1) {
+            $current = $t[1];
+            $triggers[$current] = trim($t[2]) === '' ? null : trim($t[2]);
+
+            continue;
+        }
+
+        if ($current !== null) {
+            $triggers[$current] = trim(($triggers[$current] ?? '').' '.trim($line));
+        }
+    }
+
+    return $triggers;
+}
+
 function m29eNegativeControlPath(): string
 {
     return m29eRepoRoot().'/.github/scripts/workflow_integrity_negative_control.sh';
@@ -87,11 +129,27 @@ describe('the workflow integrity gate', function (): void {
         expect(m29eWorkflow())->toContain('name: Validate · actionlint');
     });
 
-    it('runs on pull requests and on pushes to main that touch a workflow', function (): void {
+    it('reports on every pull request, so it can be required', function (): void {
+        // M29-I changed this. The `paths:` filter was right for a check nobody
+        // required and wrong the moment anybody wanted to: GitHub treats a
+        // required check that never reports as PENDING, not satisfied, so a
+        // filtered required check leaves every unrelated pull request hanging
+        // forever. `push` stays filtered — post-merge runs can stay narrow
+        // because nothing waits on them.
         $body = m29eWorkflow();
 
-        expect($body)->toMatch('/pull_request:\s*\n\s*paths: \[".github\/workflows\/\*\*"\]/');
+        expect($body)->toMatch('/^  pull_request:\s*$/m');
         expect($body)->toMatch('/push:\s*\n\s*branches: \[main\]\s*\n\s*paths: \[".github\/workflows\/\*\*"\]/');
+    });
+
+    it('has no path filter on its pull_request trigger', function (): void {
+        // Asserted structurally rather than by regex: a filter re-added in any
+        // shape — `paths:` or `paths-ignore:`, inline or block — reintroduces
+        // the permanent-pending trap.
+        $trigger = m29eWorkflowTriggers();
+
+        expect(array_key_exists('pull_request', $trigger))->toBeTrue();
+        expect($trigger['pull_request'])->toBeNull('pull_request must carry no filter at all');
     });
 
     it('asks for nothing beyond read access', function (): void {

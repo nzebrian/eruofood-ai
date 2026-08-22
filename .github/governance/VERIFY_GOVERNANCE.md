@@ -46,6 +46,26 @@ It checks:
 Anything depending on GitHub state is reported as **EXTERNAL / ADMIN REQUIRED**
 and never as PASS.
 
+### 1.0 Ownership mode (M29-I)
+
+Both validators print the mode first. Read it before anything else — it decides
+what the rest of the output means:
+
+```
+SOLE_OWNER MODE
+Automated controls:      ACTIVE
+Independent human review: DEFERRED
+CODEOWNERS enforcement:   DEFERRED
+Finance four-eyes review: DEFERRED
+Reason: repository currently has one real human owner
+```
+
+A DEFERRED line is not a passed check and is not a failure. It is a control that
+is off, recorded as off, with a stated route back. The validator also asserts
+that `main-ruleset.sole-owner.json` differs from `main-ruleset.json` only in the
+three review parameters — so the mode cannot be used to drop a status check or
+open a bypass.
+
 ### 1.1 Identity and activation readiness (M29-B)
 
 ```bash

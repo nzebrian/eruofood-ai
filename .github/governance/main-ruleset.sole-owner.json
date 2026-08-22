@@ -1,0 +1,94 @@
+{
+  "_meta": {
+    "artifact": "main-ruleset.sole-owner",
+    "purpose": "The refs/heads/main ruleset for SOLE_OWNER mode. Identical to main-ruleset.json except for the two parameters that require a second human. Prepared by M29-I; NOT APPLIED.",
+    "applies_to": "nzebrian/eruofood-ai",
+    "prepared_against_main_sha": "9c12e6c56a2d7c015ac2a1e8fd1233a9c014f976",
+    "api": "POST /repos/{owner}/{repo}/rulesets",
+    "apply_command": "jq '.rulesets[0]' .github/governance/main-ruleset.sole-owner.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -",
+    "which_ruleset_applies": "Read .github/governance/ownership.json. mode SOLE_OWNER applies this file; mode MULTI_PERSON applies main-ruleset.json. Applying both, or the wrong one, is caught by verify_repository_governance.php.",
+    "differences_from_multi_person": {
+      "required_approving_review_count": "1 -> 0. GitHub forbids approving your own pull request, so on a one-human repository any value above zero blocks every merge rather than causing a review. Zero is the honest setting; it is recorded as DEFERRED in ownership.json, not as satisfied.",
+      "require_code_owner_review": "true -> false. Every rule in .github/CODEOWNERS is commented out and every owner is an unresolved placeholder. Requiring review from owners the file does not resolve either blocks everything or enforces nothing — the M29-A defect.",
+      "require_last_push_approval": "true -> false. It invalidates an existing approval when new commits are pushed. With zero required approvals there is none to invalidate, so true would assert a protection that cannot operate."
+    },
+    "what_is_NOT_relaxed": [
+      "deletion — main still cannot be deleted",
+      "non_fast_forward — main still cannot be force-pushed",
+      "pull_request — a pull request is still required; direct pushes to main are refused",
+      "dismiss_stale_reviews_on_push — retained, so the setting is already correct if the mode later changes",
+      "required_status_checks — all seven contexts, strict, unchanged. These are the real teeth under SOLE_OWNER",
+      "bypass_actors — empty, and stays empty"
+    ],
+    "note_on_bypass": "bypass_actors is empty here for the same reason it is empty in main-ruleset.json. A sole owner with admin rights can already disable a ruleset deliberately and visibly; a standing bypass would let them merge past a failing financial gate with no trace at all. See BREAK_GLASS.md."
+  },
+  "rulesets": [
+    {
+      "name": "main branch protection (sole owner)",
+      "target": "branch",
+      "enforcement": "active",
+      "bypass_actors": [],
+      "conditions": {
+        "ref_name": {
+          "include": [
+            "refs/heads/main"
+          ],
+          "exclude": []
+        }
+      },
+      "rules": [
+        {
+          "type": "deletion"
+        },
+        {
+          "type": "non_fast_forward"
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": true,
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": false,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          }
+        },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Lint · Analyse · Test"
+              },
+              {
+                "context": "Tests · SQLite"
+              },
+              {
+                "context": "Secret scanning"
+              },
+              {
+                "context": "Dependency audit"
+              },
+              {
+                "context": "Lint · Typecheck · Test · Build"
+              },
+              {
+                "context": "Lint spec · Generate types"
+              },
+              {
+                "context": "Build · Boot · Migrate · Healthcheck"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
