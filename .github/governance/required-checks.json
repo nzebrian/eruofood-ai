@@ -61,6 +61,14 @@
       "workflow_name": "CI · Docker Clean Boot",
       "covers": "Compose build, container boot, migrations against a clean database, healthcheck.",
       "pull_request_path_filtered": false
+    },
+    {
+      "context": "CI · Workflow Integrity",
+      "workflow": ".github/workflows/workflow-integrity.yml",
+      "workflow_name": "CI · Workflow Integrity",
+      "covers": "actionlint over every file in .github/workflows — YAML syntax, Actions semantics, expression contexts, and shellcheck over run: blocks — plus a five-case negative control that proves the gate rejects what it should and accepts what it should.",
+      "pull_request_path_filtered": false,
+      "note": "Added by M29-I. The workflow's pull_request paths filter was removed first: GitHub treats a required check that never reports as pending rather than satisfied, so requiring a path-filtered check would leave every pull request that touches no workflow permanently unmergeable. The job name was aligned to this context in the same change, because GitHub matches on the job name and not the workflow name. This check exists because release.yml was unloadable for two weeks and nothing was asking whether the gates could run at all."
     }
   ],
   "deliberately_not_required": [

@@ -84,6 +84,9 @@
               },
               {
                 "context": "Build · Boot · Migrate · Healthcheck"
+              },
+              {
+                "context": "CI · Workflow Integrity"
               }
             ]
           }

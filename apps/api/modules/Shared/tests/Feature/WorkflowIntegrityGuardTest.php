@@ -126,7 +126,26 @@ describe('the workflow integrity gate', function (): void {
         // required status checks on this string byte for byte, so a plain
         // hyphen here would quietly detach the rule that requires it.
         expect(m29eWorkflow())->toContain('name: CI · Workflow Integrity');
-        expect(m29eWorkflow())->toContain('name: Validate · actionlint');
+    });
+
+    it('names its job the same string that required-checks.json requires', function (): void {
+        // GitHub matches a required status check on the JOB name, not the
+        // workflow name. M29-I required this check, so the two must agree — a
+        // required context that never reports is permanently pending, which
+        // blocks every pull request with no error anywhere.
+        $required = json_decode(
+            (string) file_get_contents(m29eRepoRoot().'/.github/governance/required-checks.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+
+        $contexts = array_column($required['required'], 'context');
+
+        expect($contexts)->toContain('CI · Workflow Integrity');
+
+        // The job header, byte for byte, including the U+00B7 middle dot.
+        expect(m29eWorkflow())->toMatch('/^    name: CI · Workflow Integrity$/m');
     });
 
     it('reports on every pull request, so it can be required', function (): void {

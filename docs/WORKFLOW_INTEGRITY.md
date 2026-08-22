@@ -79,10 +79,18 @@ buys a check that can actually be required.
 
 `push` stays filtered. Nothing waits on a post-merge run, so narrowing it is free.
 
-**`CI · Workflow Integrity` is now eligible to be a required check but is not yet
-one.** Adding it to `.github/governance/required-checks.json` is a one-line
-change and a separate decision; the blocker that previously prevented it is
-gone.
+**`CI · Workflow Integrity` is a required check** as of M29-I. It is listed in
+`.github/governance/required-checks.json` alongside the other seven contexts.
+
+The job name was aligned to the workflow name in the same change. GitHub matches
+a required status check on the **job** name, so requiring the string
+`CI · Workflow Integrity` while the job was called `Validate · actionlint` would
+have produced a check that never reports — permanently pending on every pull
+request. Once a ruleset requires it, that string is load-bearing: renaming the
+job silently detaches the rule.
+
+Required is still not enforced. No ruleset exists on this repository yet, so
+every check remains advisory until an administrator applies one.
 
 ## Permissions
 
@@ -167,14 +175,14 @@ fixture that breaks for an unrelated reason is not counted as proof.
 | A workflow is valid YAML but invalid Actions | job fails, with the rule name in brackets |
 | actionlint's checksum does not match | job fails **before extraction**; nothing from the archive runs |
 | The negative control is not rejected | job fails — the gate is not earning its place |
-| The pull request touches no workflow | job does not run (see the path-filter warning above) |
+| The pull request touches no workflow | job still runs — there is no `pull_request` path filter, which is what makes it safe to require |
 
 A failing run names the file and line. Reproduce locally with the same pinned
 version rather than guessing from the log.
 
 ## Related tests
 
-`apps/api/modules/Shared/tests/Feature/WorkflowIntegrityGuardTest.php` — 15
+`apps/api/modules/Shared/tests/Feature/WorkflowIntegrityGuardTest.php` — 17
 tests. These cover what actionlint cannot: that the gate is *configured* the way
 it claims (triggers, minimum permissions, all-workflows rather than
 changed-only, pinned and verified linter, negative control wired in), plus a
