@@ -35,7 +35,9 @@
       "bypass_actors": [],
       "conditions": {
         "ref_name": {
-          "include": ["refs/heads/main"],
+          "include": [
+            "refs/heads/main"
+          ],
           "exclude": []
         }
       },
@@ -54,7 +56,11 @@
             "require_code_owner_review": true,
             "require_last_push_approval": true,
             "required_review_thread_resolution": false,
-            "allowed_merge_methods": ["merge", "squash", "rebase"]
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
           }
         },
         {
@@ -63,13 +69,30 @@
             "strict_required_status_checks_policy": true,
             "do_not_enforce_on_create": false,
             "required_status_checks": [
-              { "context": "Lint · Analyse · Test" },
-              { "context": "Tests · SQLite" },
-              { "context": "Secret scanning" },
-              { "context": "Dependency audit" },
-              { "context": "Lint · Typecheck · Test · Build" },
-              { "context": "Lint spec · Generate types" },
-              { "context": "Build · Boot · Migrate · Healthcheck" }
+              {
+                "context": "Lint · Analyse · Test"
+              },
+              {
+                "context": "Tests · SQLite"
+              },
+              {
+                "context": "Secret scanning"
+              },
+              {
+                "context": "Dependency audit"
+              },
+              {
+                "context": "Lint · Typecheck · Test · Build"
+              },
+              {
+                "context": "Lint spec · Generate types"
+              },
+              {
+                "context": "Build · Boot · Migrate · Healthcheck"
+              },
+              {
+                "context": "CI · Workflow Integrity"
+              }
             ]
           }
         }

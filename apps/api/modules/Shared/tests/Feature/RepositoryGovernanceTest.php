@@ -177,7 +177,12 @@ describe('required checks', function (): void {
         $this->main = governanceJson('main-ruleset.json')['rulesets'][0] ?? [];
     });
 
-    it('declares the seven contexts M28 evidenced', function (): void {
+    it('declares the seven contexts M28 evidenced, plus the workflow gate M29-I added', function (): void {
+        // Pinned as an exact set rather than a count, so that adding a context
+        // is a deliberate edit to this list and removing one cannot pass
+        // quietly. The eighth arrived in M29-I, once the workflow-integrity
+        // check lost the `paths:` filter that would have made requiring it a
+        // permanent block.
         expect(array_column($this->checks, 'context'))->toEqualCanonicalizing([
             'Lint · Analyse · Test',
             'Tests · SQLite',
@@ -186,6 +191,7 @@ describe('required checks', function (): void {
             'Lint · Typecheck · Test · Build',
             'Lint spec · Generate types',
             'Build · Boot · Migrate · Healthcheck',
+            'CI · Workflow Integrity',
         ]);
     });
 

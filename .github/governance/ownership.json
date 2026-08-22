@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "artifact": "ownership",
+    "purpose": "Declares who actually governs this repository, so that every other governance artifact can be checked against the truth rather than against an aspiration.",
+    "applies_to": "nzebrian/eruofood-ai",
+    "prepared_against_main_sha": "9c12e6c56a2d7c015ac2a1e8fd1233a9c014f976",
+    "prepared_by": "M29-I",
+
+    "why_this_exists": "M29-H established that this repository has exactly one account with any access, and that account authors every commit. The governance prepared in M29-A through M29-E assumed more than one human: required_approving_review_count is 1, require_code_owner_review is true, and FINANCE may not be the repository owner. Applied as-is to a sole-owner repository those rules do not produce strong governance, they produce a repository nobody can merge into — and a CODEOWNERS requirement pointed at an inert file, which is the M29-A defect exactly. Declaring the mode makes the gap a recorded fact with a validator behind it, instead of a surprise discovered at the first blocked pull request.",
+
+    "the_distinction_that_matters": "Deferred is not satisfied. SOLE_OWNER does not weaken a single automated control — lint, static analysis, tests, migrations, Redis, financial concurrency, secret scanning, dependency audit and workflow integrity all remain required and all still gate a merge. What it defers is the part that needs a second human to exist. The validator says so out loud on every run rather than reporting green and letting the reader infer four-eyes review that is not happening.",
+
+    "no_synthetic_participants": "AI assistants are tools, not participants. Claude and ChatGPT contributed code to this repository and neither is, or may be represented as, a collaborator, code owner, independent reviewer, release actor, bypass actor or human approver. The validator rejects any such handle in any identity slot. A fabricated second reviewer would satisfy every check in this repository and defeat the entire purpose of the review it simulates.",
+
+    "how_to_move_to_multi_person": [
+      "1. Add a second real human with write access to the repository.",
+      "2. Set mode to MULTI_PERSON here and record them under human_participants.",
+      "3. Create .github/governance/identities.json from identities.example.json with real handles; FINANCE must not be the repository owner.",
+      "4. Run: php apps/api/scripts/verify_governance_identities.php  (expect READY FOR ACTIVATION)",
+      "5. Apply main-ruleset.json rather than main-ruleset.sole-owner.json.",
+      "6. Follow .github/governance/APPLY_GOVERNANCE.md from section 1."
+    ],
+
+    "organization_migration": "Supported and explicitly deferred. Teams (@org/team) require an Organization; owner.type is currently User, so CODEOWNERS may name individual usernames only and actor_type Team is unavailable."
+  },
+
+  "mode": "SOLE_OWNER",
+
+  "repository": "nzebrian/eruofood-ai",
+  "repository_owner": "nzebrian",
+  "owner_type": "User",
+
+  "human_participants": ["nzebrian"],
+
+  "active_controls": [
+    "required status checks (7 contexts, strict)",
+    "no direct push to main",
+    "no force-push to main",
+    "no deletion of main",
+    "pull request required before merge",
+    "stale review dismissal on new commits",
+    "production tag creation restricted",
+    "production tag immutability, no bypass actor",
+    "workflow integrity validation",
+    "secret scanning and dependency audit"
+  ],
+
+  "deferred_controls": [
+    {
+      "control": "independent human review",
+      "state": "DEFERRED",
+      "reason": "The repository has one human participant. GitHub forbids approving your own pull request, so required_approving_review_count above 0 would block every merge rather than cause a review.",
+      "resolves_when": "a second real human is granted write access"
+    },
+    {
+      "control": "CODEOWNERS enforcement",
+      "state": "DEFERRED",
+      "reason": "Every rule in .github/CODEOWNERS is commented out and every owner is an unresolved <OWNER:...> placeholder. Enabling require_code_owner_review against that file either blocks every pull request or enforces nothing, and which one is not obvious until somebody tries to merge — the defect M29-A was opened to remove.",
+      "resolves_when": "identities.json holds real handles and verify_governance_identities.php reports READY FOR ACTIVATION"
+    },
+    {
+      "control": "finance four-eyes review",
+      "state": "DEFERRED",
+      "reason": "M27 split finance permissions by consequence so that one person could not both write and approve a change that moves money. With one human that separation cannot exist. It is recorded as absent rather than marked satisfied.",
+      "resolves_when": "a second real human owns FINANCE and is not the repository owner",
+      "compensating_controls": [
+        "every settlement and rollout flag ships false",
+        "financial scheduled work is registered disabled",
+        "the financial concurrency gate runs on every pull request",
+        "settlement.execute requires the M28 exit gate before it may be enabled"
+      ]
+    }
+  ]
+}

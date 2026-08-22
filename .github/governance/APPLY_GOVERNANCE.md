@@ -143,7 +143,23 @@ commented out.
 
 ## 2. Apply the `main` ruleset
 
+**Which file depends on the declared mode.** Read `ownership.json` first:
+`SOLE_OWNER` applies `main-ruleset.sole-owner.json`, `MULTI_PERSON` applies
+`main-ruleset.json`. Applying the wrong one is caught by
+`verify_repository_governance.php`, but only after the fact.
+
+The repository currently declares `SOLE_OWNER`, so section 1 above is deferred
+along with CODEOWNERS — there is one human, and requiring an approval that
+account cannot give would block every merge. The two rulesets are identical
+apart from `required_approving_review_count`, `require_code_owner_review` and
+`require_last_push_approval`; every status check is the same in both.
+
 ```bash
+# SOLE_OWNER (current):
+jq '.rulesets[0]' .github/governance/main-ruleset.sole-owner.json \
+  | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -
+
+# MULTI_PERSON (after a second human has write access):
 jq '.rulesets[0]' .github/governance/main-ruleset.json \
   | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -
 ```

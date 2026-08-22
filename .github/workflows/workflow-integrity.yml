@@ -14,8 +14,22 @@ name: CI · Workflow Integrity
 # parse and run what is in .github/workflows?
 
 on:
+  # No `paths:` on `pull_request`, deliberately (M29-I).
+  #
+  # It was filtered here originally, which was correct for a check nobody
+  # required and wrong the moment anybody wanted to. GitHub treats a required
+  # status check that never reports as PENDING, not as satisfied — so requiring
+  # a path-filtered check leaves every pull request that touches no workflow
+  # waiting forever for a conclusion that is never coming, with no error
+  # anywhere. That is the same trap M29-A removed from ci-api, ci-web,
+  # contracts and ci-docker.
+  #
+  # The job downloads one 2 MB binary and lints thirteen files; it finished in
+  # six seconds on the run that merged it. Running it on every pull request
+  # costs almost nothing and buys a check that can actually be required.
+  #
+  # `push` below stays filtered, so post-merge runs remain narrow.
   pull_request:
-    paths: [".github/workflows/**"]
   push:
     branches: [main]
     paths: [".github/workflows/**"]
@@ -38,7 +52,17 @@ env:
 
 jobs:
   actionlint:
-    name: Validate · actionlint
+    # The job name, not the workflow name, is what GitHub matches a required
+    # status check against. They are deliberately the same string here (M29-I)
+    # so that `required-checks.json` can name the check the way everybody refers
+    # to it. Requiring "CI · Workflow Integrity" while this said something else
+    # would have produced a check that never reports — permanently pending,
+    # blocking every pull request, with no error anywhere.
+    #
+    # Renaming a job detaches any rule that requires the old name. This one was
+    # safe to rename because nothing required it yet. Once it is required, treat
+    # this string as load-bearing.
+    name: CI · Workflow Integrity
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
