@@ -87,16 +87,23 @@ jobs:
           curl -fsS http://localhost:8080/api/v1/ready  | tee /tmp/ready.json
           grep -q '"status":"ok"'    /tmp/health.json
           grep -q '"status":"ready"' /tmp/ready.json
-
-      - name: Backend runtime tests (inside the container, on PostgreSQL)
-        run: docker compose exec -T api vendor/bin/pest --no-coverage
-
+          
+    
+  
       - name: PostgreSQL integration — fresh migrate/rollback/re-migrate
-        run: |
+        run:
           docker compose exec -T api php artisan migrate:fresh --force
           docker compose exec -T api php artisan migrate:rollback --force
           docker compose exec -T api php artisan migrate --force
+          
+      - name: Install PHP dependencies
+        run: 
+          docker compose exec -T api composer install --no-interaction --prefer-dist
 
+      - name: Backend runtime tests (inside the container, on PostgreSQL)
+        run: 
+          docker compose exec -T api vendor/bin/pest --no-coverage
+          
       - name: Redis integration — rate limit / quota / idempotency / counters
         run: docker compose exec -T api php scripts/redis_validation.php
 
