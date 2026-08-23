@@ -42,13 +42,19 @@ FROM base AS vendor
 COPY apps/api/composer.json apps/api/composer.lock ./
 RUN --mount=type=cache,target=/tmp/composer-cache \
     COMPOSER_CACHE_DIR=/tmp/composer-cache \
-    composer install \
-        --no-dev \
-        --no-scripts \
-        --no-autoloader \
-        --prefer-dist \
-        --no-interaction \
-        --no-progress
+    sh -c 'for i in 1 2 3; do \
+        composer install \
+            --no-dev \
+            --no-scripts \
+            --no-autoloader \
+            --prefer-dist \
+            --no-interaction \
+            --no-progress \
+        && exit 0; \
+        echo "Composer install failed (attempt $i/3). Retrying in 10 seconds..."; \
+        sleep 10; \
+    done; \
+    exit 1'
 
 # ---- Stage 3: runtime -------------------------------------------------------
 FROM base AS runtime
