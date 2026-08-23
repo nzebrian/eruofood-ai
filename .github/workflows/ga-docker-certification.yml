@@ -91,7 +91,7 @@ jobs:
     
   
       - name: PostgreSQL integration — fresh migrate/rollback/re-migrate
-        run:
+        run: |
           docker compose exec -T api php artisan migrate:fresh --force
           docker compose exec -T api php artisan migrate:rollback --force
           docker compose exec -T api php artisan migrate --force
