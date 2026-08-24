@@ -28,3 +28,20 @@ android/.gradle/
 android/local.properties
 android/key.properties
 *.jks
+
+# Signing material and service credentials (M31).
+#
+# The generated android/.gitignore already covers key.properties, *.jks and
+# *.keystore for Android. Nothing covered the iOS side, and nothing covered the
+# Google service files on either platform — so a later Firebase integration
+# would have committed real project credentials without anything objecting.
+# M31 adds no Firebase and no signing config; these rules exist so that when
+# somebody does, the default is safe rather than silent.
+*.keystore
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+google-services.json
+GoogleService-Info.plist
+**/xcuserdata/

@@ -1,0 +1,111 @@
+{
+  "_meta": {
+    "artifact": "m31-platform-manifest",
+    "purpose": "The exact set of files M31 adds to apps/mobile. The validator compares the working tree against this list in both directions, so a missing generated file and an unexpected extra file both fail.",
+    "generated_by": "flutter create --org ai.eruofood --project-name eruofood --platforms=android,ios .",
+    "flutter_version": "3.47.1",
+    "flutter_revision": "6655482ec0",
+    "generated_against_main_sha": "58fec388fc357a771597b78a0e58aaacb86e9cc1",
+    "why_paths_and_not_hashes": "Hashes would pin the output of one SDK release. Flutter regenerates these files, and a template change in a later SDK is a fact to review, not a validation failure. The path set is what M31 is accountable for: that the host projects exist, that nothing else came with them, and that no fourth platform appeared.",
+    "not_hand_written": "Every path here is generator output. The only post-generation edits are the two user-facing labels required by the milestone; they are asserted separately by the validator's branding check, not by this list."
+  },
+  "root": "apps/mobile",
+  "expected": {
+    "flutter_metadata": [
+      ".metadata"
+    ],
+    "android": [
+      "android/.gitignore",
+      "android/app/build.gradle.kts",
+      "android/app/src/debug/AndroidManifest.xml",
+      "android/app/src/main/AndroidManifest.xml",
+      "android/app/src/main/kotlin/ai/eruofood/eruofood/MainActivity.kt",
+      "android/app/src/main/res/drawable-v21/launch_background.xml",
+      "android/app/src/main/res/drawable/launch_background.xml",
+      "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "android/app/src/main/res/values-night/styles.xml",
+      "android/app/src/main/res/values/styles.xml",
+      "android/app/src/profile/AndroidManifest.xml",
+      "android/build.gradle.kts",
+      "android/gradle.properties",
+      "android/gradle/wrapper/gradle-wrapper.properties",
+      "android/settings.gradle.kts"
+    ],
+    "ios": [
+      "ios/.gitignore",
+      "ios/Flutter/AppFrameworkInfo.plist",
+      "ios/Flutter/Debug.xcconfig",
+      "ios/Flutter/Release.xcconfig",
+      "ios/Runner.xcodeproj/project.pbxproj",
+      "ios/Runner.xcodeproj/project.xcworkspace/contents.xcworkspacedata",
+      "ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+      "ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings",
+      "ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme",
+      "ios/Runner.xcworkspace/contents.xcworkspacedata",
+      "ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+      "ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings",
+      "ios/Runner/AppDelegate.swift",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@3x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@3x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@1x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@3x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@1x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@2x.png",
+      "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png",
+      "ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json",
+      "ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage.png",
+      "ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@2x.png",
+      "ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@3x.png",
+      "ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md",
+      "ios/Runner/Base.lproj/LaunchScreen.storyboard",
+      "ios/Runner/Base.lproj/Main.storyboard",
+      "ios/Runner/Info.plist",
+      "ios/Runner/Runner-Bridging-Header.h",
+      "ios/Runner/SceneDelegate.swift",
+      "ios/RunnerTests/RunnerTests.swift"
+    ]
+  },
+  "forbidden_platforms": [
+    "web",
+    "macos",
+    "windows",
+    "linux"
+  ],
+  "protected_unchanged": {
+    "pubspec.yaml": "63862eff31da54eeb100f976bec263f8f3950df5211bb94896c4673e4393d423",
+    "pubspec.lock": "b18aa4f204a44fed25441c761d77fcc3312bd9499fc3e1939528eb802b8884be",
+    "analysis_options.yaml": "fff89b9180b97ca95630e803f62cbda25b4d705d10adde0beec68912348a3e04"
+  },
+  "identity": {
+    "organization": "ai.eruofood",
+    "android_namespace": "ai.eruofood.eruofood",
+    "android_application_id": "ai.eruofood.eruofood",
+    "ios_bundle_identifier": "ai.eruofood.eruofood",
+    "display_name": "EruoFood AI"
+  },
+  "forbidden_file_patterns": [
+    "*.jks",
+    "*.keystore",
+    "*.p12",
+    "*.pem",
+    "*.mobileprovision",
+    "*.cer",
+    "key.properties",
+    "local.properties",
+    "google-services.json",
+    "GoogleService-Info.plist"
+  ]
+}
