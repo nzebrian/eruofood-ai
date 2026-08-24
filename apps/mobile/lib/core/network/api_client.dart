@@ -6,8 +6,11 @@ import '../config/app_config.dart';
 /// and bearer-token injection for all REST calls. Feature data sources depend
 /// on this; no business endpoints are defined in the foundation.
 class ApiClient {
-  ApiClient(AppConfig config, {Future<String?> Function()? tokenProvider})
-      : _dio = Dio(
+  ApiClient(
+    AppConfig config, {
+    Future<String?> Function()? tokenProvider,
+    List<Interceptor> interceptors = const <Interceptor>[],
+  }) : _dio = Dio(
           BaseOptions(
             baseUrl: config.apiBaseUrl,
             connectTimeout: const Duration(seconds: 10),
@@ -31,6 +34,13 @@ class ApiClient {
         ),
       );
     }
+
+    // Added after the token interceptor, deliberately. Dio runs `onRequest` in
+    // registration order, so anything here sees the request as it will be sent
+    // — and, just as importantly, the retry queue persists its record *after*
+    // the Authorization header exists without ever copying it, which is what
+    // keeps a stale bearer token out of storage.
+    _dio.interceptors.addAll(interceptors);
   }
 
   final Dio _dio;
