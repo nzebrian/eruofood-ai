@@ -189,6 +189,14 @@ abstract final class RetryEligibility {
       case DioExceptionType.badResponse:
         return _fromStatus(error.response?.statusCode);
 
+      case DioExceptionType.transformTimeout:
+        // The server answered; the *client* then ran out of time decoding the
+        // body. So the request arrived and may well have committed, and the
+        // failure says nothing about what the server did with it. Treating a
+        // decode timeout as a refusal would drop the record for a charge that
+        // very likely succeeded.
+        return RetryClassification.serverIndeterminate;
+
       case DioExceptionType.unknown:
         // Usually a wrapped SocketException, sometimes a parse error on a
         // response the server did send. Ambiguous, so treated as ambiguous.

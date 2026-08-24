@@ -126,6 +126,19 @@ void main() {
       }
     });
 
+    test('a response the client timed out decoding is indeterminate', () {
+      // The server answered and the client ran out of time transforming the
+      // body. The request arrived and may have committed, so the operation
+      // stays queued for reconciliation rather than being dropped as refused.
+      expect(
+        RetryEligibility.classify(DioException(
+          requestOptions: _options('/commerce/checkout'),
+          type: DioExceptionType.transformTimeout,
+        )),
+        RetryClassification.serverIndeterminate,
+      );
+    });
+
     test('an unrecognised failure is indeterminate', () {
       expect(
         RetryEligibility.classify(DioException(
