@@ -2,14 +2,14 @@
 #
 # M31 — negative controls for the platform-foundation validator.
 #
-# `verify_platform_foundation.sh` currently reports 21 passes. That is true for
+# `verify_platform_foundation.sh` currently reports 28 passes. That is true for
 # two indistinguishable reasons: the scaffolding is correct, or the validator
 # checks nothing. M28 found a five-adapter test sweep that had been exercising
 # one adapter five times while green throughout, and this repository has
 # shipped a negative control with every gate since.
 #
 # Each control below breaks one specific thing in a throwaway copy and asserts
-# the validator notices. Control 9 is the control on the controls: an untouched
+# the validator notices. Control 10 is the control on the controls: an untouched
 # copy must pass, so a validator that rejects everything cannot masquerade as
 # one that works.
 #
@@ -20,7 +20,13 @@
 set -uo pipefail
 
 MOBILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VALIDATOR="scripts/verify_platform_foundation.sh"
+VALIDATOR="apps/mobile/scripts/verify_platform_foundation.sh"
+
+REPO_ROOT="$MOBILE_DIR"
+while [[ "$REPO_ROOT" != "/" && ! -d "$REPO_ROOT/.github/workflows" ]]; do
+  REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+CERT_REL=".github/workflows/ga-flutter-certification.yml"
 
 PASS=0
 FAIL=0
@@ -38,19 +44,28 @@ BEFORE="$(fingerprint)"
 
 # A pristine copy per control, initialised as its own git repository.
 #
-# The `git init` is not decoration. An early version of this file copied the
-# tree without it, and the validator then reported the gitignored
-# android/local.properties as committable — a false failure that control 8
-# caught immediately. Fixtures have to behave like the real thing or the
-# controls test a different program from the one that ships.
+# The `git init` is not decoration. An early version copied the tree without
+# it, and the validator then reported the gitignored android/local.properties
+# as committable — a false failure the control-on-the-controls caught at once.
+# Fixtures have to behave like the real thing or the controls test a different
+# program from the one that ships.
+#
+# For the same reason a fixture is a miniature repository rather than a bare
+# copy of apps/mobile: the validator resolves the certification workflow by
+# walking up to the repository root, so a fixture without one would fail
+# section G for the wrong reason and make every control below meaningless.
 fixture() {
-  local dir="$WORK/$1"
-  mkdir -p "$dir"
-  cp -a "$MOBILE_DIR/." "$dir/" 2>/dev/null || true
-  rm -rf "$dir/build" "$dir/.dart_tool" "$dir/.git"
-  git -C "$dir" init -q 2>/dev/null || true
-  echo "$dir"
+  local root="$WORK/$1"
+  mkdir -p "$root/apps/mobile" "$root/.github/workflows"
+  cp -a "$MOBILE_DIR/." "$root/apps/mobile/" 2>/dev/null || true
+  rm -rf "$root/apps/mobile/build" "$root/apps/mobile/.dart_tool" "$root/apps/mobile/.git"
+  cp "$REPO_ROOT/$CERT_REL" "$root/$CERT_REL"
+  git -C "$root" init -q 2>/dev/null || true
+  echo "$root"
 }
+
+# Where apps/mobile lives inside a fixture.
+m() { echo "$1/apps/mobile"; }
 
 # Runs the validator in a fixture and reports whether it failed.
 rejects() {
@@ -72,7 +87,7 @@ echo "========================================================================"
 echo
 
 # -- 1 --------------------------------------------------------------------
-d="$(fixture c1)"; rm -rf "$d/android"
+d="$(fixture c1)"; rm -rf "$(m "$d")/android"
 if rejects "$d" "android/ is missing"; then
   ok "1 · a missing Android host project is detected"
 else
@@ -80,7 +95,7 @@ else
 fi
 
 # -- 2 --------------------------------------------------------------------
-d="$(fixture c2)"; rm -rf "$d/ios"
+d="$(fixture c2)"; rm -rf "$(m "$d")/ios"
 if rejects "$d" "ios/ is missing"; then
   ok "2 · a missing iOS host project is detected"
 else
@@ -90,7 +105,7 @@ fi
 # -- 3 --------------------------------------------------------------------
 # The file PR #12's scaffolding omitted. Without it a later SDK cannot tell
 # which platforms to migrate.
-d="$(fixture c3)"; rm -f "$d/.metadata"
+d="$(fixture c3)"; rm -f "$(m "$d")/.metadata"
 if rejects "$d" ".metadata is missing"; then
   ok "3 · a missing .metadata is detected"
 else
@@ -100,7 +115,7 @@ fi
 # -- 4 --------------------------------------------------------------------
 # The failure mode where somebody runs a bare `flutter create .` and quietly
 # adds four platforms nothing builds or certifies.
-d="$(fixture c4)"; mkdir -p "$d/web"
+d="$(fixture c4)"; mkdir -p "$(m "$d")/web"
 if rejects "$d" "web/ exists but M31 does not scaffold"; then
   ok "4 · an unscaffolded extra platform is detected"
 else
@@ -112,7 +127,7 @@ fi
 # in a diff.
 d="$(fixture c5)"
 sed -i 's/applicationId = "ai.eruofood.eruofood"/applicationId = "com.example.eruofood"/' \
-  "$d/android/app/build.gradle.kts"
+  "$(m "$d")/android/app/build.gradle.kts"
 if rejects "$d" "android applicationId is not"; then
   ok "5 · a wrong Android applicationId is detected"
 else
@@ -124,7 +139,7 @@ fi
 # is the control that makes that visible instead of shipping it.
 d="$(fixture c6)"
 sed -i 's/android:label="EruoFood AI"/android:label="eruofood"/' \
-  "$d/android/app/src/main/AndroidManifest.xml"
+  "$(m "$d")/android/app/src/main/AndroidManifest.xml"
 if rejects "$d" "android launcher label is not"; then
   ok "6 · a reverted launcher label is detected"
 else
@@ -134,7 +149,7 @@ fi
 # -- 7 --------------------------------------------------------------------
 # `flutter create` runs an implicit resolve that rewrote six transitive pins
 # the first time it ran. This control is why that cannot pass unnoticed.
-d="$(fixture c7)"; printf '\n# drift\n' >> "$d/pubspec.lock"
+d="$(fixture c7)"; printf '\n# drift\n' >> "$(m "$d")/pubspec.lock"
 if rejects "$d" "pubspec.lock changed"; then
   ok "7 · a modified pubspec.lock is detected"
 else
@@ -150,8 +165,8 @@ fi
 # nothing: it would be correctly ignored, and the control would pass while
 # testing the rule's absence rather than its presence.
 d="$(fixture c8)"
-sed -i '/^GoogleService-Info.plist$/d;/^google-services.json$/d' "$d/.gitignore"
-printf '{}\n' > "$d/ios/Runner/GoogleService-Info.plist"
+sed -i '/^GoogleService-Info.plist$/d;/^google-services.json$/d' "$(m "$d")/.gitignore"
+printf '{}\n' > "$(m "$d")/ios/Runner/GoogleService-Info.plist"
 if rejects "$d" "forbidden file is neither ignored nor expected"; then
   ok "8 · without the ignore rule, a service-credential file is detected"
 else
@@ -161,29 +176,81 @@ fi
 # -- 8b -------------------------------------------------------------------
 # And with the rule in place the same file is correctly not flagged, so the
 # control above is measuring the rule and not some unrelated failure.
-d="$(fixture c8b)"; printf '{}\n' > "$d/ios/Runner/GoogleService-Info.plist"
+d="$(fixture c8b)"; printf '{}\n' > "$(m "$d")/ios/Runner/GoogleService-Info.plist"
 if "$d/$VALIDATOR" >/dev/null 2>&1; then
   ok "8b · with the ignore rule, the same file is correctly not committable"
 else
   bad "8b · the ignore rule does not actually cover the file"
 fi
 
-# -- 9 --------------------------------------------------------------------
-# The control on the controls. Without it the eight above cannot distinguish
-# a working validator from one that rejects whatever it is handed.
-d="$(fixture c9)"
-if "$d/$VALIDATOR" >/dev/null 2>&1; then
-  ok "9 · an untouched copy passes — the validator is not rejecting everything"
+# -- 9a -------------------------------------------------------------------
+# The cheapest way to make a red certification green is to delete the step
+# that was failing. These four controls exist so that route is closed: the
+# milestone had to make the builds *possible*, not optional.
+d="$(fixture c9a)"
+sed -i '/flutter build apk --release/d' "$d/$CERT_REL"
+if rejects "$d" "Android APK build command is missing"; then
+  ok "9a · deleting the Android build command is detected"
 else
-  bad "9 · an untouched copy FAILED; controls 1-8 prove nothing"
+  bad "9a · a deleted Android build command was NOT detected"
+fi
+
+# -- 9b -------------------------------------------------------------------
+d="$(fixture c9b)"
+sed -i '/flutter build ios --release --no-codesign/d' "$d/$CERT_REL"
+if rejects "$d" "iOS build command is missing"; then
+  ok "9b · deleting the iOS build command is detected"
+else
+  bad "9b · a deleted iOS build command was NOT detected"
+fi
+
+# -- 9c -------------------------------------------------------------------
+# A build step allowed to fail without failing the job is not a gate.
+d="$(fixture c9c)"
+sed -i 's|        run: flutter build apk --release|        continue-on-error: true\n        run: flutter build apk --release|' "$d/$CERT_REL"
+if rejects "$d" "marked continue-on-error"; then
+  ok "9c · a build step marked continue-on-error is detected"
+else
+  bad "9c · continue-on-error was NOT detected"
+fi
+
+# -- 9d -------------------------------------------------------------------
+# Without a mandatory artifact, a build that produced nothing still uploads
+# an empty archive and reports success.
+d="$(fixture c9d)"
+sed -i 's/if-no-files-found: error/if-no-files-found: warn/' "$d/$CERT_REL"
+if rejects "$d" "APK artifact is no longer mandatory"; then
+  ok "9d · a non-mandatory APK artifact is detected"
+else
+  bad "9d · a non-mandatory APK artifact was NOT detected"
+fi
+
+# -- 9e -------------------------------------------------------------------
+# Relaxing analyze is the other quiet way to make a gate stop biting.
+d="$(fixture c9e)"
+sed -i 's/ --fatal-infos --fatal-warnings//' "$d/$CERT_REL"
+if rejects "$d" "analyze is no longer strict"; then
+  ok "9e · a relaxed analyze step is detected"
+else
+  bad "9e · a relaxed analyze step was NOT detected"
 fi
 
 # -- 10 -------------------------------------------------------------------
+# The control on the controls. Without it the thirteen above cannot
+# distinguish a working validator from one that rejects whatever it is handed.
+d="$(fixture c10)"
+if "$d/$VALIDATOR" >/dev/null 2>&1; then
+  ok "10 · an untouched copy passes — the validator is not rejecting everything"
+else
+  bad "10 · an untouched copy FAILED; every control above proves nothing"
+fi
+
+# -- 11 -------------------------------------------------------------------
 AFTER="$(fingerprint)"
 if [[ "$BEFORE" == "$AFTER" ]]; then
-  ok "10 · the real apps/mobile tree is byte-identical after the run"
+  ok "11 · the real apps/mobile tree is byte-identical after the run"
 else
-  bad "10 · the controls MODIFIED the tree they were protecting"
+  bad "11 · the controls MODIFIED the tree they were protecting"
 fi
 
 echo

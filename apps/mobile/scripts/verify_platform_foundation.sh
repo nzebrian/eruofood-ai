@@ -19,6 +19,15 @@ set -uo pipefail
 MOBILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$MOBILE_DIR/m31-platform-manifest.json"
 
+# The certification workflow lives at the repository root. Resolved by walking
+# up rather than by a fixed ../../ so the validator still works from a fixture
+# copy, where it simply finds no workflow and says so instead of guessing.
+REPO_ROOT="$MOBILE_DIR"
+while [[ "$REPO_ROOT" != "/" && ! -d "$REPO_ROOT/.github/workflows" ]]; do
+  REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+CERT_WORKFLOW="$REPO_ROOT/.github/workflows/ga-flutter-certification.yml"
+
 PASS=0
 FAIL=0
 
@@ -305,6 +314,100 @@ if git -C "$MOBILE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     fi
   done < <({ manifest_list flutter_metadata; manifest_list android; manifest_list ios; })
   [[ "$leaked" -eq 0 ]] && ok "no committable file contains an absolute machine path"
+fi
+
+# -- G. The certification gate still builds -----------------------------------
+#
+# Scaffolding makes the builds possible. Nothing so far stops somebody making
+# the workflow green a second way — deleting the build steps, marking them
+# continue-on-error, or dropping if-no-files-found so a missing APK passes
+# quietly. Each of those turns a certification into a formality, and each is a
+# one-line edit. So the gate's own shape is asserted here.
+#
+# This is not a workflow change. M31 adds no trigger, no step and no flag; it
+# only refuses to let the existing ones disappear.
+
+head_ "G) Certification gate integrity"
+
+if [[ -f "$CERT_WORKFLOW" ]]; then
+  if grep -q 'flutter build apk --release' "$CERT_WORKFLOW"; then
+    ok "the Android APK build command is still in the certification workflow"
+  else
+    bad "the Android APK build command is missing from the certification workflow"
+  fi
+
+  if grep -q 'flutter build ios --release --no-codesign' "$CERT_WORKFLOW"; then
+    ok "the iOS build command is still in the certification workflow"
+  else
+    bad "the iOS build command is missing from the certification workflow"
+  fi
+
+  # A build step that may fail without failing the job is a build step that is
+  # not a gate. Checked across the whole file: there is no legitimate use of it
+  # in this workflow, so any occurrence is the thing being guarded against.
+  if grep -q 'continue-on-error' "$CERT_WORKFLOW"; then
+    bad "a step in the certification workflow is marked continue-on-error"
+  else
+    ok "no certification step is marked continue-on-error"
+  fi
+
+  # Without this, a build that silently produced nothing still uploads an empty
+  # artifact and reports success.
+  if grep -q 'if-no-files-found: error' "$CERT_WORKFLOW"; then
+    ok "a missing APK artifact fails the job"
+  else
+    bad "the APK artifact is no longer mandatory (if-no-files-found is not error)"
+  fi
+
+  # The analyze step is what proved M30-D's Dart clean under the strict flags.
+  if grep -q -- '--fatal-infos --fatal-warnings' "$CERT_WORKFLOW"; then
+    ok "analyze still runs with --fatal-infos --fatal-warnings"
+  else
+    bad "analyze is no longer strict"
+  fi
+else
+  bad "the certification workflow was not found at .github/workflows/"
+fi
+
+# -- H. Nothing arrived from the stale pull request ---------------------------
+#
+# PR #12 carries the same platform scaffolding plus seven unrelated files —
+# composer and npm lockfiles, backend env, two workflows. M31 was told to read
+# it and import nothing. The scaffolding itself is covered by the manifest in
+# section B; this is the check on the other seven.
+
+head_ "H) No import from the stale pull request"
+
+if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  base="$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || echo '')"
+  if [[ -n "$base" ]]; then
+    changed="$(git -C "$REPO_ROOT" diff --name-only "$base"...HEAD 2>/dev/null)"
+    strays="$(printf '%s\n' "$changed" | grep -vE '^apps/mobile/' | grep -v '^$' || true)"
+    if [[ -z "$strays" ]]; then
+      ok "every changed file is under apps/mobile/"
+    else
+      bad "changes outside apps/mobile/:"
+      while IFS= read -r s; do
+        [[ -n "$s" ]] && printf '        %s\n' "$s"
+      done <<< "$strays"
+    fi
+
+    # Named explicitly rather than inferred from the prefix check above, so the
+    # failure message says which stale file arrived instead of merely "not
+    # under apps/mobile".
+    pr12_unrelated=0
+    for stale in \
+      "apps/api/composer.json" "apps/api/composer.lock" "apps/api/.env.example" \
+      "apps/web/package.json" "apps/web/package-lock.json" \
+      ".github/workflows/ga-docker-certification.yml" ".github/workflows/release.yml"
+    do
+      if printf '%s\n' "$changed" | grep -Fxq "$stale"; then
+        bad "a file from stale PR #12 was imported: $stale"
+        pr12_unrelated=1
+      fi
+    done
+    [[ "$pr12_unrelated" -eq 0 ]] && ok "none of PR #12's seven unrelated files were imported"
+  fi
 fi
 
 # -- Result -------------------------------------------------------------------
