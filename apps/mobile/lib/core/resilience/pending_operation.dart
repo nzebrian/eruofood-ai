@@ -70,6 +70,22 @@ class PendingOperation {
         isMoneyMoving: isMoneyMoving,
       );
 
+  /// How many attempts before the queue stops trying on its own.
+  ///
+  /// Separate from the backoff ceiling, which bounds the *wait* and not the
+  /// number of tries. Without this an operation the server will never accept is
+  /// retried every five minutes forever, and the battery cost is the least of
+  /// it: nothing ever escalates, so nobody finds out.
+  ///
+  /// Reaching it does **not** delete the operation. A money-moving entry whose
+  /// attempts are exhausted is still an unresolved claim, and dropping it would
+  /// be the client deciding an outcome it does not know. It stops being sent
+  /// automatically and starts being something a person has to look at.
+  static const int maxAttempts = 8;
+
+  /// Whether the queue may still send this without human involvement.
+  bool get isExhausted => attempts >= maxAttempts;
+
   /// The ceiling, in seconds. Five minutes.
   ///
   /// A single named constant because the false-positive audit caught this

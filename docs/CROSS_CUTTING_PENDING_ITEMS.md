@@ -78,27 +78,39 @@ precedes first destructive use. Until then, data past its declared retention is
 
 ---
 
-## D. `RetryQueue` has no transport
+## D. `RetryQueue` transport — CLOSED by M30-D
 
-**Status:** decision and recovery logic, verified. **No networking.**
+**Status:** connected. See [`MOBILE_RETRY_QUEUE.md`](MOBILE_RETRY_QUEUE.md).
 
-`RetryQueue` decides what may be retried, what must be reconciled first, and
-what must simply wait. It persists across restarts through a
-`PendingOperationStore` interface. All of that is tested, including negative
-controls (see below).
+This entry previously read *"no Dio interceptor, no `PendingOperationStore`
+implementation backed by real storage, and no feature in `apps/mobile` currently
+enqueues through it"*. All three are now false:
 
-**What it does not do:** send anything. There is no Dio interceptor, no
-`PendingOperationStore` implementation backed by real storage, and no feature in
-`apps/mobile` currently enqueues through it.
+- `RetryQueueInterceptor` sits on the Dio instance every feature data source
+  already uses, so interception is a property of the transport rather than
+  something each feature has to remember.
+- `SecurePendingOperationStore` persists the queue in the same Keychain/Keystore
+  `TokenStore` uses.
+- `RetryQueueProcessor` reconciles against `POST /reconcile` and resends only
+  what the server says is safe to resend.
 
-**Why not now:** wiring it into a transport means choosing per-feature adoption
-rules, which is mobile feature work — explicitly out of scope alongside M34
-release engineering.
+Commerce checkout is proven end to end through the production repository, data
+source, client and interceptor in
+`test/features/commerce/commerce_retry_queue_test.dart`.
 
-**Pending:** a Dio-backed sender, a persistent store implementation, and
-per-feature adoption. Until those exist, **no mobile feature is protected by
-this queue**, and the foundation must not be described as giving the app offline
-resilience. It gives the app the *means* to have it.
+**What is still deliberately narrow:** four endpoints are declared —
+`commerce.checkout`, `marketplace.checkout`, `payments.initiate` and
+`payments.wallet.topup`. Those are the only mobile calls the server guards with
+an idempotency scope. Three server scopes (`payments.refund`,
+`payments.wallet.transfer`, `dispatch.accept`) have no mobile caller and are not
+declared; nothing else is queued at all. **A feature outside that list is not
+protected by this queue**, and the app must not be described as generally
+offline-resilient.
+
+**Pending:** an event-driven trigger. Replay runs on app resume and on
+authentication, because the project has no connectivity package and adding one
+would be a lockfile change. A device that regains signal while the app is
+already open and authenticated waits for the next resume.
 
 ---
 

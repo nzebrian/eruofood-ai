@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'core/config/app_config.dart';
 import 'core/di/injector.dart';
+import 'core/resilience/retry_queue_processor.dart';
 import 'core/theme/app_theme.dart';
 import 'features/admin/presentation/pages/admin_overview_page.dart';
 import 'features/ai/presentation/pages/ai_hub_page.dart';
@@ -47,12 +50,50 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the foreground is the app's honest substitute for a
+    // connectivity event: this project has no connectivity plugin, and a timer
+    // that polled for one would be a retry storm with extra steps.
+    if (state == AppLifecycleState.resumed) _drainRetryQueue();
+  }
+
+  /// Ask the server about anything left unresolved, and resend only what it
+  /// says is safe to resend.
+  ///
+  /// Deliberately not awaited — this is background reconciliation and no screen
+  /// should wait on it. Calling it twice is safe: the processor's single-flight
+  /// guard turns the second call into a no-op rather than a duplicate send.
+  void _drainRetryQueue() {
+    if (!sl.isRegistered<RetryQueueProcessor>()) return;
+    unawaited(sl<RetryQueueProcessor>().process());
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AuthCubit, AuthState>(
+    return BlocConsumer<AuthCubit, AuthState>(
+      // Reconciliation needs an account: `POST /reconcile` answers on
+      // (account, scope, key), never on the key alone. So the queue is drained
+      // the moment a session exists, and not before.
+      listenWhen: (AuthState previous, AuthState current) =>
+          previous.status != AuthStatus.authenticated &&
+          current.status == AuthStatus.authenticated,
+      listener: (_, __) => _drainRetryQueue(),
       builder: (context, state) {
         final authenticated = state.status == AuthStatus.authenticated;
 
