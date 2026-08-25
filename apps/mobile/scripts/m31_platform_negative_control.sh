@@ -338,8 +338,144 @@ else
   bad "9m · a removed push path filter was NOT detected"
 fi
 
+# =========================================================================
+# M36 — the mobile dependency baseline
+#
+# M31 hash-pinned pubspec.yaml and pubspec.lock outright, which stopped
+# accidental regeneration drift and also stopped every deliberate dependency
+# bump — five open pull requests, failing for doing their job. M36 replaced
+# the pin with a refreshable baseline plus consistency checks that run whether
+# or not the hashes match.
+#
+# The risk that swap introduces is obvious and is what 12–17 exist to close:
+# a refreshable baseline is only worth having if refreshing it is the ONLY way
+# through, and if an incoherent pair still fails after a refresh.
+# =========================================================================
+
+# -- 12 -------------------------------------------------------------------
+# The one that would be easy to get wrong: a real dependency bump, refreshed
+# through the documented command, must PASS. Without this the whole M36 change
+# could ship as "pin everything harder" and nobody would notice.
+d="$(fixture c12)"
+sed -i 's|^  get_it: \^8\.0\.0$|  get_it: ^9.0.0|' "$(m "$d")/pubspec.yaml"
+python3 - "$(m "$d")/pubspec.lock" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+s = re.sub(r'(  get_it:\n(?:    .*\n)*?    version: ")8\.3\.0(")', r'\g<1>9.2.1\g<2>', s)
+open(p, 'w').write(s)
+PY
+env -u CI "$(m "$d")/scripts/refresh_mobile_dependency_baseline.sh" >/dev/null 2>&1
+if "$d/$VALIDATOR" >/dev/null 2>&1; then
+  ok "12 · a deliberate dependency bump refreshed through the command PASSES"
+else
+  bad "12 · a legitimate refreshed dependency bump was rejected — the path does not work"
+fi
+
+# -- 13 -------------------------------------------------------------------
+d="$(fixture c13)"; printf '\n# drift\n' >> "$(m "$d")/pubspec.yaml"
+if rejects "$d" "pubspec.yaml changed without a baseline refresh"; then
+  ok "13 · pubspec.yaml changed without refreshing the baseline is detected"
+else
+  bad "13 · an unrefreshed pubspec.yaml change was NOT detected"
+fi
+
+# -- 14 -------------------------------------------------------------------
+# The heart of it: refreshing the hashes must not launder an incoherent pair.
+# Here pubspec.yaml gains a dependency the lockfile has never heard of, and the
+# baseline is refreshed anyway. The consistency checks run regardless of the
+# hashes, so this must still fail.
+d="$(fixture c14)"
+sed -i 's|^  get_it: \^8\.0\.0$|  get_it: ^8.0.0\n  http: ^1.2.0|' "$(m "$d")/pubspec.yaml"
+python3 - "$(m "$d")/m31-platform-manifest.json" "$(m "$d")" "$(m "$d")/scripts" <<'PY'
+import hashlib, json, sys
+manifest, mobile, script_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path.insert(0, script_dir)
+from mobile_dependency_lib import yaml_direct_deps
+d = json.load(open(manifest))
+b = d['dependency_baseline']
+b['pubspec_yaml_sha256'] = hashlib.sha256(open(mobile + '/pubspec.yaml', 'rb').read()).hexdigest()
+deps, dev = yaml_direct_deps(mobile + '/pubspec.yaml')
+b['direct_dependencies'], b['direct_dev_dependencies'] = deps, dev
+json.dump(d, open(manifest, 'w'), indent=2)
+PY
+if rejects "$d" "absent from pubspec.lock"; then
+  ok "14 · a hash refresh cannot launder a yaml/lock pair that disagrees"
+else
+  bad "14 · an inconsistent yaml/lock pair PASSED after a hash refresh"
+fi
+
+# -- 15 -------------------------------------------------------------------
+# The reverse direction: the lockfile carries a direct package pubspec.yaml
+# does not declare.
+d="$(fixture c15)"
+sed -i 's|^  dartz: \^0\.10\.1$||' "$(m "$d")/pubspec.yaml"
+env -u CI "$(m "$d")/scripts/refresh_mobile_dependency_baseline.sh" >/dev/null 2>&1 || true
+if rejects "$d" "not declared in pubspec.yaml"; then
+  ok "15 · a lockfile direct package missing from pubspec.yaml is detected"
+else
+  bad "15 · an undeclared locked direct package was NOT detected"
+fi
+
+# -- 16 -------------------------------------------------------------------
+# Hand-edited hashes with the recorded dependency set left stale. This is the
+# "just make CI green" move, and it must not work.
+d="$(fixture c16)"
+sed -i 's|^  get_it: \^8\.0\.0$|  get_it: ^9.0.0|' "$(m "$d")/pubspec.yaml"
+python3 - "$(m "$d")/m31-platform-manifest.json" "$(m "$d")" <<'PY'
+import hashlib, json, sys
+manifest, mobile = sys.argv[1], sys.argv[2]
+d = json.load(open(manifest))
+d['dependency_baseline']['pubspec_yaml_sha256'] = hashlib.sha256(
+    open(mobile + '/pubspec.yaml', 'rb').read()).hexdigest()
+json.dump(d, open(manifest, 'w'), indent=2)
+PY
+if rejects "$d" "recorded dependencies disagree with pubspec.yaml"; then
+  ok "16 · editing only the hash, leaving the recorded set stale, is detected"
+else
+  bad "16 · a hash-only edit PASSED — the baseline is a rubber stamp"
+fi
+
+# -- 17 -------------------------------------------------------------------
+d="$(fixture c17)"; printf '\n# drift\n' >> "$(m "$d")/analysis_options.yaml"
+if rejects "$d" "analysis_options.yaml changed"; then
+  ok "17 · analysis_options.yaml drift is still detected"
+else
+  bad "17 · analysis_options.yaml drift was NOT detected"
+fi
+
+# -- 18 -------------------------------------------------------------------
+# The defect M36 removed, asserted as an invariant so it cannot come back.
+# Section H used to demand that every changed file sat under apps/mobile/;
+# simulated against the real open pull requests it failed 13 of 18, including
+# every Dependabot workflow bump. Unrelated backend, web and workflow work
+# must pass this validator, because none of it is a mobile-platform concern.
+d="$(fixture c18)"
+mkdir -p "$d/apps/api" "$d/apps/web" "$d/.github/workflows"
+printf 'x\n' > "$d/apps/api/composer.json"
+printf 'x\n' > "$d/apps/web/package.json"
+printf 'name: x\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: "true"\n' \
+  > "$d/.github/workflows/release.yml"
+git -C "$d" add -A >/dev/null 2>&1 || true
+if "$d/$VALIDATOR" >/dev/null 2>&1; then
+  ok "18 · unrelated backend/web/workflow files do NOT fail the mobile validator"
+else
+  bad "18 · milestone-scoped blocking logic is back — unrelated work fails the validator"
+fi
+
+# -- 19 -------------------------------------------------------------------
+# The silent-skip defect. A section that does not run must reduce the executed
+# count and fail loudly, never shrink the total and still exit 0.
+d="$(fixture c19)"
+sed -i 's/^EXPECTED_CHECKS=[0-9]*$/EXPECTED_CHECKS=999/' "$(m "$d")/scripts/verify_platform_foundation.sh"
+if rejects "$d" "declared checks executed"; then
+  ok "19 · a check that does not execute is detected, not silently dropped"
+else
+  bad "19 · under-reported coverage PASSED — a section could vanish unnoticed"
+fi
+
 # -- 10 -------------------------------------------------------------------
-# The control on the controls. Without it the twenty-one above cannot
+# The control on the controls. Without it the controls above cannot
 # distinguish a working validator from one that rejects whatever it is handed.
 d="$(fixture c10)"
 if "$d/$VALIDATOR" >/dev/null 2>&1; then

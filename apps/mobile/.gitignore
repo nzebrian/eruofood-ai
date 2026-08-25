@@ -45,3 +45,6 @@ android/key.properties
 google-services.json
 GoogleService-Info.plist
 **/xcuserdata/
+
+# Python bytecode from the shared dependency-baseline library (M36).
+__pycache__/

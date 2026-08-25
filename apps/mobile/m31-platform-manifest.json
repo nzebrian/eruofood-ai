@@ -85,8 +85,7 @@
     "linux"
   ],
   "protected_unchanged": {
-    "pubspec.yaml": "63862eff31da54eeb100f976bec263f8f3950df5211bb94896c4673e4393d423",
-    "pubspec.lock": "b18aa4f204a44fed25441c761d77fcc3312bd9499fc3e1939528eb802b8884be",
+    "_note": "analysis_options.yaml only. `flutter analyze` and `flutter pub get` rewrite it unconditionally once platform directories exist, and nothing in normal development should change it, so it stays pinned outright. pubspec.yaml and pubspec.lock moved to `dependency_baseline` in M36: hash-pinning them made every legitimate dependency bump unmergeable, which is not the invariant anyone wanted.",
     "analysis_options.yaml": "fff89b9180b97ca95630e803f62cbda25b4d705d10adde0beec68912348a3e04"
   },
   "identity": {
@@ -107,5 +106,42 @@
     "local.properties",
     "google-services.json",
     "GoogleService-Info.plist"
-  ]
+  ],
+  "dependency_baseline": {
+    "_note": "Refreshed only by apps/mobile/scripts/refresh_mobile_dependency_baseline.sh, in the same commit as the dependency change it describes. The names and constraints are recorded rather than hashes alone so a reviewer can see what moved; verify_platform_foundation.sh section E2 re-derives them from the files and rejects an inconsistent pair whether or not the hashes were updated.",
+    "pubspec_yaml_sha256": "63862eff31da54eeb100f976bec263f8f3950df5211bb94896c4673e4393d423",
+    "pubspec_lock_sha256": "b18aa4f204a44fed25441c761d77fcc3312bd9499fc3e1939528eb802b8884be",
+    "direct_dependencies": {
+      "cupertino_icons": "^1.0.8",
+      "dartz": "^0.10.1",
+      "dio": "^5.7.0",
+      "equatable": "^2.0.5",
+      "flutter": "<nested>",
+      "flutter_bloc": "^8.1.6",
+      "flutter_dotenv": "^5.1.0",
+      "flutter_secure_storage": "^9.2.2",
+      "get_it": "^8.0.0"
+    },
+    "direct_dev_dependencies": {
+      "bloc_test": "^9.1.7",
+      "flutter_lints": "^5.0.0",
+      "flutter_test": "<nested>",
+      "mocktail": "^1.0.4"
+    },
+    "locked_direct_versions": {
+      "bloc_test": "9.1.7",
+      "cupertino_icons": "1.0.9",
+      "dartz": "0.10.1",
+      "dio": "5.11.0",
+      "equatable": "2.1.0",
+      "flutter": "0.0.0",
+      "flutter_bloc": "8.1.6",
+      "flutter_dotenv": "5.2.1",
+      "flutter_lints": "5.0.0",
+      "flutter_secure_storage": "9.2.4",
+      "flutter_test": "0.0.0",
+      "get_it": "8.3.0",
+      "mocktail": "1.0.5"
+    }
+  }
 }
