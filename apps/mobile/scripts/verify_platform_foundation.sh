@@ -16,7 +16,8 @@
 # ignored is a check that will be.
 set -uo pipefail
 
-MOBILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MOBILE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MANIFEST="$MOBILE_DIR/m31-platform-manifest.json"
 
 # The certification workflow lives at the repository root. Resolved by walking
@@ -30,6 +31,13 @@ CERT_WORKFLOW="$REPO_ROOT/.github/workflows/ga-flutter-certification.yml"
 
 PASS=0
 FAIL=0
+
+# How many checks sections A–G2 must execute between them. Section H asserts
+# this, so a section that short-circuits — missing tool, unreadable file, absent
+# git history — fails loudly instead of vanishing from the total. Update it
+# deliberately when adding or removing a check; the M36 controls verify that a
+# wrong value is itself caught.
+EXPECTED_CHECKS=37
 
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL + 1)); }
@@ -231,31 +239,160 @@ if [[ -f "$plist" ]]; then
   fi
 fi
 
-# -- E. Protected files -------------------------------------------------------
+# -- E. Analysis options ------------------------------------------------------
 #
-# `flutter create` runs an implicit resolve and rewrote six transitive pins the
-# first time it ran here. Restoring the lockfile and re-running `flutter pub get`
-# left it byte-identical, which is the evidence that the committed lock is
-# reproducible under this SDK rather than merely old.
+# `flutter analyze` and `flutter pub get` rewrite analysis_options.yaml
+# unconditionally once platform directories exist. Nothing in normal
+# development should change it, so it stays hash-pinned outright.
 
-head_ "E) Protected files unchanged"
+head_ "E) Analysis options unchanged"
 
-for f in pubspec.yaml pubspec.lock analysis_options.yaml; do
-  want=$(python3 -c "
+f=analysis_options.yaml
+want=$(python3 -c "
 import json
 print(json.load(open('$MANIFEST'))['protected_unchanged']['$f'])
 ")
-  if [[ -f "$MOBILE_DIR/$f" ]]; then
-    got=$(sha256sum "$MOBILE_DIR/$f" | cut -d' ' -f1)
-    if [[ "$got" == "$want" ]]; then
-      ok "$f is byte-identical to the M31 baseline"
-    else
-      bad "$f changed (expected ${want:0:12}…, got ${got:0:12}…)"
-    fi
+if [[ -f "$MOBILE_DIR/$f" ]]; then
+  got=$(sha256sum "$MOBILE_DIR/$f" | cut -d' ' -f1)
+  if [[ "$got" == "$want" ]]; then
+    ok "$f is byte-identical to the M31 baseline"
   else
-    bad "$f is missing"
+    bad "$f changed (expected ${want:0:12}…, got ${got:0:12}…)"
   fi
-done
+else
+  bad "$f is missing"
+fi
+
+# -- E2. Mobile dependency baseline -------------------------------------------
+#
+# M31 hash-pinned pubspec.yaml and pubspec.lock the same way, which was right
+# for what it was guarding — `flutter create` runs an implicit resolve and
+# rewrote six transitive pins the first time it ran here — and wrong as a
+# permanent rule. It made every legitimate dependency bump unmergeable: five
+# open Dependabot pull requests fail it today for no reason other than doing
+# their job.
+#
+# The invariant that actually matters is not "these bytes never change". It is:
+#
+#     a mobile dependency change must be DELIBERATE, INTERNALLY CONSISTENT,
+#     and must not be able to masquerade as accidental regeneration drift.
+#
+# So the baseline is still pinned, but it is refreshable — by one explicit,
+# deterministic command, `scripts/refresh_mobile_dependency_baseline.sh`, whose
+# output lands in the same commit as the dependency change and is reviewed with
+# it. Refreshing hashes alone buys nothing: E2c–E2e re-derive the dependency
+# sets from the files themselves and compare them in both directions, and they
+# run whether or not the hashes match. A hand-edited hash with an inconsistent
+# lockfile still fails.
+#
+# Accidental drift still fails, which was the original point: a stray
+# `flutter pub get` rewrites pubspec.lock without touching pubspec.yaml and
+# without refreshing the manifest, so E2b fails immediately.
+
+head_ "E2) Mobile dependency baseline is deliberate and consistent"
+
+dep_report="$(PYTHONDONTWRITEBYTECODE=1 python3 - "$MANIFEST" "$MOBILE_DIR" "$SCRIPT_DIR" <<'PY'
+import json, os, sys
+
+manifest_path, mobile, script_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path.insert(0, script_dir)
+
+try:
+    from mobile_dependency_lib import (
+        lock_direct_versions, sdk_provided, sha256_of, yaml_direct_deps,
+    )
+except ImportError as exc:
+    print('ERROR=mobile_dependency_lib.py is missing or unreadable (%s)' % exc)
+    raise SystemExit(0)
+
+man = json.load(open(manifest_path))
+base = man.get('dependency_baseline')
+
+if base is None:
+    print('ERROR=the manifest has no dependency_baseline section')
+    raise SystemExit(0)
+
+yaml_path = os.path.join(mobile, 'pubspec.yaml')
+lock_path = os.path.join(mobile, 'pubspec.lock')
+
+for p in (yaml_path, lock_path):
+    if not os.path.isfile(p):
+        print('ERROR=%s is missing' % os.path.basename(p))
+        raise SystemExit(0)
+
+print('YAML_SHA=%s' % sha256_of(yaml_path))
+print('LOCK_SHA=%s' % sha256_of(lock_path))
+print('YAML_SHA_WANT=%s' % base.get('pubspec_yaml_sha256', ''))
+print('LOCK_SHA_WANT=%s' % base.get('pubspec_lock_sha256', ''))
+
+deps, dev = yaml_direct_deps(yaml_path)
+locked = lock_direct_versions(lock_path)
+
+declared = set(deps) | set(dev)
+comparable = declared - sdk_provided(deps, dev)
+
+print('MISSING_FROM_LOCK=%s' % ','.join(sorted(comparable - set(locked))))
+print('MISSING_FROM_YAML=%s' % ','.join(sorted(set(locked) - declared)))
+
+recorded = {**(base.get('direct_dependencies') or {}),
+            **(base.get('direct_dev_dependencies') or {})}
+actual = {**deps, **dev}
+print('MANIFEST_MATCHES_YAML=%s' % ('1' if recorded == actual else '0'))
+if recorded != actual:
+    print('MANIFEST_DELTA=only_in_manifest:%s|only_in_pubspec:%s|constraint_changed:%s' % (
+        ','.join(sorted(set(recorded) - set(actual))),
+        ','.join(sorted(set(actual) - set(recorded))),
+        ','.join(sorted(k for k in set(recorded) & set(actual) if recorded[k] != actual[k])),
+    ))
+PY
+)"
+
+dep_field() { printf '%s' "$dep_report" | sed -n "s/^$1=//p"; }
+
+if [[ -n "$(dep_field ERROR)" ]]; then
+  bad "the dependency baseline could not be read: $(dep_field ERROR)"
+  bad "pubspec.yaml matches the declared dependency baseline"
+  bad "pubspec.lock matches the declared dependency baseline"
+  bad "every direct dependency in pubspec.yaml is present in pubspec.lock"
+  bad "every direct package in pubspec.lock is declared in pubspec.yaml"
+  bad "the manifest's recorded dependency set matches pubspec.yaml"
+else
+  # E2a/E2b — the baseline is pinned, and only the refresh command moves it.
+  if [[ "$(dep_field YAML_SHA)" == "$(dep_field YAML_SHA_WANT)" ]]; then
+    ok "pubspec.yaml matches the declared dependency baseline"
+  else
+    bad "pubspec.yaml changed without a baseline refresh (run scripts/refresh_mobile_dependency_baseline.sh in the same commit)"
+  fi
+
+  if [[ "$(dep_field LOCK_SHA)" == "$(dep_field LOCK_SHA_WANT)" ]]; then
+    ok "pubspec.lock matches the declared dependency baseline"
+  else
+    bad "pubspec.lock changed without a baseline refresh — this is what accidental regeneration drift looks like"
+  fi
+
+  # E2c/E2d — consistency, checked in both directions and ALWAYS, so that
+  # refreshing the hashes cannot by itself make an incoherent pair pass.
+  if [[ -z "$(dep_field MISSING_FROM_LOCK)" ]]; then
+    ok "every direct dependency in pubspec.yaml is present in pubspec.lock"
+  else
+    bad "declared in pubspec.yaml but absent from pubspec.lock: $(dep_field MISSING_FROM_LOCK)"
+  fi
+
+  if [[ -z "$(dep_field MISSING_FROM_YAML)" ]]; then
+    ok "every direct package in pubspec.lock is declared in pubspec.yaml"
+  else
+    bad "locked as a direct dependency but not declared in pubspec.yaml: $(dep_field MISSING_FROM_YAML)"
+  fi
+
+  # E2e — the anti-rubber-stamp check. The manifest records the dependency
+  # names and constraints, not only opaque hashes, so a reviewer sees what
+  # changed and an edit that touches only the hashes fails here.
+  if [[ "$(dep_field MANIFEST_MATCHES_YAML)" == "1" ]]; then
+    ok "the manifest's recorded dependency set matches pubspec.yaml"
+  else
+    bad "the manifest's recorded dependencies disagree with pubspec.yaml — $(dep_field MANIFEST_DELTA)"
+  fi
+fi
 
 # -- F. Secrets and machine-specific paths ------------------------------------
 #
@@ -495,58 +632,45 @@ sys.exit(0 if json.load(sys.stdin)['has_wc'] else 1)
   fi
 fi
 
-# -- H. Nothing arrived from the stale pull request ---------------------------
+# -- H. Every declared check actually ran -------------------------------------
 #
-# PR #12 carries the same platform scaffolding plus seven unrelated files —
-# composer and npm lockfiles, backend env, two workflows. M31 was told to read
-# it and import nothing. The scaffolding itself is covered by the manifest in
-# section B; this is the check on the other seven.
+# What used to be here was M31's stale-import guard: "every changed file is
+# under apps/mobile/ (plus two later additions), and none of PR #12's seven
+# unrelated files arrived". Two things were wrong with it, and both were proved
+# rather than suspected (M36 Phase 2).
+#
+# 1. It was MILESTONE SCOPE MASQUERADING AS A REPOSITORY INVARIANT. Simulated
+#    against the real file list of every open pull request, it failed 13 of 18
+#    — including every Dependabot workflow bump, every backend or web change,
+#    and PR #34. `release.yml` and `ga-docker-certification.yml` were on its
+#    forbidden list purely because they happened to appear in one old pull
+#    request; M35 legitimately changed one of them. As a required check it
+#    would have wedged the repository. It is gone, and it is not coming back in
+#    another spelling: the mobile-platform drift it was loosely standing in for
+#    is covered precisely by A (no fourth platform), B (tree matches the
+#    manifest), C (identity), D (branding), E/E2 (analysis options and
+#    dependency baseline) and F (no secret is committable).
+#
+# 2. It COULD SILENTLY DISAPPEAR. The whole block hung on
+#    `merge-base HEAD origin/main`, and on failure took the `else` nobody
+#    wrote — no `origin/main` ref under a shallow `actions/checkout` (default
+#    fetch-depth: 1), no comparison, two checks quietly not run, and the script
+#    still exiting 0 with "34 passed, 0 failed". A required validator reporting
+#    success for checks it never executed is worse than no validator.
+#
+# So H is now the guard against that class of defect rather than an instance of
+# it: the validator declares up front how many checks it must execute, and this
+# asserts the count. Any future section that short-circuits — on missing git
+# history, a missing tool, an unreadable file — reduces the count and fails
+# here, loudly, by name. It depends on nothing outside this process.
 
-head_ "H) No import from the stale pull request"
+head_ "H) Enforcement integrity"
 
-if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  base="$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || echo '')"
-  if [[ -n "$base" ]]; then
-    changed="$(git -C "$REPO_ROOT" diff --name-only "$base"...HEAD 2>/dev/null)"
-
-    # The allowed set, not a single prefix.
-    #
-    # M31 asserted "everything under apps/mobile/", which was an accurate proxy
-    # for that milestone's scope and became wrong the moment M32 changed the
-    # certification workflow's trigger. Widening it to the paths actually in
-    # scope keeps a real guard — a backend or web file still fails here — while
-    # describing the repository as it is. The named PR #12 check below is
-    # untouched and remains the precise stale-import guard.
-    strays="$(printf '%s\n' "$changed" \
-      | grep -vE '^apps/mobile/' \
-      | grep -vE '^\.github/workflows/ga-flutter-certification\.yml$' \
-      | grep -vE '^docs/' \
-      | grep -v '^$' || true)"
-    if [[ -z "$strays" ]]; then
-      ok "every changed file is within the approved scope"
-    else
-      bad "changes outside the approved scope:"
-      while IFS= read -r s; do
-        [[ -n "$s" ]] && printf '        %s\n' "$s"
-      done <<< "$strays"
-    fi
-
-    # Named explicitly rather than inferred from the prefix check above, so the
-    # failure message says which stale file arrived instead of merely "not
-    # under apps/mobile".
-    pr12_unrelated=0
-    for stale in \
-      "apps/api/composer.json" "apps/api/composer.lock" "apps/api/.env.example" \
-      "apps/web/package.json" "apps/web/package-lock.json" \
-      ".github/workflows/ga-docker-certification.yml" ".github/workflows/release.yml"
-    do
-      if printf '%s\n' "$changed" | grep -Fxq "$stale"; then
-        bad "a file from stale PR #12 was imported: $stale"
-        pr12_unrelated=1
-      fi
-    done
-    [[ "$pr12_unrelated" -eq 0 ]] && ok "none of PR #12's seven unrelated files were imported"
-  fi
+executed=$((PASS + FAIL))
+if [[ "$executed" -eq "$EXPECTED_CHECKS" ]]; then
+  ok "all $EXPECTED_CHECKS declared checks executed"
+else
+  bad "only $executed of $EXPECTED_CHECKS declared checks executed — a section skipped silently"
 fi
 
 # -- Result -------------------------------------------------------------------
