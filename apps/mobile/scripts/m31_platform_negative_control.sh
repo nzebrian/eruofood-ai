@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# M31 — negative controls for the platform-foundation validator.
+# M31/M32 — negative controls for the platform-foundation validator.
 #
-# `verify_platform_foundation.sh` currently reports 28 passes. That is true for
+# `verify_platform_foundation.sh` currently reports 36 passes. That is true for
 # two indistinguishable reasons: the scaffolding is correct, or the validator
 # checks nothing. M28 found a five-adapter test sweep that had been exercising
 # one adapter five times while green throughout, and this repository has
@@ -36,9 +36,18 @@ bad() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL + 1)); }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Fingerprint the real tree before anything runs.
+# Fingerprint everything the controls could plausibly damage, before they run.
+#
+# M32 widened this. The suite now edits the certification workflow inside its
+# fixtures, and it rewrites pubspec.lock and .gitignore in others — so covering
+# only the platform directories would have left the two files most likely to be
+# corrupted by a stray absolute path outside the check.
 fingerprint() {
-  ( cd "$MOBILE_DIR" && find android ios .metadata -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum )
+  {
+    ( cd "$MOBILE_DIR" && find android ios .metadata -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null )
+    ( cd "$MOBILE_DIR" && sha256sum pubspec.yaml pubspec.lock analysis_options.yaml .gitignore 2>/dev/null )
+    sha256sum "$REPO_ROOT/$CERT_REL" 2>/dev/null
+  } | sha256sum
 }
 BEFORE="$(fingerprint)"
 
@@ -235,8 +244,102 @@ else
   bad "9e · a relaxed analyze step was NOT detected"
 fi
 
+# -- 9f -------------------------------------------------------------------
+# M32's controls. Section G proves the build steps exist; these prove they
+# actually run before a merge. The gate was in exactly this state for twenty
+# days — steps present, never executed on a pull request — so "the commands
+# are there" is demonstrably not the same claim as "the gate works".
+#
+# Each fixture edits the trigger block with Python rather than sed: `on:` is a
+# YAML boolean in disguise, and a nested `paths:` cannot be added or removed
+# reliably by line matching.
+retrigger() {  # retrigger <fixture> <python-expression-on-`on`>
+  python3 - "$1/$CERT_REL" <<PY
+import sys,yaml
+p=sys.argv[1]
+d=yaml.safe_load(open(p))
+key='on' if 'on' in d else True
+on=d[key]
+$2
+d[key]=on
+yaml.safe_dump(d,open(p,'w'),sort_keys=False,default_flow_style=False)
+PY
+}
+
+d="$(fixture c9f)"; retrigger "$d" "on.pop('pull_request',None)"
+if rejects "$d" "NO pull_request trigger"; then
+  ok "9f · removing the pull_request trigger is detected"
+else
+  bad "9f · a removed pull_request trigger was NOT detected"
+fi
+
+# -- 9g -------------------------------------------------------------------
+# The deadlock-maker. A path filter here looks like a harmless optimisation
+# and is the exact defect M29-A removed from four other workflows.
+d="$(fixture c9g)"; retrigger "$d" "on['pull_request']={'paths':['apps/mobile/**']}"
+if rejects "$d" "pull_request has a paths filter"; then
+  ok "9g · a paths filter under pull_request is detected"
+else
+  bad "9g · a paths filter under pull_request was NOT detected"
+fi
+
+# -- 9h -------------------------------------------------------------------
+# Same deadlock, different spelling — and the one a grep for "paths:" would
+# miss if it only looked for the positive form.
+d="$(fixture c9h)"; retrigger "$d" "on['pull_request']={'paths-ignore':['docs/**']}"
+if rejects "$d" "paths-ignore filter"; then
+  ok "9h · a paths-ignore filter under pull_request is detected"
+else
+  bad "9h · a paths-ignore filter under pull_request was NOT detected"
+fi
+
+# -- 9i -------------------------------------------------------------------
+d="$(fixture c9i)"; retrigger "$d" "on.pop('workflow_dispatch',None)"
+if rejects "$d" "workflow_dispatch was removed"; then
+  ok "9i · removing workflow_dispatch is detected"
+else
+  bad "9i · a removed workflow_dispatch was NOT detected"
+fi
+
+# -- 9j -------------------------------------------------------------------
+# Not decorative: ga-release-certification.yml consumes this workflow through
+# workflow_call, so losing it silently breaks the consolidated GA gate.
+d="$(fixture c9j)"; retrigger "$d" "on.pop('workflow_call',None)"
+if rejects "$d" "workflow_call was removed"; then
+  ok "9j · removing workflow_call is detected"
+else
+  bad "9j · a removed workflow_call was NOT detected"
+fi
+
+# -- 9k -------------------------------------------------------------------
+# Dropping push would stop certifying main after a merge — the opposite
+# failure from 9f, and just as quiet.
+d="$(fixture c9k)"; retrigger "$d" "on.pop('push',None)"
+if rejects "$d" "push trigger was removed"; then
+  ok "9k · removing the push trigger is detected"
+else
+  bad "9k · a removed push trigger was NOT detected"
+fi
+
+# -- 9l -------------------------------------------------------------------
+# Widening push past main/develop, or losing its path filter, are the two ways
+# post-merge certification quietly changes shape.
+d="$(fixture c9l)"; retrigger "$d" "on['push']['branches']=['main','develop','feature/*']"
+if rejects "$d" "no longer exactly"; then
+  ok "9l · widened push branches are detected"
+else
+  bad "9l · widened push branches were NOT detected"
+fi
+
+d="$(fixture c9m)"; retrigger "$d" "on['push'].pop('paths',None)"
+if rejects "$d" "lost its mobile/workflow path filtering"; then
+  ok "9m · removing the push path filter is detected"
+else
+  bad "9m · a removed push path filter was NOT detected"
+fi
+
 # -- 10 -------------------------------------------------------------------
-# The control on the controls. Without it the thirteen above cannot
+# The control on the controls. Without it the twenty-one above cannot
 # distinguish a working validator from one that rejects whatever it is handed.
 d="$(fixture c10)"
 if "$d/$VALIDATOR" >/dev/null 2>&1; then
@@ -248,9 +351,9 @@ fi
 # -- 11 -------------------------------------------------------------------
 AFTER="$(fingerprint)"
 if [[ "$BEFORE" == "$AFTER" ]]; then
-  ok "11 · the real apps/mobile tree is byte-identical after the run"
+  ok "11 · the workflow and apps/mobile tree are byte-identical after the run"
 else
-  bad "11 · the controls MODIFIED the tree they were protecting"
+  bad "11 · the controls MODIFIED something they were protecting"
 fi
 
 echo

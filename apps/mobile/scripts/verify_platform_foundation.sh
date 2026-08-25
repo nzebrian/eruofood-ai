@@ -329,6 +329,25 @@ fi
 
 head_ "G) Certification gate integrity"
 
+# Parsed as YAML rather than grepped. `on:` is a YAML boolean in disguise —
+# PyYAML reads the bare key as True — and a `paths:` filter nested under
+# `pull_request` is invisible to a line-oriented search that only knows the
+# word appears somewhere in the file. The whole point of section G2 is to tell
+# *which* trigger a filter belongs to, so it has to understand the structure.
+gate_trigger() {
+  python3 -c "
+import yaml,json,sys
+d=yaml.safe_load(open('$CERT_WORKFLOW'))
+on=d.get('on', d.get(True)) or {}
+print(json.dumps({'triggers':sorted(on.keys()),
+                  'pull_request':on.get('pull_request'),
+                  'push':on.get('push'),
+                  'has_wc':'workflow_call' in on,
+                  'has_wd':'workflow_dispatch' in on,
+                  'permissions':d.get('permissions')}))
+" 2>/dev/null
+}
+
 if [[ -f "$CERT_WORKFLOW" ]]; then
   if grep -q 'flutter build apk --release' "$CERT_WORKFLOW"; then
     ok "the Android APK build command is still in the certification workflow"
@@ -369,6 +388,113 @@ else
   bad "the certification workflow was not found at .github/workflows/"
 fi
 
+# -- G2. The gate actually runs on pull requests ------------------------------
+#
+# Section G proves the build steps still exist. It says nothing about whether
+# they ever execute before a merge, and for twenty days they did not: this
+# workflow had no `pull_request` trigger at all, so Android and iOS validated
+# main only after the fact and were red the whole time without blocking a
+# single merge.
+#
+# The unfiltered trigger is the load-bearing part. A `paths:` filter here would
+# recreate the M29-A trap — GitHub treats a check that never reports as
+# pending, not satisfied — so the moment these contexts became required, every
+# pull request touching no mobile file would hang. That is why C and D below
+# are failures rather than preferences.
+
+head_ "G2) Pull-request trigger integrity"
+
+if [[ -f "$CERT_WORKFLOW" ]]; then
+  trig="$(gate_trigger)"
+
+  if [[ -z "$trig" ]]; then
+    bad "the certification workflow could not be parsed as YAML"
+  else
+    tget() { printf '%s' "$trig" | python3 -c "
+import json,sys
+print(json.dumps(json.load(sys.stdin).get('$1')))
+"; }
+
+    # A — pull_request exists at all.
+    if [[ "$(tget pull_request)" != "null" ]] || printf '%s' "$trig" | grep -q '"pull_request"'; then
+      if printf '%s' "$trig" | python3 -c "
+import json,sys
+sys.exit(0 if 'pull_request' in json.load(sys.stdin)['triggers'] else 1)
+"; then
+        ok "the workflow has a pull_request trigger"
+      else
+        bad "the workflow has NO pull_request trigger — it cannot gate a pull request"
+      fi
+    fi
+
+    pr="$(tget pull_request)"
+
+    # B — no paths filter under pull_request.
+    if printf '%s' "$pr" | grep -q '"paths"'; then
+      bad "pull_request has a paths filter — unrelated pull requests would hang if required"
+    else
+      ok "pull_request has no paths filter"
+    fi
+
+    # C — and no paths-ignore either, which fails the same way.
+    if printf '%s' "$pr" | grep -q '"paths-ignore"'; then
+      bad "pull_request has a paths-ignore filter — same deadlock, different spelling"
+    else
+      ok "pull_request has no paths-ignore filter"
+    fi
+
+    # D/E/F — push survives, still narrowed. Nothing waits on a post-merge run,
+    # so keeping this filtered is free; losing it would double every merge's CI.
+    push="$(tget push)"
+    if [[ "$push" == "null" ]]; then
+      bad "the push trigger was removed — main would no longer be certified after merge"
+    else
+      ok "the push trigger is still present"
+
+      if printf '%s' "$push" | python3 -c "
+import json,sys
+b=json.load(sys.stdin).get('branches') or []
+sys.exit(0 if sorted(b)==['develop','main'] else 1)
+"; then
+        ok "push is still restricted to main and develop"
+      else
+        bad "push branches are no longer exactly [main, develop]"
+      fi
+
+      if printf '%s' "$push" | python3 -c "
+import json,sys
+p=json.load(sys.stdin).get('paths') or []
+need={'apps/mobile/**','.github/workflows/ga-flutter-certification.yml'}
+sys.exit(0 if need.issubset(set(p)) else 1)
+"; then
+        ok "push still filters on apps/mobile and this workflow"
+      else
+        bad "push lost its mobile/workflow path filtering"
+      fi
+    fi
+
+    # G/H — the two non-automatic entry points. workflow_call is not decorative:
+    # ga-release-certification.yml consumes this workflow through it.
+    if printf '%s' "$trig" | python3 -c "
+import json,sys
+sys.exit(0 if json.load(sys.stdin)['has_wd'] else 1)
+"; then
+      ok "workflow_dispatch is still available"
+    else
+      bad "workflow_dispatch was removed — the workflow can no longer be run manually"
+    fi
+
+    if printf '%s' "$trig" | python3 -c "
+import json,sys
+sys.exit(0 if json.load(sys.stdin)['has_wc'] else 1)
+"; then
+      ok "workflow_call is still available"
+    else
+      bad "workflow_call was removed — ga-release-certification.yml calls this workflow"
+    fi
+  fi
+fi
+
 # -- H. Nothing arrived from the stale pull request ---------------------------
 #
 # PR #12 carries the same platform scaffolding plus seven unrelated files —
@@ -382,11 +508,24 @@ if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   base="$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || echo '')"
   if [[ -n "$base" ]]; then
     changed="$(git -C "$REPO_ROOT" diff --name-only "$base"...HEAD 2>/dev/null)"
-    strays="$(printf '%s\n' "$changed" | grep -vE '^apps/mobile/' | grep -v '^$' || true)"
+
+    # The allowed set, not a single prefix.
+    #
+    # M31 asserted "everything under apps/mobile/", which was an accurate proxy
+    # for that milestone's scope and became wrong the moment M32 changed the
+    # certification workflow's trigger. Widening it to the paths actually in
+    # scope keeps a real guard — a backend or web file still fails here — while
+    # describing the repository as it is. The named PR #12 check below is
+    # untouched and remains the precise stale-import guard.
+    strays="$(printf '%s\n' "$changed" \
+      | grep -vE '^apps/mobile/' \
+      | grep -vE '^\.github/workflows/ga-flutter-certification\.yml$' \
+      | grep -vE '^docs/' \
+      | grep -v '^$' || true)"
     if [[ -z "$strays" ]]; then
-      ok "every changed file is under apps/mobile/"
+      ok "every changed file is within the approved scope"
     else
-      bad "changes outside apps/mobile/:"
+      bad "changes outside the approved scope:"
       while IFS= read -r s; do
         [[ -n "$s" ]] && printf '        %s\n' "$s"
       done <<< "$strays"
