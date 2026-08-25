@@ -7,12 +7,43 @@ name: GA Flutter Certification
 
 on:
   workflow_dispatch:
+
+  # No `paths:` here, deliberately (M32), and no `paths-ignore:` either.
+  #
+  # Until M32 this workflow had no `pull_request` trigger at all. Its only
+  # automatic trigger was `push` to main, so the Android and iOS builds
+  # validated main *after* a merge and never once ran on a pull request — which
+  # is how they stayed red from 2026-08-04 to 2026-08-24 without blocking
+  # anything.
+  #
+  # Filtering by path would reintroduce the trap `required-checks.json`
+  # documents from M29-A: GitHub treats a check that does not report as
+  # PENDING, never as satisfied. The moment anybody required these contexts, a
+  # path-filtered trigger would leave every pull request touching no mobile
+  # file waiting forever for a conclusion that is never coming. Today that is
+  # twelve of the eighteen open pull requests. Running unconditionally is what
+  # makes these checks safe to require later; the cost is one Ubuntu job and
+  # one macOS job per pull request.
+  #
+  # `push` below stays filtered — nothing waits on a post-merge run, so
+  # narrowing it is free.
+  pull_request:
+
   push:
     branches: [main, develop]
     paths:
       - "apps/mobile/**"
       - ".github/workflows/ga-flutter-certification.yml"
   workflow_call: {}
+
+# Read-only. Both jobs check out the repository, run a toolchain and build; they
+# need nothing else. This matters more now than it did before M32: the workflow
+# runs on every pull request from this commit onward, and a certification job
+# holding write scope is a strange thing to hand a future contributor's branch.
+# Artifact upload is unaffected — `actions/upload-artifact` authenticates with
+# the runtime token, not the `contents` scope.
+permissions:
+  contents: read
 
 concurrency:
   group: ga-flutter-${{ github.ref }}
