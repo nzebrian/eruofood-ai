@@ -87,23 +87,48 @@ jobs:
           curl -fsS http://localhost:8080/api/v1/ready  | tee /tmp/ready.json
           grep -q '"status":"ok"'    /tmp/health.json
           grep -q '"status":"ready"' /tmp/ready.json
-          
-    
-  
+
+      # The Pest suite is intentionally NOT run inside this container, and the
+      # container is intentionally NOT given development dependencies. (M35)
+      #
+      # This job certifies the PRODUCTION artifact. infra/docker/php/Dockerfile
+      # builds it with `composer install --no-dev` and `composer dump-autoload
+      # --optimize --no-dev`, so Pest — a require-dev package — is absent by
+      # design; shipping dev tooling to production would be the real defect.
+      # Running `composer install` here to put Pest back would mean the thing
+      # under test is no longer the thing that ships, and the certification
+      # would stop certifying the artifact it is named after.
+      #
+      # It also could not work. docker-compose.ci.yml injects APP_ENV=production
+      # as a real environment variable, and PHPUnit does not override a variable
+      # that already exists unless the declaration carries force="true" (see
+      # PhpHandler::handleEnvVariables). apps/api/phpunit.xml sets APP_ENV=testing
+      # without force, so the suite would boot as `production`, where
+      # ConfirmableTrait blocks the un-`--force`d `migrate:fresh` that
+      # RefreshDatabase depends on. The schema is never prepared and the suite
+      # exits 2. That is exactly what happened on every run of this workflow
+      # between 2026-08-04 and 2026-08-23; it never once passed.
+      #
+      # The full suite is already a required gate elsewhere, with dev
+      # dependencies present and no APP_ENV override, so phpunit.xml applies:
+      #   - ci-api.yml `Lint · Analyse · Test` — PostgreSQL 16 + Redis 7, every PR
+      #   - ci-api.yml `Tests · SQLite`        — SQLite engine, every PR
+      #   - release.yml                        — on a version tag
+      #
+      # What this certification proves instead is that the built artifact BOOTS
+      # and SERVES: clean build, boot, migrate from zero, PostgreSQL
+      # integration, Redis integration, OpenAPI validation, health/readiness,
+      # public-API smoke, and restart recovery.
+      #
+      # Guarded by .github/scripts/m35_docker_certification_guard.sh, whose
+      # negative controls live beside it. Run both before changing this block.
+
       - name: PostgreSQL integration — fresh migrate/rollback/re-migrate
-        run:  |
+        run: |
           docker compose exec -T api php artisan migrate:fresh --force
           docker compose exec -T api php artisan migrate:rollback --force
           docker compose exec -T api php artisan migrate --force
-          
-      - name: Install PHP dependencies
-        run: 
-          docker compose exec -T api composer install --no-interaction --prefer-dist
 
-      - name: Backend runtime tests (inside the container, on PostgreSQL)
-        run: 
-          docker compose exec -T api vendor/bin/pest --no-coverage
-          
       - name: Redis integration — rate limit / quota / idempotency / counters
         run: docker compose exec -T api php scripts/redis_validation.php
 
