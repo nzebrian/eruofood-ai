@@ -3,46 +3,47 @@
 declare(strict_types=1);
 
 /**
- * M29-B — do the activation checks actually bite?
+ * M29-B — does the identity resolver actually bite?
  *
- * The M29-A harness asked this of the governance artifacts. This asks it of the
- * identity layer, and it asks it of the *scripts* rather than of the policy
- * class: `GovernanceIdentityTest` already proves the rules are right, which is a
- * different claim from proving that the command an administrator actually runs
- * exits non-zero when they are broken. A correct rule behind a script that
- * swallows its result is not a gate.
+ * `verify_governance_identities.php` decides whether the `<OWNER:...>` tokens
+ * in CODEOWNERS can be filled in by real handles, and whether the result is
+ * ready for activation. Every finding it can raise is asserted here by CODE —
+ * IDENTITY_ROLE_MISSING, CODEOWNERS_PLACEHOLDER_ACTIVE and the rest — rather
+ * than by "it exited non-zero", because the resolver exits non-zero for several
+ * reasons and a control that cannot say which is not evidence.
  *
- * Every control here writes a real `.github/governance/identities.json`, breaks
- * one thing, requires the corresponding command to fail, and removes it again in
- * a `finally`. Two are shaped differently and say so where they are defined:
+ * ## M37 — fixtures, and the end of a circular safety argument
  *
- * - **9** requires the validator to *succeed* while still refusing to claim
- *   GitHub enforcement. Inverted, because the failure it guards against is a
- *   false PASS rather than a missing FAIL.
- * - **10** requires the resolver to refuse, and then checks that the live
- *   CODEOWNERS is byte-identical. A refusal that had already written the file
- *   would report correctly and still have destroyed the thing it was protecting.
+ * This suite used to write `.github/governance/identities.json` into the REAL
+ * repository — a path that, while it exists, IS an active identity
+ * configuration — and restore it in a `finally` that PHP does not run on a
+ * fatal error or a cancelled CI job.
  *
- * The harness exists because M28 found a five-adapter test sweep that had been
- * exercising one adapter five times, green throughout. A check that passes
- * because the thing it guards is fine looks exactly like a check that guards
- * nothing.
+ * Worse, control 10 invoked the resolver with
+ * `--render-codeowners=<the live .github/CODEOWNERS>` and relied on the
+ * resolver's own refusal to stop the write. The safety of the control depended
+ * on the correctness of the code it was testing; a regression in that guard
+ * would have overwritten the live CODEOWNERS as its first symptom. That control
+ * now renders to a fixture path, so no refusal is load-bearing for safety and
+ * the refusal itself is still asserted.
+ *
+ * The resolver already accepts --identities, --codeowners and --tags, so every
+ * path it reads can be pointed at the fixture explicitly. No root parameter is
+ * needed here.
  *
  * Run: php scripts/m29b_identity_negative_control.php
  */
 
-$repoRoot = dirname(__DIR__, 3);
-
-$governance = $repoRoot.'/.github/governance';
-$identities = $governance.'/identities.json';
-$codeowners = $repoRoot.'/.github/CODEOWNERS';
-$tagRuleset = $governance.'/production-tags-ruleset.json';
-
-$identityCmd = 'php '.escapeshellarg(__DIR__.'/verify_governance_identities.php');
-$repoCmd = 'php '.escapeshellarg(__DIR__.'/verify_repository_governance.php');
+require __DIR__.'/m29_fixture_lib.php';
 
 $passed = 0;
 $falseNegatives = 0;
+
+$fingerprintBefore = m29_fingerprint();
+
+echo "EruoFood — M29-B identity activation negative controls\n";
+echo str_repeat('=', 78), "\n";
+echo "fixtures: unique mktemp copies; the real repository is read-only\n\n";
 
 /** A configuration with nothing wrong with it, as a base for mutation. */
 function baseIdentities(): array
@@ -64,279 +65,227 @@ function baseIdentities(): array
     ];
 }
 
-function writeJson(string $path, array $doc): void
+function m29b_identities_path(string $fixture): string
 {
-    file_put_contents($path, json_encode($doc, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    return $fixture.'/.github/governance/identities.json';
 }
 
-/**
- * Apply a mutation, run a command, require the expected outcome, then restore.
- *
- * @param list<string> $files absolute paths whose contents must be restored
- * @param callable():void $mutate
- * @param list<string> $forbid substrings that must NOT appear in the output
- */
-function control(
-    string $name,
-    array $files,
-    callable $mutate,
-    string $command,
-    string $expectSubstring = '',
-    bool $expectFailure = true,
-    array $forbid = [],
-): void {
-    global $passed, $falseNegatives;
+// -- 1. A required CODEOWNERS role is missing ---------------------------------
 
-    $backups = [];
-    foreach ($files as $file) {
-        $backups[$file] = is_file($file) ? (string) file_get_contents($file) : null;
-    }
-
-    try {
-        $mutate();
-
-        $output = [];
-        $exit = 0;
-        exec($command.' 2>&1', $output, $exit);
-        $text = implode("\n", $output);
-
-        $exitOk = $expectFailure ? $exit !== 0 : $exit === 0;
-        $substringOk = $expectSubstring === '' || str_contains($text, $expectSubstring);
-        $forbidOk = true;
-
-        foreach ($forbid as $needle) {
-            if (str_contains($text, $needle)) {
-                $forbidOk = false;
-            }
-        }
-
-        if ($exitOk && $substringOk && $forbidOk) {
-            $passed++;
-            printf("  ✔ %s\n", $name);
-
-            // Show the finding that actually fired. Section headings mention
-            // EXTERNAL too, so those are only worth printing when nothing
-            // sharper matched — as in control 9, where an EXTERNAL line *is*
-            // the evidence.
-            $sharp = array_filter(
-                $output,
-                static fn (string $l): bool => str_contains($l, 'ERROR ') || str_contains($l, 'REFUSED')
-                    || str_starts_with(trim($l), 'FAIL '),
-            );
-
-            $evidence = $sharp !== [] ? $sharp : array_filter(
-                $output,
-                static fn (string $l): bool => str_starts_with(trim($l), 'EXTERNAL / ADMIN REQUIRED'),
-            );
-
-            foreach (array_slice($evidence, 0, 2) as $line) {
-                printf("      %s\n", trim($line));
-            }
-        } else {
-            $falseNegatives++;
-            printf(
-                "  ✘ %s — FALSE NEGATIVE (exit=%d, expected %s%s%s)\n",
-                $name,
-                $exit,
-                $expectFailure ? 'failure' : 'success',
-                $substringOk ? '' : "; missing \"{$expectSubstring}\"",
-                $forbidOk ? '' : '; forbidden text present',
-            );
-        }
-    } finally {
-        foreach ($backups as $file => $content) {
-            if ($content === null) {
-                @unlink($file);
-            } else {
-                file_put_contents($file, $content);
-            }
-        }
-    }
-}
-
-echo "EruoFood — M29-B identity activation negative controls\n";
-echo str_repeat('=', 78), "\n\n";
-
-// -- 1. A required role is missing --------------------------------------------
-
-control(
+m29_identity_control(
     'a required CODEOWNERS role is missing',
-    [$identities],
-    static function () use ($identities): void {
+    static function (string $f): void {
         $doc = baseIdentities();
         unset($doc['codeowners']['FINANCE']);
-        writeJson($identities, $doc);
+        m29_write_json(m29b_identities_path($f), $doc);
     },
-    $identityCmd,
     'IDENTITY_ROLE_MISSING',
 );
 
-// -- 2. An identity is empty ---------------------------------------------------
+// -- 2. A role is present but names nobody ------------------------------------
 
-control(
+m29_identity_control(
     'a role is present but names nobody',
-    [$identities],
-    static function () use ($identities): void {
+    static function (string $f): void {
         $doc = baseIdentities();
-        $doc['codeowners']['PLATFORM']['handles'] = [];
-        writeJson($identities, $doc);
+        $doc['codeowners']['FINANCE']['handles'] = [];
+        m29_write_json(m29b_identities_path($f), $doc);
     },
-    $identityCmd,
     'IDENTITY_EMPTY',
 );
 
-// -- 3. An unresolved placeholder reaches an active CODEOWNERS rule -----------
+// -- 3. An unresolved token is left on an active CODEOWNERS rule --------------
 
-control(
+m29_identity_control(
     'an unresolved <OWNER:...> token is left on an active CODEOWNERS rule',
-    [$identities, $codeowners],
-    static function () use ($identities, $codeowners): void {
-        // The regression this milestone exists to catch. The commented form is
-        // the correct M29-A hand-over state; uncommenting without substituting
-        // is the M29-A defect restored by the act of fixing it.
-        writeJson($identities, baseIdentities());
+    static function (string $f): void {
+        m29_write_json(m29b_identities_path($f), baseIdentities());
+        $codeowners = $f.'/.github/CODEOWNERS';
         file_put_contents($codeowners, (string) file_get_contents($codeowners)."\n/apps/api/modules/Payments/ <OWNER:FINANCE>\n");
     },
-    $identityCmd,
     'CODEOWNERS_PLACEHOLDER_ACTIVE',
 );
 
-// -- 4. The shipped example is used as the active configuration ---------------
+// -- 4. The example file is copied in and activated unchanged -----------------
 
-control(
+m29_identity_control(
     'the example file is copied in and activated unchanged',
-    [$identities],
-    static function () use ($identities, $governance): void {
-        copy($governance.'/identities.example.json', $identities);
+    static function (string $f): void {
+        copy(
+            $f.'/.github/governance/identities.example.json',
+            m29b_identities_path($f),
+        );
     },
-    $identityCmd,
     'IDENTITY_EXAMPLE_USED_AS_ACTIVE',
 );
 
-// -- 5. A handle GitHub will not accept ---------------------------------------
+// -- 5. A handle uses a syntax GitHub rejects ---------------------------------
 
-control(
+m29_identity_control(
     'a handle uses a syntax GitHub rejects',
-    [$identities],
-    static function () use ($identities): void {
+    static function (string $f): void {
         $doc = baseIdentities();
-        $doc['codeowners']['API']['handles'] = ['@double--hyphen'];
-        writeJson($identities, $doc);
+        $doc['codeowners']['API']['handles'] = ['not-an-at-handle'];
+        m29_write_json(m29b_identities_path($f), $doc);
     },
-    $identityCmd,
     'IDENTITY_SYNTAX_INVALID',
 );
 
-// -- 6. No release actor -------------------------------------------------------
+// -- 6. No release actor is configured ----------------------------------------
 
-control(
+m29_identity_control(
     'no release actor is configured',
-    [$identities],
-    static function () use ($identities): void {
+    static function (string $f): void {
         $doc = baseIdentities();
-        unset($doc['release_actors']);
-        writeJson($identities, $doc);
+        $doc['release_actors'] = [];
+        m29_write_json(m29b_identities_path($f), $doc);
     },
-    $identityCmd,
     'RELEASE_ACTOR_MISSING',
 );
 
-// -- 7. The release actor gains tag-immutability bypass -----------------------
+// -- 7. The release actor is made exempt from tag immutability ----------------
 
-control(
+m29_identity_control(
     'the release actor is made exempt from tag immutability',
-    [$identities, $tagRuleset],
-    static function () use ($identities, $tagRuleset): void {
-        // Two files, each of which reads as correct alone. The creation ruleset
-        // names a release actor, which is its job; the immutability ruleset
-        // names the same actor, which makes the release tag deletable by the
-        // account that created it — and release.yml promotes a production
-        // container image from exactly that tag.
-        writeJson($identities, baseIdentities());
+    static function (string $f): void {
+        m29_write_json(m29b_identities_path($f), baseIdentities());
 
-        $doc = json_decode((string) file_get_contents($tagRuleset), true, 512, JSON_THROW_ON_ERROR);
+        $tagPath = $f.'/.github/governance/production-tags-ruleset.json';
+        $doc = m29_read_json($tagPath);
+        $actor = ['actor_id' => 12345, 'actor_type' => 'Integration', 'bypass_mode' => 'always'];
 
-        foreach ($doc['rulesets'] as $i => $rs) {
-            $types = array_column($rs['rules'], 'type');
-
-            if (array_intersect(['deletion', 'non_fast_forward', 'update'], $types) !== []) {
-                $doc['rulesets'][$i]['bypass_actors'] = [
-                    ['actor_id' => 12345, 'actor_type' => 'Integration', 'bypass_mode' => 'always'],
-                ];
+        if (isset($doc['rulesets']) && is_array($doc['rulesets'])) {
+            foreach ($doc['rulesets'] as &$ruleset) {
+                if (str_contains(strtolower((string) ($ruleset['name'] ?? '')), 'immutable')) {
+                    $ruleset['bypass_actors'] = [$actor];
+                }
             }
+        } else {
+            $doc['bypass_actors'] = [$actor];
         }
 
-        writeJson($tagRuleset, $doc);
+        m29_write_json($tagPath, $doc);
     },
-    $identityCmd,
     'RELEASE_ACTOR_IN_IMMUTABILITY_BYPASS',
 );
 
-// -- 8. An unknown role --------------------------------------------------------
+// -- 8. An unknown role is added instead of a known one being filled ----------
 
-control(
+m29_identity_control(
     'an unknown role is added instead of a known one being filled',
-    [$identities],
-    static function () use ($identities): void {
-        // A typo, not sabotage: FINANCE stays unfilled while the file looks
-        // longer and therefore more complete than the correct version.
+    static function (string $f): void {
         $doc = baseIdentities();
-        $doc['codeowners']['FINANC'] = ['handles' => ['@typo-reviewer']];
-        writeJson($identities, $doc);
+        $doc['codeowners']['DEVOPS'] = ['handles' => ['@theta-reviewer']];
+        m29_write_json(m29b_identities_path($f), $doc);
     },
-    $identityCmd,
     'IDENTITY_ROLE_UNKNOWN',
 );
 
-// -- 9. A perfect local configuration is not evidence of enforcement ----------
+// -- 9. A flawless identity file still proves nothing about GitHub ------------
+//
+// Inverted: the validator MUST succeed here. The defect guarded against is the
+// opposite of a missing failure — a local file being promoted into a claim
+// about a remote system. So the requirement is that the repository validator
+// exits 0, still reports the GitHub facts as EXTERNAL, and never prints a PASS
+// for enforcement or for identities resolving.
 
-control(
-    'a flawless identity file still proves nothing about GitHub',
-    [$identities],
-    static function () use ($identities): void {
-        writeJson($identities, baseIdentities());
-    },
-    $repoCmd,
-    // Inverted: the validator MUST succeed here. The defect being guarded
-    // against is the opposite of a missing failure — it is a local file being
-    // promoted into a claim about a remote system. So the requirement is that
-    // it exits 0, still reports the GitHub facts as EXTERNAL, and never prints
-    // a PASS for enforcement or for identities resolving.
-    'EXTERNAL / ADMIN REQUIRED  the main ruleset is actually active on GitHub',
-    expectFailure: false,
-    forbid: [
+$fixture9 = m29_make_fixture();
+
+try {
+    m29_write_json(m29b_identities_path($fixture9), baseIdentities());
+    m29_assert_contained($fixture9);
+
+    $result = m29_run_validator($fixture9);
+    $forbidden = [
         'PASS the main ruleset is actually active on GitHub',
         'PASS branch protection is effective',
         'PASS CODEOWNER identities resolve',
-    ],
-);
+    ];
 
-// -- 10. The resolver is pointed at the live CODEOWNERS -----------------------
+    $clean = true;
+    foreach ($forbidden as $needle) {
+        if (str_contains($result['output'], $needle)) {
+            $clean = false;
+        }
+    }
 
-$codeownersBefore = hash_file('sha256', $codeowners);
+    $reportsExternal = str_contains(
+        $result['output'],
+        'EXTERNAL / ADMIN REQUIRED  the main ruleset is actually active on GitHub',
+    );
 
-control(
-    'the resolver is told to render over the active CODEOWNERS',
-    [$identities],
-    static function () use ($identities): void {
-        writeJson($identities, baseIdentities());
-    },
-    $identityCmd
-        .' --identities='.escapeshellarg($identities)
-        .' --render-codeowners='.escapeshellarg($codeowners),
-    'REFUSED  will not write to the active .github/CODEOWNERS',
-);
+    if ($result['exit'] === 0 && $clean && $reportsExternal) {
+        $passed++;
+        echo "  ✔ a flawless identity file still proves nothing about GitHub\n";
+        echo "      GitHub facts remain EXTERNAL; no PASS was printed for enforcement\n";
+    } else {
+        $falseNegatives++;
+        printf(
+            "  ✘ a flawless identity file still proves nothing about GitHub — FALSE NEGATIVE (exit=%d, external=%s, no-forbidden=%s)\n",
+            $result['exit'],
+            $reportsExternal ? 'yes' : 'NO',
+            $clean ? 'yes' : 'NO',
+        );
+    }
+} finally {
+    m29_rmtree($fixture9);
+}
 
-$codeownersAfter = hash_file('sha256', $codeowners);
+// -- 10. The resolver is told to render over an ACTIVE CODEOWNERS -------------
+//
+// M37: the render target is the FIXTURE's CODEOWNERS, never the repository's.
+// The refusal is still asserted — but it is no longer what keeps the real file
+// safe, because the real file is not reachable from here at all.
 
-if ($codeownersBefore !== $codeownersAfter) {
-    // A refusal that had already written the file would have reported correctly
-    // and still destroyed the thing it was protecting. The message is not the
-    // evidence; the unchanged file is.
-    $falseNegatives++;
-    echo "  ✘ the refusal did not protect the file — .github/CODEOWNERS changed\n";
+$fixture10 = m29_make_fixture();
+$liveCodeownersBefore = hash_file('sha256', m29_repo_root().'/.github/CODEOWNERS');
+
+try {
+    m29_write_json(m29b_identities_path($fixture10), baseIdentities());
+    m29_assert_contained($fixture10);
+
+    $result = m29_run_identities($fixture10, [
+        '--render-codeowners='.escapeshellarg($fixture10.'/.github/CODEOWNERS'),
+    ]);
+
+    if (str_contains($result['output'], 'REFUSED  will not write to the active .github/CODEOWNERS')) {
+        $passed++;
+        echo "  ✔ the resolver refuses to render over the CODEOWNERS it was given as active\n";
+        echo "      (target was the fixture's copy — the real file was never a candidate)\n";
+    } else {
+        $falseNegatives++;
+        echo "  ✘ the resolver did NOT refuse to render over an active CODEOWNERS\n";
+    }
+} finally {
+    m29_rmtree($fixture10);
+}
+
+$liveCodeownersAfter = hash_file('sha256', m29_repo_root().'/.github/CODEOWNERS');
+
+if ($liveCodeownersBefore === $liveCodeownersAfter) {
+    $passed++;
+    echo "  ✔ the real .github/CODEOWNERS is byte-identical (sha256 before and after)\n";
 } else {
-    echo "      .github/CODEOWNERS unchanged (sha256 verified before and after)\n";
+    $falseNegatives++;
+    echo "  ✘ THE REAL .github/CODEOWNERS CHANGED — a render escaped its fixture\n";
+}
+
+// -- The controls on the controls ---------------------------------------------
+
+echo "\n";
+m29_positive_control();
+m29_completeness_control('.github/governance', 'governance artifact');
+
+// -- Real-tree integrity ------------------------------------------------------
+
+$fingerprintAfter = m29_fingerprint();
+
+if ($fingerprintBefore === $fingerprintAfter) {
+    $passed++;
+    echo "  ✔ integrity · the real governance tree is byte-identical after the suite\n";
+} else {
+    $falseNegatives++;
+    echo "  ✘ integrity · THE REAL GOVERNANCE TREE CHANGED — a mutation escaped its fixture\n";
 }
 
 // -- Result -------------------------------------------------------------------
