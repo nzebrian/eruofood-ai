@@ -52,6 +52,14 @@ use EruoFood\Shared\Domain\Governance\IdentityFinding;
 use EruoFood\Shared\Domain\Governance\IdentityPolicy;
 use EruoFood\Shared\Domain\Governance\OwnershipDeclaration;
 
+// Exit codes (M37). A single boolean exit could not say "I could not check
+// this", so a run with twelve unverified items looked exactly like a run that
+// verified everything.
+const EXIT_OK = 0;             // verified, and passing
+const EXIT_FAIL = 1;           // a governance invariant is violated
+const EXIT_UNVERIFIED = 2;     // verification incomplete (strict mode only)
+const EXIT_ERROR = 3;          // the validator could not run, or was misinvoked
+
 // scripts -> api -> apps -> <repo root>. Three levels, not two: apps/api is
 // the Laravel root, but governance artifacts live across the whole repository.
 $repoRoot = dirname(__DIR__, 3);
@@ -61,19 +69,131 @@ $repoRoot = dirname(__DIR__, 3);
 // change anything there. Whoever runs `gh api` decides what it sees.
 $rulesetsFile = null;
 $codeownerErrorsFile = null;
+$mode = 'default';
+$jsonPath = null;
 
-foreach ($GLOBALS['argv'] ?? [] as $arg) {
-    if (str_starts_with((string) $arg, '--rulesets=')) {
-        $rulesetsFile = substr((string) $arg, strlen('--rulesets='));
+/**
+ * Bail out before any check runs, and say why.
+ *
+ * Invocation mistakes exit 3, never 0. Until M37 an unknown flag was silently
+ * ignored: `--ruleset=live.json` (singular, a plausible typo of the real
+ * `--rulesets=`) produced "37 passed, 0 failed, 12 external" and exit 0. CI
+ * wired that way would have been green while verifying nothing about GitHub.
+ */
+function invocationError(string $message, ?string $jsonPath = null): never
+{
+    fprintf(STDERR, "ERROR  %s\n", $message);
+    fprintf(STDERR, "       usage: verify_repository_governance.php [--mode=default|advisory|strict]\n");
+    fprintf(STDERR, "              [--rulesets=<path>] [--codeowners-errors=<path>]\n");
+    fprintf(STDERR, "              [--repo-root=<path>] [--json=<path>]\n");
+
+    if ($jsonPath !== null) {
+        @file_put_contents($jsonPath, json_encode([
+            'schema' => 1,
+            'mode' => 'unknown',
+            'total' => 0,
+            'passed' => 0,
+            'failed' => 0,
+            'external_unverified' => 0,
+            'skipped' => 0,
+            'error' => 1,
+            'verification_complete' => false,
+            'exit_code' => EXIT_ERROR,
+            'exit_reason' => 'invocation_error',
+            'unverified' => [],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
     }
-    if (str_starts_with((string) $arg, '--codeowners-errors=')) {
-        $codeownerErrorsFile = substr((string) $arg, strlen('--codeowners-errors='));
+
+    exit(EXIT_ERROR);
+}
+
+$argList = $GLOBALS['argv'] ?? [];
+array_shift($argList);   // the script name
+
+// Parsed in two passes so that --json is known before an unknown flag aborts,
+// letting the machine-readable summary describe the invocation error too.
+foreach ($argList as $arg) {
+    if (str_starts_with((string) $arg, '--json=')) {
+        $jsonPath = substr((string) $arg, strlen('--json='));
     }
+}
+
+foreach ($argList as $arg) {
+    $arg = (string) $arg;
+
+    if (str_starts_with($arg, '--rulesets=')) {
+        $rulesetsFile = substr($arg, strlen('--rulesets='));
+
+        if ($rulesetsFile === '') {
+            invocationError('--rulesets= was given an empty path', $jsonPath);
+        }
+
+        continue;
+    }
+
+    if (str_starts_with($arg, '--codeowners-errors=')) {
+        $codeownerErrorsFile = substr($arg, strlen('--codeowners-errors='));
+
+        if ($codeownerErrorsFile === '') {
+            invocationError('--codeowners-errors= was given an empty path', $jsonPath);
+        }
+
+        continue;
+    }
+
+    if (str_starts_with($arg, '--mode=')) {
+        $mode = substr($arg, strlen('--mode='));
+
+        if (! in_array($mode, ['default', 'advisory', 'strict'], true)) {
+            invocationError("unknown mode '{$mode}' (expected default, advisory or strict)", $jsonPath);
+        }
+
+        continue;
+    }
+
+    if (str_starts_with($arg, '--repo-root=')) {
+        $candidate = substr($arg, strlen('--repo-root='));
+
+        if ($candidate === '') {
+            invocationError('--repo-root= was given an empty path', $jsonPath);
+        }
+
+        $resolved = realpath($candidate);
+
+        if ($resolved === false || ! is_dir($resolved)) {
+            invocationError("--repo-root is not a readable directory: {$candidate}", $jsonPath);
+        }
+
+        // Every artifact this validator reads hangs off .github/, so a root
+        // without one is a fixture that would silently "pass" by having
+        // nothing to check. Refuse it rather than validate an empty tree.
+        if (! is_dir($resolved.'/.github')) {
+            invocationError("--repo-root has no .github directory: {$resolved}", $jsonPath);
+        }
+
+        $repoRoot = $resolved;
+
+        continue;
+    }
+
+    if (str_starts_with($arg, '--json=')) {
+        if ($jsonPath === '') {
+            invocationError('--json= was given an empty path', $jsonPath);
+        }
+
+        continue;
+    }
+
+    invocationError("unrecognised argument: {$arg}", $jsonPath);
 }
 
 $passed = 0;
 $failed = 0;
 $external = 0;
+$skipped = 0;
+
+/** @var list<string> Descriptions of everything that could not be verified. */
+$unverifiedItems = [];
 
 function section(string $title): void
 {
@@ -103,10 +223,11 @@ function verify(string $description, callable $check): void
  */
 function externalCheck(string $description, ?callable $check = null): void
 {
-    global $external, $passed, $failed;
+    global $external, $passed, $failed, $unverifiedItems;
 
     if ($check === null) {
         $external++;
+        $unverifiedItems[] = $description;
         printf("  EXTERNAL / ADMIN REQUIRED  %s\n", $description);
 
         return;
@@ -121,6 +242,98 @@ function externalCheck(string $description, ?callable $check = null): void
 
     $ok ? $passed++ : $failed++;
     printf("  %s %s%s\n", $ok ? 'PASS' : 'FAIL', $description, $detail === '' ? '' : "  ({$detail})");
+}
+
+/**
+ * A check that does not apply, because a policy condition says so.
+ *
+ * SKIPPED is not a softer EXTERNAL. EXTERNAL means "we could not find out";
+ * SKIPPED means "policy says there is nothing here to find out", and the
+ * difference only holds if the condition is *machine-verified* rather than
+ * asserted by whoever wrote the call. So the caller must pass the evaluated
+ * condition and the artifact it was read from, and a false condition degrades
+ * to EXTERNAL rather than quietly counting as fine.
+ *
+ * Without that degradation this would be the perfect escape hatch: an absent
+ * or malformed ownership.json would make three checks vanish into SKIPPED and
+ * strict mode would report success having verified less than it thought.
+ */
+function skipCheck(string $description, bool $conditionHolds, string $because): void
+{
+    global $skipped, $external, $unverifiedItems;
+
+    if ($conditionHolds) {
+        $skipped++;
+        printf("  SKIPPED  %s  (%s)\n", $description, $because);
+
+        return;
+    }
+
+    $external++;
+    $unverifiedItems[] = $description;
+    printf("  EXTERNAL / ADMIN REQUIRED  %s  (skip condition not verified: %s)\n", $description, $because);
+}
+
+/**
+ * Live evidence, held to a shape before it is trusted.
+ *
+ * Returns the decoded payload, or null when the evidence cannot be trusted —
+ * and increments $failed in that case, because supplying broken evidence is a
+ * failure, not an absence of evidence. Until M37 a file containing literal
+ * `null` decoded without throwing, failed the `is_array` test, and was
+ * discarded in silence: the run reported the same twelve EXTERNAL items and
+ * exit 0 as if nothing had been supplied at all.
+ */
+function readEvidence(string $flag, string $path): ?array
+{
+    global $failed;
+
+    if (! is_file($path)) {
+        printf("  FAIL could not read %s file  (no such file: %s)\n", $flag, $path);
+        $failed++;
+
+        return null;
+    }
+
+    $raw = @file_get_contents($path);
+
+    if ($raw === false) {
+        printf("  FAIL could not read %s file  (unreadable: %s)\n", $flag, $path);
+        $failed++;
+
+        return null;
+    }
+
+    if (trim($raw) === '') {
+        printf("  FAIL %s file is empty  (%s)\n", $flag, $path);
+        $failed++;
+
+        return null;
+    }
+
+    try {
+        $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+    } catch (Throwable $e) {
+        printf("  FAIL could not read %s file  (%s)\n", $flag, $e->getMessage());
+        $failed++;
+
+        return null;
+    }
+
+    // Valid JSON is not the same as usable evidence. `null`, a bare string and
+    // a number all decode cleanly and carry nothing.
+    if (! is_array($decoded)) {
+        printf(
+            "  FAIL %s file is valid JSON but not a structured payload  (got %s)\n",
+            $flag,
+            get_debug_type($decoded),
+        );
+        $failed++;
+
+        return null;
+    }
+
+    return $decoded;
 }
 
 function readJson(string $path): array
@@ -769,11 +982,25 @@ foreach ($ownership->mode->summaryLines() as $line) {
 }
 
 if (! $ownership->mode->supportsIndependentReview()) {
-    // Printed rather than passed. A reader skimming a green run must not be
-    // able to come away thinking a second person reviewed anything.
-    externalCheck('independent human review (DEFERRED under SOLE_OWNER — requires a second real human)');
-    externalCheck('CODEOWNERS enforcement (DEFERRED under SOLE_OWNER — CODEOWNERS is inert)');
-    externalCheck('finance four-eyes review (DEFERRED under SOLE_OWNER — one human participant)');
+    // Not passed, and since M37 not EXTERNAL either. These three are not
+    // "we could not check"; they are "policy says there is nothing to check
+    // while one human owns the repository". Calling that EXTERNAL conflated a
+    // deliberate deferral with a genuine blind spot and inflated the unverified
+    // count from five to eight.
+    //
+    // The condition is machine-verified, not asserted: ownership.json must
+    // parse into a usable declaration AND that declaration must be the
+    // single-owner mode. An absent or malformed ownership.json fails
+    // isUsable(), and skipCheck() then degrades all three back to EXTERNAL —
+    // so a broken policy file can never make checks disappear.
+    $soleOwnerVerified = $ownership->isUsable()
+        && ! $ownership->mode->supportsIndependentReview();
+    $because = 'ownership.json mode='.$ownership->mode->value
+        .($ownership->isUsable() ? '' : ' [DECLARATION UNUSABLE]');
+
+    skipCheck('independent human review (requires a second real human)', $soleOwnerVerified, $because);
+    skipCheck('CODEOWNERS enforcement (CODEOWNERS is inert)', $soleOwnerVerified, $because);
+    skipCheck('finance four-eyes review (one human participant)', $soleOwnerVerified, $because);
 }
 
 // -- 8. Identity configuration and activation readiness (M29-B) ---------------
@@ -902,13 +1129,7 @@ foreach ($assessment->warnings() as $warning) {
 $liveCodeownerErrors = null;
 
 if ($codeownerErrorsFile !== null) {
-    try {
-        $decoded = json_decode((string) file_get_contents($codeownerErrorsFile), true, 512, JSON_THROW_ON_ERROR);
-        $liveCodeownerErrors = is_array($decoded) ? $decoded : null;
-    } catch (Throwable $e) {
-        printf("  FAIL could not read --codeowners-errors file  (%s)\n", $e->getMessage());
-        $failed++;
-    }
+    $liveCodeownerErrors = readEvidence('--codeowners-errors', $codeownerErrorsFile);
 }
 
 foreach ($assessment->externalRequirements() as $requirement) {
@@ -950,13 +1171,7 @@ section('9) GitHub-side — not provable from this repository');
 $liveRulesets = null;
 
 if ($rulesetsFile !== null) {
-    try {
-        $decoded = json_decode((string) file_get_contents($rulesetsFile), true, 512, JSON_THROW_ON_ERROR);
-        $liveRulesets = is_array($decoded) ? $decoded : null;
-    } catch (Throwable $e) {
-        printf("  FAIL could not read --rulesets file  (%s)\n", $e->getMessage());
-        $failed++;
-    }
+    $liveRulesets = readEvidence('--rulesets', $rulesetsFile);
 }
 
 if ($liveRulesets === null) {
@@ -1016,7 +1231,14 @@ if ($liveRulesets === null) {
 // -- Result -------------------------------------------------------------------
 
 echo "\n", str_repeat('=', 72), "\n";
-printf("RESULT: %d passed, %d failed, %d external/admin required\n", $passed, $failed, $external);
+printf(
+    "RESULT: %d passed, %d failed, %d external/admin required, %d skipped  [mode=%s]\n",
+    $passed,
+    $failed,
+    $external,
+    $skipped,
+    $mode,
+);
 
 if ($external > 0) {
     echo "\nEXTERNAL items are NOT failures and NOT passes. They are the parts of\n";
@@ -1024,4 +1246,70 @@ if ($external > 0) {
     echo ".github/governance/APPLY_GOVERNANCE.md.\n";
 }
 
-exit($failed === 0 ? 0 : 1);
+// Nothing was verified at all. Distinct from "everything passed" and, in
+// strict mode, never a success: a suite that checks nothing must not be able
+// to report that it checked everything.
+$verifiedAnything = $passed > 0 || $failed > 0;
+$verificationComplete = $external === 0 && $verifiedAnything;
+
+// Precedence: FAIL outranks UNVERIFIED. A known violation is the sharper
+// signal, and reporting "incomplete" while an invariant is broken would bury
+// the thing that actually needs fixing.
+if ($failed > 0) {
+    $exitCode = EXIT_FAIL;
+    $exitReason = 'governance_failure';
+} elseif ($mode === 'strict' && ! $verificationComplete) {
+    $exitCode = EXIT_UNVERIFIED;
+    $exitReason = $verifiedAnything ? 'external_unverified' : 'nothing_verified';
+} else {
+    $exitCode = EXIT_OK;
+    $exitReason = 'verified';
+}
+
+if ($mode === 'strict' && $exitCode === EXIT_UNVERIFIED) {
+    echo "\nSTRICT MODE: verification is incomplete. The following could not be\n";
+    echo "verified, and strict mode will not report success without them:\n";
+
+    foreach ($unverifiedItems as $item) {
+        printf("  - %s\n", $item);
+    }
+
+    echo "\nSupply live evidence with --rulesets= and --codeowners-errors=, or run\n";
+    echo "in --mode=advisory while that evidence is unavailable.\n";
+}
+
+if ($mode === 'advisory' && $external > 0) {
+    printf(
+        "\nADVISORY MODE: %d item(s) unverified. Not a failure here, but strict\n"
+        ."mode would exit %d on this run.\n",
+        $external,
+        EXIT_UNVERIFIED,
+    );
+}
+
+if ($jsonPath !== null) {
+    $summary = [
+        'schema' => 1,
+        'mode' => $mode,
+        'total' => $passed + $failed + $external + $skipped,
+        'passed' => $passed,
+        'failed' => $failed,
+        'external_unverified' => $external,
+        'skipped' => $skipped,
+        'error' => 0,
+        'verification_complete' => $verificationComplete,
+        'exit_code' => $exitCode,
+        'exit_reason' => $exitReason,
+        'unverified' => array_values($unverifiedItems),
+    ];
+
+    // The summary is written outside this repository by whoever chose the
+    // path; nothing writes it by default, and there is no default location.
+    if (@file_put_contents($jsonPath, json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n") === false) {
+        fprintf(STDERR, "ERROR  could not write --json summary to %s\n", $jsonPath);
+
+        exit(EXIT_ERROR);
+    }
+}
+
+exit($exitCode);

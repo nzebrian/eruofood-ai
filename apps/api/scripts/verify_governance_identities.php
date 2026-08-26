@@ -263,6 +263,7 @@ if (isset($options['render-codeowners'])) {
         $assessment->resolved,
         $codeownersBody,
         $repoRoot,
+        $codeownersPath,
     );
 
     if ($exit !== 0) {
@@ -320,6 +321,7 @@ function renderCodeowners(
     array $resolved,
     string $template,
     string $repoRoot,
+    string $activeCodeowners,
 ): int {
     if (! $identitiesExplicit) {
         echo "  REFUSED  --render-codeowners requires --identities to be given explicitly\n";
@@ -343,12 +345,25 @@ function renderCodeowners(
         return 1;
     }
 
-    $liveCodeowners = $repoRoot.'/.github/CODEOWNERS';
+    // Two files are off limits, not one. The derived .github/CODEOWNERS is the
+    // obvious case; the file this run was TOLD to treat as active
+    // (--codeowners=) is the one that was actually read as the template, and
+    // rendering over it would overwrite the input with output derived from it.
+    // Until M37 only the derived path was protected, so
+    // `--codeowners=X --render-codeowners=X` would have written X.
+    $protected = [$repoRoot.'/.github/CODEOWNERS', $activeCodeowners];
     $resolvedTarget = realpath(dirname($target));
     $resolvedTarget = $resolvedTarget === false ? dirname($target) : $resolvedTarget;
     $absoluteTarget = $resolvedTarget.'/'.basename($target);
 
-    if ($absoluteTarget === $liveCodeowners || realpath($liveCodeowners) === $absoluteTarget) {
+    $collides = false;
+    foreach ($protected as $candidate) {
+        if ($absoluteTarget === $candidate || realpath($candidate) === $absoluteTarget) {
+            $collides = true;
+        }
+    }
+
+    if ($collides) {
         echo "  REFUSED  will not write to the active .github/CODEOWNERS\n";
         echo "           Render elsewhere, read the diff, and commit it deliberately.\n";
 
