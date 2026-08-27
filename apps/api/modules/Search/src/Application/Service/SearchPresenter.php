@@ -19,6 +19,11 @@ final readonly class SearchPresenter
         return [
             'query_id' => $queryId,
             'total' => $results->total,
+            // M38-SEARCH-001: `total` is now a real COUNT over the matching
+            // set rather than the size of a truncated candidate pool. This
+            // flag is false only when a filter could not be fully expressed in
+            // SQL, in which case the count is an upper bound and says so.
+            'total_is_exact' => $results->totalIsExact,
             'page' => $results->page,
             'per_page' => $results->perPage,
             'facets' => $results->facets,

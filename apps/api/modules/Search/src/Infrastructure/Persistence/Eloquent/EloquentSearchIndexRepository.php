@@ -12,9 +12,12 @@ use EruoFood\Search\Domain\Document\SearchHit;
 use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\Document\SearchResults;
 use EruoFood\Search\Domain\Enum\SearchType;
+use EruoFood\Search\Domain\Enum\SortOption;
+use EruoFood\Search\Domain\Exception\SearchPaginationTooDeep;
 use EruoFood\Search\Domain\ValueObject\Embedding;
 use EruoFood\Search\Domain\ValueObject\GeoPoint;
 use EruoFood\Search\Domain\ValueObject\SearchQuery;
+use EruoFood\Search\Infrastructure\Capability\SearchCapabilityProbe;
 use EruoFood\Search\Infrastructure\Persistence\Eloquent\Model\SearchDocumentModel;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -31,10 +34,21 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
 {
     private ?bool $pgvector = null;
 
+    private float $pgvectorProbedAt = 0.0;
+
+    /**
+     * @param float $capabilityTtlSeconds how long a probed capability answer may
+     *                                    be reused; see {@see self::pgvectorEnabled()}
+     * @param SearchCapabilityProbe|null $probe injected only by tests; production
+     *                                          builds one over the live connection
+     */
     public function __construct(
         private readonly Ranker $ranker,
         private readonly int $candidatePool,
         private readonly bool $usePgvector,
+        private readonly int $maxResultWindow = 1000,
+        private readonly float $capabilityTtlSeconds = 30.0,
+        private readonly ?SearchCapabilityProbe $probe = null,
     ) {
     }
 
@@ -99,53 +113,198 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    /**
+     * Execute a query (M38-SEARCH-001).
+     *
+     * ## What this replaces
+     *
+     * The previous implementation fetched a fixed 200-row candidate pool,
+     * scored it in PHP, then reported `count($sorted)` as the total and
+     * `array_slice($sorted, $offset, $perPage)` as the page. Two consequences:
+     * any query matching more than 200 documents reported a false total, and
+     * every page past offset 200 came back EMPTY while the response still
+     * claimed more results existed.
+     *
+     * ## What happens now
+     *
+     * `$total` is a real `COUNT(*)` over the SQL predicates — never the size of
+     * a truncated pool. Pagination then takes one of two paths:
+     *
+     * - **SQL-ordered sorts** (popularity, rating, newest, price, prep time)
+     *   are ordered and paginated by PostgreSQL with LIMIT/OFFSET. Exact at any
+     *   depth, no in-memory scan.
+     * - **Relevance and distance** are blended in PHP and need a materialised
+     *   window. It is bounded by `search.max_result_window`, and the window is
+     *   sized to cover the requested page rather than a fixed 200. A page past
+     *   the bound raises {@see SearchPaginationTooDeep} — an explicit refusal,
+     *   never a silent empty page.
+     */
     public function search(SearchQuery $query, ?Embedding $queryEmbedding = null): SearchResults
     {
-        $types = array_map(static fn (SearchType $t): string => $t->value, $query->type->documentTypes());
-        $builder = SearchDocumentModel::query()->whereIn('type', $types);
-        $this->applyScalarFilters($builder, $query);
-        $this->applyLexicalPrefilter($builder, $query->lexicalTerms());
+        $types = $this->scopeTypes($query->type);
+
+        $predicate = function () use ($types, $query): Builder {
+            $builder = SearchDocumentModel::query()->whereIn('type', $types);
+            $this->applyScalarFilters($builder, $query);
+            $this->applyLexicalPrefilter($builder, $query->lexicalTerms());
+
+            return $builder;
+        };
+
+        // Truthful total: the whole matching set, not the slice we happened to
+        // materialise. `$exact` is false only when a filter cannot be fully
+        // expressed in SQL (see applyScalarFilters), in which case the count is
+        // an upper bound and the response says so rather than pretending.
+        $total = $predicate()->count();
+        $exact = $this->filtersAreFullySql($query);
+
+        $sqlOrder = $this->sqlOrdering($query->sort);
+
+        if ($sqlOrder !== null && $exact) {
+            $builder = $predicate();
+            foreach ($sqlOrder as [$column, $direction]) {
+                $builder->orderByRaw($column.' '.$direction);
+            }
+            // Stable tiebreak, so equal keys do not reshuffle between pages.
+            $builder->orderBy('id');
+
+            /** @var list<SearchDocumentModel> $rows */
+            $rows = $builder->skip($query->offset())->take($query->perPage)->get()->all();
+            $hits = $this->hydrateHits($rows, $query, $queryEmbedding);
+
+            // Facets describe the whole result set, so they are counted from a
+            // bounded sample rather than from this one page.
+            return new SearchResults($hits, $total, $query->page, $query->perPage, $this->sampledFacets($predicate(), $query), $exact);
+        }
+
+        // PHP-ranked path. Size the window to cover the requested page.
+        //
+        // The boundary rule is that the WHOLE page must fit inside the window:
+        // `offset + perPage <= max_result_window`. The earlier rule tested only
+        // `offset >= window`, which let a straddling page through — offset 995
+        // with perPage 20 against a 1000-row window was accepted, clamped, and
+        // answered with 5 hits while `total` reported the full match count. A
+        // short page with no signal is the same silent lie this defect is
+        // about, just one page further in.
+        $needed = $query->offset() + $query->perPage;
+
+        if ($needed > $this->maxResultWindow) {
+            throw SearchPaginationTooDeep::beyond($this->maxResultWindow, $query->offset(), $query->perPage);
+        }
+
+        $window = min(max($this->candidatePool, $needed), $this->maxResultWindow);
+
+        $builder = $predicate();
         $this->applyCandidateOrder($builder, $queryEmbedding);
 
         /** @var list<SearchDocumentModel> $rows */
-        $rows = $builder->limit($this->candidatePool)->get()->all();
+        $rows = $builder->limit($window)->get()->all();
 
+        $matched = $this->hydrateHits($rows, $query, $queryEmbedding, filter: true);
+
+        $facets = $this->facetCounts($matched);
+        $sorted = $this->ranker->sort($matched, $query->sort);
+        $page = array_slice($sorted, $query->offset(), $query->perPage);
+
+        return new SearchResults($page, $total, $query->page, $query->perPage, $facets, $exact);
+    }
+
+    /**
+     * Turn rows into ranked hits. When `$filter` is set the PHP-only filter
+     * refinement is applied too (the SQL path has already filtered exactly).
+     *
+     * @param list<SearchDocumentModel> $rows
+     * @return list<SearchHit>
+     */
+    private function hydrateHits(array $rows, SearchQuery $query, ?Embedding $queryEmbedding, bool $filter = false): array
+    {
         $terms = $query->lexicalTerms();
-        $matched = [];
+        $hits = [];
+
         foreach ($rows as $row) {
             $document = $this->toDomain($row);
-            if (! $document->facets()->matches($query->filters)) {
+
+            if ($filter && ! $document->facets()->matches($query->filters)) {
                 continue;
             }
+
             $lexical = $this->lexicalScore($row->search_text ?? '', mb_strtolower($row->title), $terms);
             $semantic = $this->semanticScore($queryEmbedding, $document->embedding());
-            $distance = $this->distance($query->geo, $document->geo());
-            $score = $this->ranker->blend($lexical, $semantic, $document->facets()->popularity);
-            $matched[] = new SearchHit(
+            $hits[] = new SearchHit(
                 document: $document,
-                score: $score,
+                score: $this->ranker->blend($lexical, $semantic, $document->facets()->popularity),
                 lexicalScore: $lexical,
                 semanticScore: $semantic,
-                distanceKm: $distance,
+                distanceKm: $this->distance($query->geo, $document->geo()),
                 highlight: $this->highlight($document->description(), $terms),
             );
         }
 
-        $facets = $this->facetCounts($matched);
-        $sorted = $this->ranker->sort($matched, $query->sort);
-        $total = count($sorted);
-        $page = array_slice($sorted, $query->offset(), $query->perPage);
+        return $hits;
+    }
 
-        return new SearchResults($page, $total, $query->page, $query->perPage, $facets);
+    /**
+     * Facet counts for the SQL-paginated path, over a bounded sample of the
+     * matching set. Counting one page would be misleading; counting the whole
+     * corpus would be unbounded.
+     *
+     * @param Builder<SearchDocumentModel> $builder
+     * @return array<string, array<string, int>>
+     */
+    private function sampledFacets(Builder $builder, SearchQuery $query): array
+    {
+        /** @var list<SearchDocumentModel> $rows */
+        $rows = $builder->limit($this->candidatePool)->get()->all();
+
+        return $this->facetCounts($this->hydrateHits($rows, $query, null, filter: true));
+    }
+
+    /**
+     * The ORDER BY for sorts PostgreSQL can express, or null when ranking has
+     * to happen in PHP.
+     *
+     * `NULLS LAST` is spelled as `(col IS NULL), col` so the same ordering holds
+     * on SQLite, where the test suite runs — a sort that differs by driver
+     * would make those tests describe a system nobody deploys.
+     *
+     * @return list<array{string, string}>|null
+     */
+    private function sqlOrdering(SortOption $sort): ?array
+    {
+        return match ($sort) {
+            SortOption::Popularity => [['popularity', 'DESC']],
+            SortOption::Rating => [['rating', 'DESC']],
+            SortOption::Newest => [['updated_at', 'DESC']],
+            SortOption::Price => [['(price_minor IS NULL)', 'ASC'], ['price_minor', 'ASC']],
+            SortOption::PreparationTime => [['(prep_time_minutes IS NULL)', 'ASC'], ['prep_time_minutes', 'ASC']],
+            // Relevance blends lexical + semantic + popularity in PHP;
+            // Distance is a haversine over lat/lng. Neither is a column.
+            SortOption::Relevance, SortOption::Distance => null,
+        };
+    }
+
+    /**
+     * Whether every active filter was fully expressed in SQL.
+     *
+     * `state` is matched against a JSON array inside `facets`, so
+     * applyScalarFilters can only prefilter it coarsely; the exact test happens
+     * in PHP. When it is in play the COUNT is an upper bound, and
+     * `SearchResults::$totalIsExact` reports that rather than overstating.
+     */
+    private function filtersAreFullySql(SearchQuery $query): bool
+    {
+        return $query->filters->state === null;
     }
 
     public function suggest(string $prefix, ?SearchType $type, int $limit): array
     {
         $needle = mb_strtolower(trim($prefix));
-        $builder = SearchDocumentModel::query();
-        if ($type !== null && $type !== SearchType::Global) {
-            $builder->whereIn('type', array_map(static fn (SearchType $t): string => $t->value, $type->documentTypes()));
-        }
+
+        // M38-SEC-001. This used to skip the type filter entirely for `Global`
+        // (and for null), so `/autocomplete?q=ada` — the DEFAULT public request
+        // shape — read every row in the index, `user` documents included. The
+        // scope is now always applied.
+        $builder = SearchDocumentModel::query()->whereIn('type', $this->scopeTypes($type));
         $builder->whereRaw('LOWER(title) LIKE ?', [$needle.'%']);
 
         /** @var list<string> $titles */
@@ -157,8 +316,13 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
     public function similarTo(SearchDocument $document, int $limit): array
     {
         $embedding = $document->embedding();
+
+        // Routed through the same scope authority as every other read. For a
+        // concrete type this is the anchor's own type, which is what it always
+        // was; going through scopeTypes() means there is exactly one place in
+        // this class that decides which document types a query may touch.
         $builder = SearchDocumentModel::query()
-            ->where('type', $document->type()->value)
+            ->whereIn('type', $this->scopeTypes($document->type()))
             ->where('id', '!=', $document->id());
 
         if ($this->pgvectorEnabled() && $embedding !== null && ! $embedding->isEmpty()) {
@@ -180,10 +344,10 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
 
     public function popular(SearchType $type, int $limit): array
     {
-        $builder = SearchDocumentModel::query();
-        if ($type !== SearchType::Global) {
-            $builder->whereIn('type', array_map(static fn (SearchType $t): string => $t->value, $type->documentTypes()));
-        }
+        // M38-SEC-001. Same defect as suggest(), and worse in consequence:
+        // `/recommendations?kind=trending` presents the WHOLE document, not
+        // just a title, and `Global` skipped the filter.
+        $builder = SearchDocumentModel::query()->whereIn('type', $this->scopeTypes($type));
 
         /** @var list<SearchDocumentModel> $rows */
         $rows = $builder->orderByDesc('popularity')->orderByDesc('rating')->limit($limit)->get()->all();
@@ -193,15 +357,29 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
 
     public function countByType(SearchType $type): int
     {
-        $builder = SearchDocumentModel::query();
-        if ($type !== SearchType::Global) {
-            $builder->whereIn('type', array_map(static fn (SearchType $t): string => $t->value, $type->documentTypes()));
-        }
-
-        return (int) $builder->count();
+        return (int) SearchDocumentModel::query()
+            ->whereIn('type', $this->scopeTypes($type))
+            ->count();
     }
 
     // ---- internals -------------------------------------------------------
+
+    /**
+     * The document types a scope may read (M38-SEC-001).
+     *
+     * The one place the query layer decides what a scope means, and it always
+     * decides something: there is no branch that leaves the type filter off.
+     * A null scope is the public `Global` fan-out, which
+     * {@see SearchType::documentTypes()} derives so that admin-only types are
+     * excluded by construction rather than by a list somebody must remember to
+     * update.
+     *
+     * @return list<string>
+     */
+    private function scopeTypes(?SearchType $type): array
+    {
+        return ($type ?? SearchType::Global)->documentTypeValues();
+    }
 
     /** @param Builder<SearchDocumentModel> $builder */
     private function applyScalarFilters(Builder $builder, SearchQuery $query): void
@@ -239,6 +417,14 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         }
         if ($f->maxPriceMinor !== null) {
             $builder->where('price_minor', '<=', $f->maxPriceMinor);
+        }
+        if ($f->state !== null) {
+            // `states` is a JSON array inside `facets`, so this is a coarse
+            // text prefilter — enough to bound the COUNT and the window, not
+            // enough to be exact. DocumentFacets::matches() still applies the
+            // precise test in PHP, and filtersAreFullySql() reports the
+            // resulting total as inexact rather than overstating it.
+            $builder->whereRaw('LOWER(CAST(facets AS TEXT)) LIKE ?', ['%"'.mb_strtolower($f->state).'"%']);
         }
     }
 
@@ -368,18 +554,63 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         return "'[".$values."]'::vector";
     }
 
+    /**
+     * Whether native KNN is genuinely usable right now (M38-VECTOR-001).
+     *
+     * The old check asked `hasColumn('search_documents', 'embedding_vec')`,
+     * which answers a different question: the column can exist while the
+     * `vector` extension or the ivfflat index does not, and then `ORDER BY
+     * embedding_vec <=> …` is either an error or an unindexed scan. It also
+     * meant "native vector search" was reported purely from a column's
+     * presence, with no way for anything to notice the difference.
+     *
+     * This asks the capability probe, which queries `pg_extension` and
+     * `pg_indexes`. A probe failure is NOT rounded down to "available".
+     *
+     * ## Why the answer expires
+     *
+     * The answer used to be memoised for the lifetime of the instance. This
+     * repository is bound as a container singleton and is held by further
+     * singletons (`SearchService`, `SearchIndexManager`, …). Under PHP-FPM —
+     * which is what this application deploys on; there is no Octane, Swoole or
+     * RoadRunner in `composer.json` — the container is rebuilt per request, so
+     * that memo really was request-scoped on the web path. A QUEUE WORKER is
+     * not: it is a long-lived process, so a worker that started before the
+     * acceleration migration provisioned `vector` would have cached "absent"
+     * and never written the `embedding_vec` column again for as long as it ran.
+     *
+     * So the memo is bounded rather than permanent. Two catalog lookups per
+     * `search.capability_ttl` seconds is a negligible cost next to re-probing
+     * on every indexed document during a backfill, and a capability that
+     * appears at runtime is picked up within that bound instead of never.
+     */
     private function pgvectorEnabled(): bool
     {
-        if ($this->pgvector !== null) {
+        if (! $this->usePgvector) {
+            return false;
+        }
+
+        $now = microtime(true);
+
+        if ($this->pgvector !== null && ($now - $this->pgvectorProbedAt) < $this->capabilityTtlSeconds) {
             return $this->pgvector;
         }
+
+        $this->pgvectorProbedAt = $now;
+
+        return $this->pgvector = $this->capabilityProbe()->probe()->nativeVectorSearchActive();
+    }
+
+    private function capabilityProbe(): SearchCapabilityProbe
+    {
+        if ($this->probe !== null) {
+            return $this->probe;
+        }
+
         /** @var \Illuminate\Database\Connection $connection */
         $connection = SearchDocumentModel::query()->getConnection();
-        $this->pgvector = $this->usePgvector
-            && $connection->getDriverName() === 'pgsql'
-            && $connection->getSchemaBuilder()->hasColumn('search_documents', 'embedding_vec');
 
-        return $this->pgvector;
+        return new SearchCapabilityProbe($connection, $connection->getDriverName(), true, false);
     }
 
     private function toDomain(SearchDocumentModel $m): SearchDocument

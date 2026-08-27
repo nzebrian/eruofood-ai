@@ -13,6 +13,7 @@ final readonly class SearchResults
     /**
      * @param list<SearchHit> $hits
      * @param array<string, array<string, int>> $facets facet name => (value => count)
+     * @param bool $totalIsExact whether `$total` counts the whole matching set
      */
     public function __construct(
         public array $hits,
@@ -20,6 +21,7 @@ final readonly class SearchResults
         public int $page,
         public int $perPage,
         public array $facets = [],
+        public bool $totalIsExact = true,
     ) {
     }
 

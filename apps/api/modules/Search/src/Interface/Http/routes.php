@@ -46,5 +46,6 @@ Route::prefix('v1/search')->middleware('auth.jwt')->group(function (): void {
     Route::get('admin/metrics', [SearchAdminController::class, 'metrics']);
     Route::get('admin/popular', [SearchAdminController::class, 'popular']);
     Route::get('admin/failed', [SearchAdminController::class, 'failed']);
+    Route::get('admin/capability', [SearchAdminController::class, 'capability']);
     Route::post('admin/reindex', [SearchAdminController::class, 'reindex']);
 });

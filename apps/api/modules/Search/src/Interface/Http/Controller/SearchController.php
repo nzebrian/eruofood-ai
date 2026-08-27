@@ -74,7 +74,11 @@ final class SearchController
         $type = $this->searchType($request);
 
         return $this->data([
-            'suggestions' => $this->autocomplete->autocomplete((string) $request->query('q', ''), $type),
+            'suggestions' => $this->autocomplete->autocomplete(
+                (string) $request->query('q', ''),
+                $type,
+                isAdmin: $this->actorIsAdmin($request),
+            ),
         ]);
     }
 
@@ -83,7 +87,11 @@ final class SearchController
         $type = $this->searchType($request);
 
         return $this->data([
-            'suggestions' => $this->autocomplete->suggestions((string) $request->query('q', ''), $type),
+            'suggestions' => $this->autocomplete->suggestions(
+                (string) $request->query('q', ''),
+                $type,
+                isAdmin: $this->actorIsAdmin($request),
+            ),
         ]);
     }
 
