@@ -9,10 +9,10 @@ use function assert;
 use EruoFood\Search\Application\DTO\ExecutedSearch;
 use EruoFood\Search\Application\Port\EmbeddingGenerator;
 use EruoFood\Search\Application\Port\SearchCache;
+use EruoFood\Search\Domain\Access\SearchScopeGate;
 use EruoFood\Search\Domain\Analytics\SearchAnalyticsRepository;
 use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\Document\SearchResults;
-use EruoFood\Search\Domain\Exception\SearchNotAuthorized;
 use EruoFood\Search\Domain\ValueObject\SearchQuery;
 
 /**
@@ -34,14 +34,17 @@ final readonly class SearchService
         private SearchAnalyticsRepository $analytics,
         private SearchCache $cache,
         private int $cacheTtl,
+        private SearchScopeGate $gate = new SearchScopeGate(),
     ) {
     }
 
     public function search(SearchQuery $query, bool $isAdmin = false, ?string $userId = null): ExecutedSearch
     {
-        if ($query->type->isAdminOnly() && ! $isAdmin) {
-            throw new SearchNotAuthorized('This search scope is restricted to administrators.');
-        }
+        // M38-SEC-001: one gate, shared by every read path. Runs before the
+        // index is touched and before anything is read from or written to the
+        // result cache, so an unauthorised scope cannot be served from a warm
+        // entry either.
+        $this->gate->authorize($query->type, $isAdmin);
 
         $embedding = $query->hasTerm() ? $this->embedder->embed($query->term) : null;
 

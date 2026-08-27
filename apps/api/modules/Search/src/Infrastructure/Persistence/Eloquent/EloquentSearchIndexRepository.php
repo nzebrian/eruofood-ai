@@ -12,6 +12,8 @@ use EruoFood\Search\Domain\Document\SearchHit;
 use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\Document\SearchResults;
 use EruoFood\Search\Domain\Enum\SearchType;
+use EruoFood\Search\Domain\Enum\SortOption;
+use EruoFood\Search\Domain\Exception\SearchPaginationTooDeep;
 use EruoFood\Search\Domain\ValueObject\Embedding;
 use EruoFood\Search\Domain\ValueObject\GeoPoint;
 use EruoFood\Search\Domain\ValueObject\SearchQuery;
@@ -35,6 +37,7 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         private readonly Ranker $ranker,
         private readonly int $candidatePool,
         private readonly bool $usePgvector,
+        private readonly int $maxResultWindow = 1000,
     ) {
     }
 
@@ -99,44 +102,179 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         return $m !== null ? $this->toDomain($m) : null;
     }
 
+    /**
+     * Execute a query (M38-SEARCH-001).
+     *
+     * ## What this replaces
+     *
+     * The previous implementation fetched a fixed 200-row candidate pool,
+     * scored it in PHP, then reported `count($sorted)` as the total and
+     * `array_slice($sorted, $offset, $perPage)` as the page. Two consequences:
+     * any query matching more than 200 documents reported a false total, and
+     * every page past offset 200 came back EMPTY while the response still
+     * claimed more results existed.
+     *
+     * ## What happens now
+     *
+     * `$total` is a real `COUNT(*)` over the SQL predicates — never the size of
+     * a truncated pool. Pagination then takes one of two paths:
+     *
+     * - **SQL-ordered sorts** (popularity, rating, newest, price, prep time)
+     *   are ordered and paginated by PostgreSQL with LIMIT/OFFSET. Exact at any
+     *   depth, no in-memory scan.
+     * - **Relevance and distance** are blended in PHP and need a materialised
+     *   window. It is bounded by `search.max_result_window`, and the window is
+     *   sized to cover the requested page rather than a fixed 200. A page past
+     *   the bound raises {@see SearchPaginationTooDeep} — an explicit refusal,
+     *   never a silent empty page.
+     */
     public function search(SearchQuery $query, ?Embedding $queryEmbedding = null): SearchResults
     {
         $types = array_map(static fn (SearchType $t): string => $t->value, $query->type->documentTypes());
-        $builder = SearchDocumentModel::query()->whereIn('type', $types);
-        $this->applyScalarFilters($builder, $query);
-        $this->applyLexicalPrefilter($builder, $query->lexicalTerms());
+
+        $predicate = function () use ($types, $query): Builder {
+            $builder = SearchDocumentModel::query()->whereIn('type', $types);
+            $this->applyScalarFilters($builder, $query);
+            $this->applyLexicalPrefilter($builder, $query->lexicalTerms());
+
+            return $builder;
+        };
+
+        // Truthful total: the whole matching set, not the slice we happened to
+        // materialise. `$exact` is false only when a filter cannot be fully
+        // expressed in SQL (see applyScalarFilters), in which case the count is
+        // an upper bound and the response says so rather than pretending.
+        $total = $predicate()->count();
+        $exact = $this->filtersAreFullySql($query);
+
+        $sqlOrder = $this->sqlOrdering($query->sort);
+
+        if ($sqlOrder !== null && $exact) {
+            $builder = $predicate();
+            foreach ($sqlOrder as [$column, $direction]) {
+                $builder->orderByRaw($column.' '.$direction);
+            }
+            // Stable tiebreak, so equal keys do not reshuffle between pages.
+            $builder->orderBy('id');
+
+            /** @var list<SearchDocumentModel> $rows */
+            $rows = $builder->skip($query->offset())->take($query->perPage)->get()->all();
+            $hits = $this->hydrateHits($rows, $query, $queryEmbedding);
+
+            // Facets describe the whole result set, so they are counted from a
+            // bounded sample rather than from this one page.
+            return new SearchResults($hits, $total, $query->page, $query->perPage, $this->sampledFacets($predicate(), $query), $exact);
+        }
+
+        // PHP-ranked path. Size the window to cover the requested page.
+        $needed = $query->offset() + $query->perPage;
+
+        if ($query->offset() >= $this->maxResultWindow) {
+            throw SearchPaginationTooDeep::beyond($this->maxResultWindow, $query->offset());
+        }
+
+        $window = min(max($this->candidatePool, $needed), $this->maxResultWindow);
+
+        $builder = $predicate();
         $this->applyCandidateOrder($builder, $queryEmbedding);
 
         /** @var list<SearchDocumentModel> $rows */
-        $rows = $builder->limit($this->candidatePool)->get()->all();
+        $rows = $builder->limit($window)->get()->all();
 
+        $matched = $this->hydrateHits($rows, $query, $queryEmbedding, filter: true);
+
+        $facets = $this->facetCounts($matched);
+        $sorted = $this->ranker->sort($matched, $query->sort);
+        $page = array_slice($sorted, $query->offset(), $query->perPage);
+
+        return new SearchResults($page, $total, $query->page, $query->perPage, $facets, $exact);
+    }
+
+    /**
+     * Turn rows into ranked hits. When `$filter` is set the PHP-only filter
+     * refinement is applied too (the SQL path has already filtered exactly).
+     *
+     * @param list<SearchDocumentModel> $rows
+     * @return list<SearchHit>
+     */
+    private function hydrateHits(array $rows, SearchQuery $query, ?Embedding $queryEmbedding, bool $filter = false): array
+    {
         $terms = $query->lexicalTerms();
-        $matched = [];
+        $hits = [];
+
         foreach ($rows as $row) {
             $document = $this->toDomain($row);
-            if (! $document->facets()->matches($query->filters)) {
+
+            if ($filter && ! $document->facets()->matches($query->filters)) {
                 continue;
             }
+
             $lexical = $this->lexicalScore($row->search_text ?? '', mb_strtolower($row->title), $terms);
             $semantic = $this->semanticScore($queryEmbedding, $document->embedding());
-            $distance = $this->distance($query->geo, $document->geo());
-            $score = $this->ranker->blend($lexical, $semantic, $document->facets()->popularity);
-            $matched[] = new SearchHit(
+            $hits[] = new SearchHit(
                 document: $document,
-                score: $score,
+                score: $this->ranker->blend($lexical, $semantic, $document->facets()->popularity),
                 lexicalScore: $lexical,
                 semanticScore: $semantic,
-                distanceKm: $distance,
+                distanceKm: $this->distance($query->geo, $document->geo()),
                 highlight: $this->highlight($document->description(), $terms),
             );
         }
 
-        $facets = $this->facetCounts($matched);
-        $sorted = $this->ranker->sort($matched, $query->sort);
-        $total = count($sorted);
-        $page = array_slice($sorted, $query->offset(), $query->perPage);
+        return $hits;
+    }
 
-        return new SearchResults($page, $total, $query->page, $query->perPage, $facets);
+    /**
+     * Facet counts for the SQL-paginated path, over a bounded sample of the
+     * matching set. Counting one page would be misleading; counting the whole
+     * corpus would be unbounded.
+     *
+     * @param Builder<SearchDocumentModel> $builder
+     * @return array<string, array<string, int>>
+     */
+    private function sampledFacets(Builder $builder, SearchQuery $query): array
+    {
+        /** @var list<SearchDocumentModel> $rows */
+        $rows = $builder->limit($this->candidatePool)->get()->all();
+
+        return $this->facetCounts($this->hydrateHits($rows, $query, null, filter: true));
+    }
+
+    /**
+     * The ORDER BY for sorts PostgreSQL can express, or null when ranking has
+     * to happen in PHP.
+     *
+     * `NULLS LAST` is spelled as `(col IS NULL), col` so the same ordering holds
+     * on SQLite, where the test suite runs — a sort that differs by driver
+     * would make those tests describe a system nobody deploys.
+     *
+     * @return list<array{string, string}>|null
+     */
+    private function sqlOrdering(SortOption $sort): ?array
+    {
+        return match ($sort) {
+            SortOption::Popularity => [['popularity', 'DESC']],
+            SortOption::Rating => [['rating', 'DESC']],
+            SortOption::Newest => [['updated_at', 'DESC']],
+            SortOption::Price => [['(price_minor IS NULL)', 'ASC'], ['price_minor', 'ASC']],
+            SortOption::PreparationTime => [['(prep_time_minutes IS NULL)', 'ASC'], ['prep_time_minutes', 'ASC']],
+            // Relevance blends lexical + semantic + popularity in PHP;
+            // Distance is a haversine over lat/lng. Neither is a column.
+            SortOption::Relevance, SortOption::Distance => null,
+        };
+    }
+
+    /**
+     * Whether every active filter was fully expressed in SQL.
+     *
+     * `state` is matched against a JSON array inside `facets`, so
+     * applyScalarFilters can only prefilter it coarsely; the exact test happens
+     * in PHP. When it is in play the COUNT is an upper bound, and
+     * `SearchResults::$totalIsExact` reports that rather than overstating.
+     */
+    private function filtersAreFullySql(SearchQuery $query): bool
+    {
+        return $query->filters->state === null;
     }
 
     public function suggest(string $prefix, ?SearchType $type, int $limit): array
@@ -239,6 +377,14 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         }
         if ($f->maxPriceMinor !== null) {
             $builder->where('price_minor', '<=', $f->maxPriceMinor);
+        }
+        if ($f->state !== null) {
+            // `states` is a JSON array inside `facets`, so this is a coarse
+            // text prefilter — enough to bound the COUNT and the window, not
+            // enough to be exact. DocumentFacets::matches() still applies the
+            // precise test in PHP, and filtersAreFullySql() reports the
+            // resulting total as inexact rather than overstating it.
+            $builder->whereRaw('LOWER(CAST(facets AS TEXT)) LIKE ?', ['%"'.mb_strtolower($f->state).'"%']);
         }
     }
 
@@ -368,18 +514,40 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
         return "'[".$values."]'::vector";
     }
 
+    /**
+     * Whether native KNN is genuinely usable right now (M38-VECTOR-001).
+     *
+     * The old check asked `hasColumn('search_documents', 'embedding_vec')`,
+     * which answers a different question: the column can exist while the
+     * `vector` extension or the ivfflat index does not, and then `ORDER BY
+     * embedding_vec <=> …` is either an error or an unindexed scan. It also
+     * meant "native vector search" was reported purely from a column's
+     * presence, with no way for anything to notice the difference.
+     *
+     * This asks the capability probe, which queries `pg_extension` and
+     * `pg_indexes`. A probe failure is NOT rounded down to "available".
+     */
     private function pgvectorEnabled(): bool
     {
         if ($this->pgvector !== null) {
             return $this->pgvector;
         }
+
+        if (! $this->usePgvector) {
+            return $this->pgvector = false;
+        }
+
         /** @var \Illuminate\Database\Connection $connection */
         $connection = SearchDocumentModel::query()->getConnection();
-        $this->pgvector = $this->usePgvector
-            && $connection->getDriverName() === 'pgsql'
-            && $connection->getSchemaBuilder()->hasColumn('search_documents', 'embedding_vec');
 
-        return $this->pgvector;
+        $probe = new \EruoFood\Search\Infrastructure\Capability\SearchCapabilityProbe(
+            $connection,
+            $connection->getDriverName(),
+            true,
+            false,
+        );
+
+        return $this->pgvector = $probe->probe()->nativeVectorSearchActive();
     }
 
     private function toDomain(SearchDocumentModel $m): SearchDocument

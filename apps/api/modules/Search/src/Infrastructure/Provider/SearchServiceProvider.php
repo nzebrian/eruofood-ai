@@ -13,11 +13,14 @@ use EruoFood\Search\Application\Service\EventIndexTranslator;
 use EruoFood\Search\Application\Service\QueryBuilder;
 use EruoFood\Search\Application\Service\SearchIndexManager;
 use EruoFood\Search\Application\Service\SearchService;
+use EruoFood\Search\Domain\Access\SearchScopeGate;
 use EruoFood\Search\Domain\Analytics\SearchAnalyticsRepository;
+use EruoFood\Search\Domain\Capability\SearchCapability;
 use EruoFood\Search\Domain\Document\Ranker;
 use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\SavedSearch\SavedSearchRepository;
 use EruoFood\Search\Infrastructure\Cache\LaravelSearchCache;
+use EruoFood\Search\Infrastructure\Capability\SearchCapabilityProbe;
 use EruoFood\Search\Infrastructure\Console\ReindexSearchCommand;
 use EruoFood\Search\Infrastructure\Embedding\HashingEmbeddingGenerator;
 use EruoFood\Search\Infrastructure\Event\DomainEventSubscriber;
@@ -60,6 +63,7 @@ final class SearchServiceProvider extends ServiceProvider
             $app->make(Ranker::class),
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.candidate_pool', 200),
             (bool) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.use_pgvector', true),
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.max_result_window', 1000),
         ));
         $this->app->bind(SavedSearchRepository::class, EloquentSavedSearchRepository::class);
         $this->app->bind(SearchAnalyticsRepository::class, EloquentSearchAnalyticsRepository::class);
@@ -73,8 +77,39 @@ final class SearchServiceProvider extends ServiceProvider
             return new PassthroughQueryUnderstanding();
         });
 
-        // Result cache.
-        $this->app->singleton(SearchCache::class, fn ($app): SearchCache => new LaravelSearchCache($app->make(CacheRepository::class)));
+        // Result cache (M38-CACHE-001). Optionally a dedicated store; always a
+        // Search-owned namespace, and never a whole-store clear.
+        $this->app->singleton(SearchCache::class, function ($app): SearchCache {
+            $cfg = $app->make(\Illuminate\Contracts\Config\Repository::class);
+            $store = $cfg->get('search.cache_store');
+
+            $repository = is_string($store) && $store !== ''
+                ? $app->make(\Illuminate\Contracts\Cache\Factory::class)->store($store)
+                : $app->make(CacheRepository::class);
+
+            return new LaravelSearchCache($repository, (string) $cfg->get('search.cache_prefix', 'eruofood:search'));
+        });
+
+        // The single scope-authorisation decision (M38-SEC-001).
+        $this->app->singleton(SearchScopeGate::class, fn (): SearchScopeGate => new SearchScopeGate());
+
+        // Database capability, probed against the live connection (M38-DB-001,
+        // M38-VECTOR-001). Not a singleton of the RESULT — the probe object is
+        // shared, the answer is re-derived, so a capability restored at runtime
+        // is not reported as permanently missing.
+        $this->app->singleton(SearchCapabilityProbe::class, function ($app): SearchCapabilityProbe {
+            $cfg = $app->make(\Illuminate\Contracts\Config\Repository::class);
+
+            $connection = $app->make(\Illuminate\Database\DatabaseManager::class)->connection();
+
+            return new SearchCapabilityProbe(
+                $connection,
+                $connection->getDriverName(),
+                (bool) $cfg->get('search.vector_enabled', true) && (bool) $cfg->get('search.use_pgvector', true),
+                (bool) $cfg->get('search.trgm_enabled', true),
+            );
+        });
+        $this->app->bind(SearchCapability::class, fn ($app): SearchCapability => $app->make(SearchCapabilityProbe::class)->probe());
 
         // Read-only source providers (one per indexed type).
         $this->app->singleton(SearchIndexManager::class, function ($app): SearchIndexManager {
@@ -90,6 +125,7 @@ final class SearchServiceProvider extends ServiceProvider
                     'product' => new ProductSourceProvider($db),
                     'vendor' => new VendorSourceProvider($db),
                 ],
+                $app->make(\Psr\Log\LoggerInterface::class),
             );
         });
 
@@ -115,6 +151,7 @@ final class SearchServiceProvider extends ServiceProvider
             $app->make(SearchAnalyticsRepository::class),
             $app->make(SearchCache::class),
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.cache_ttl', 120),
+            $app->make(SearchScopeGate::class),
         ));
 
         // Autocomplete / suggestions.
@@ -124,6 +161,7 @@ final class SearchServiceProvider extends ServiceProvider
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.suggestion_limit', 8),
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.trending_days', 7),
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.recent_limit', 10),
+            $app->make(SearchScopeGate::class),
         ));
 
         // Event → index translator.
@@ -131,7 +169,20 @@ final class SearchServiceProvider extends ServiceProvider
             /** @var array<string, array{type: string, id_field: string}> $map */
             $map = (array) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.index_events', []);
 
-            return new EventIndexTranslator($app->make(SearchIndexManager::class), $map);
+            $cfg = $app->make(\Illuminate\Contracts\Config\Repository::class);
+            /** @var list<int> $backoff */
+            $backoff = (array) $cfg->get('search.index_job_backoff', [10, 30, 120, 300]);
+
+            return new EventIndexTranslator(
+                $app->make(SearchIndexManager::class),
+                $map,
+                $app->make(\Illuminate\Contracts\Bus\Dispatcher::class),
+                (bool) $cfg->get('search.async_indexing', true),
+                (string) $cfg->get('search.queue', 'search'),
+                (int) $cfg->get('search.index_job_tries', 5),
+                (int) $cfg->get('search.index_job_timeout', 120),
+                $backoff,
+            );
         });
 
         $this->commands([ReindexSearchCommand::class]);

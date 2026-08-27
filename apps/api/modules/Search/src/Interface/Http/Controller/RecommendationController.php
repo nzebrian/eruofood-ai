@@ -41,6 +41,7 @@ final class RecommendationController
             is_string($anchorId) ? $anchorId : null,
             $this->optionalUserId($request),
             $limit,
+            isAdmin: $this->actorIsAdmin($request),
         );
 
         return $this->respond($kind, $documents);
@@ -58,6 +59,7 @@ final class RecommendationController
             null,
             $this->requireUserId($request),
             $limit,
+            isAdmin: $this->actorIsAdmin($request),
         );
 
         return $this->respond(RecommendationType::Personalised, $documents);

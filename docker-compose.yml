@@ -84,7 +84,16 @@ services:
 
   # ---- PostgreSQL ----------------------------------------------------------
   postgres:
-    image: postgres:${POSTGRES_IMAGE_TAG:-16-alpine}
+    # M38-VECTOR-001. pgvector is not in the stock postgres image, so the
+    # extension the Search module's migration tries to create never existed in
+    # any environment — and the migration swallowed the failure, so nothing said
+    # so. This is the official postgres:16 image WITH the extension compiled in,
+    # so `CREATE EXTENSION vector` succeeds and SearchCapabilityProbe can report
+    # `available` truthfully instead of always reporting the fallback path.
+    #
+    # Overridable for anyone who must pin something else; the probe reports
+    # whatever is actually there either way.
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-eruofood_local}
       POSTGRES_USER: ${POSTGRES_USER:-eruofood}

@@ -22,8 +22,22 @@ return [
     // sqlite test suite). Set to false to force the portable path everywhere.
     'use_pgvector' => (bool) env('SEARCH_USE_PGVECTOR', true),
 
-    // Result cache TTL (seconds). 0 disables caching.
+    /*
+    |--------------------------------------------------------------------------
+    | Result cache (M38-CACHE-001)
+    |--------------------------------------------------------------------------
+    | Search NEVER flushes the shared application cache. Invalidation works by
+    | bumping a Search-owned version counter, so every cached result key becomes
+    | unreachable at once while every other key in the store is untouched. That
+    | costs one INCR instead of a store-wide FLUSH, which is what made a full
+    | backfill previously issue one global flush per document.
+    |
+    | `cache_store` optionally routes Search at a dedicated store; null uses the
+    | default store, still namespaced and still never cleared wholesale.
+    */
     'cache_ttl' => (int) env('SEARCH_CACHE_TTL', 120),
+    'cache_store' => env('SEARCH_CACHE_STORE'),
+    'cache_prefix' => env('SEARCH_CACHE_PREFIX', 'eruofood:search'),
 
     // Default and maximum page sizes.
     'per_page' => (int) env('SEARCH_PER_PAGE', 20),
@@ -32,6 +46,21 @@ return [
     // How many lexical candidates to pull before the vector re-rank.
     'candidate_pool' => (int) env('SEARCH_CANDIDATE_POOL', 200),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Ranking window (M38-SEARCH-001)
+    |--------------------------------------------------------------------------
+    | Sorts that PostgreSQL can express (popularity, rating, price, …) are
+    | paginated in SQL with LIMIT/OFFSET and are exact at any depth.
+    |
+    | Relevance and distance are blended in PHP, so they need a materialised
+    | window. This is its hard bound. Asking for a page beyond it is answered
+    | with an explicit error, never an empty page — the previous behaviour
+    | silently returned nothing past the 200-row candidate pool while still
+    | reporting that more results existed.
+    */
+    'max_result_window' => (int) env('SEARCH_MAX_RESULT_WINDOW', 1000),
+
     // Blend of lexical vs. semantic score in the final ranking (0..1). Higher
     // weights lexical/full-text relevance; the remainder weights vector cosine.
     'lexical_weight' => (float) env('SEARCH_LEXICAL_WEIGHT', 0.6),
@@ -39,6 +68,38 @@ return [
     // Whether to route the query string through the AI understanding adapter
     // (intent/expansion). Off by default so the default path stays offline.
     'ai_understanding' => (bool) env('SEARCH_AI_UNDERSTANDING', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Asynchronous indexing (M38-QUEUE-001)
+    |--------------------------------------------------------------------------
+    | Default ON. Domain events enqueue a job instead of hydrating the source,
+    | embedding it, upserting and invalidating the cache on the publishing
+    | request thread.
+    |
+    | Turning this off restores the OLD synchronous behaviour. It exists for
+    | local debugging and for a controlled rollback, and it is NOT a way to make
+    | tests pass: `SearchAsyncIndexingTest` asserts the default is async, so
+    | shipping with it disabled fails the suite rather than hiding the defect.
+    */
+    'async_indexing' => (bool) env('SEARCH_ASYNC_INDEXING', true),
+    'queue' => env('SEARCH_QUEUE', 'search'),
+    'index_job_tries' => (int) env('SEARCH_INDEX_JOB_TRIES', 5),
+    'index_job_timeout' => (int) env('SEARCH_INDEX_JOB_TIMEOUT', 120),
+    'index_job_backoff' => [10, 30, 120, 300],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Database capability (M38-DB-001, M38-VECTOR-001)
+    |--------------------------------------------------------------------------
+    | `vector_enabled` and `trgm_enabled` express INTENT, never fact. Whether
+    | the extension and its index actually exist is answered by
+    | SearchCapabilityProbe against the live connection, and the answer is
+    | reported honestly — including "probe failed", which is not the same as
+    | "unavailable" and must never be rounded down to healthy.
+    */
+    'vector_enabled' => (bool) env('SEARCH_VECTOR_ENABLED', true),
+    'trgm_enabled' => (bool) env('SEARCH_FTS_ENABLED', true),
 
     // Autocomplete suggestion count and trending window (days).
     'suggestion_limit' => (int) env('SEARCH_SUGGESTION_LIMIT', 8),

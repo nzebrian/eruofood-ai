@@ -9,6 +9,7 @@ use EruoFood\Search\Application\Service\SearchIndexManager;
 use EruoFood\Search\Application\Service\SearchPresenter;
 use EruoFood\Search\Domain\Analytics\PopularTerm;
 use EruoFood\Search\Domain\Exception\SearchNotAuthorized;
+use EruoFood\Search\Infrastructure\Capability\SearchCapabilityProbe;
 use EruoFood\Search\Interface\Http\Concerns\ResolvesAuthUser;
 use EruoFood\Search\Interface\Http\Concerns\RespondsWithData;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +25,27 @@ final class SearchAdminController
         private readonly SearchAnalyticsService $analytics,
         private readonly SearchIndexManager $indexManager,
         private readonly SearchPresenter $presenter,
+        private readonly SearchCapabilityProbe $capability,
     ) {
+    }
+
+    /**
+     * What the search backend can actually do right now (M38-DB-001,
+     * M38-VECTOR-001).
+     *
+     * Reported from a live probe of `pg_extension` and `pg_indexes`, never from
+     * configuration. `native_vector_search` reads `active` only when the
+     * extension AND its index are both present; otherwise it reads `fallback`,
+     * which is the honest name for the portable PHP cosine path.
+     *
+     * `probe_failed` is a distinct state from `unavailable`, because "we could
+     * not find out" is not the same claim as "it is not there".
+     */
+    public function capability(Request $request): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        return $this->data(['capability' => $this->capability->probe()->toArray()]);
     }
 
     public function metrics(Request $request): JsonResponse

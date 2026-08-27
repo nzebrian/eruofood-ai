@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Search\Application\Service;
 
 use EruoFood\Search\Application\Port\EmbeddingGenerator;
+use EruoFood\Search\Domain\Access\SearchScopeGate;
 use EruoFood\Search\Domain\Analytics\SearchAnalyticsRepository;
 use EruoFood\Search\Domain\Document\SearchDocument;
 use EruoFood\Search\Domain\Document\SearchHit;
@@ -32,6 +33,7 @@ final readonly class RecommendationService
         private SearchIndexRepository $index,
         private SearchAnalyticsRepository $analytics,
         private EmbeddingGenerator $embedder,
+        private SearchScopeGate $gate = new SearchScopeGate(),
     ) {
     }
 
@@ -44,7 +46,14 @@ final readonly class RecommendationService
         ?string $anchorId,
         ?string $userId,
         int $limit,
+        bool $isAdmin = false,
     ): array {
+        // M38-SEC-001. Recommendations read the same index as search and this
+        // route is public, so it goes through the same gate. `similarTo` and
+        // `popular` are reached from here, which is why the check sits at the
+        // entry point rather than on each branch.
+        $this->gate->authorize($type, $isAdmin);
+
         return match ($kind) {
             RecommendationType::Related,
             RecommendationType::Similar,

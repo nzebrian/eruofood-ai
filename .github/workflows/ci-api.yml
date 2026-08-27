@@ -113,7 +113,11 @@ jobs:
     # Production-representative backing services.
     services:
       postgres:
-        image: postgres:16
+        # M38-VECTOR-001: the same postgres:16 with pgvector compiled in, so
+        # the Search acceleration migration provisions a real extension in CI
+        # instead of silently skipping it. A drop-in for the stock image — the
+        # server, version and configuration are otherwise identical.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: eruofood
           POSTGRES_PASSWORD: eruofood
