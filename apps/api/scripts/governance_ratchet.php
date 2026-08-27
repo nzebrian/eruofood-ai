@@ -271,7 +271,7 @@ foreach (['failed', 'external_unverified', 'exit_code'] as $field) {
     }
 }
 
-foreach (['failures', 'unverified_detail'] as $field) {
+foreach (['failures', 'unverified_detail', 'check_ids'] as $field) {
     if (! isset($summary[$field]) || ! is_array($summary[$field]) || ! array_is_list($summary[$field])) {
         ratchetError("validator summary is missing list field `{$field}`", $outPath);
     }
@@ -319,27 +319,41 @@ function idsOf(array $items): array
 // wrong — a typo, or a check that was renamed without updating this file. Left
 // unchecked it would silently excuse nothing while looking like it excused
 // something.
+//
+// The Phase 4B review found this list duplicated here as string literals, with
+// nothing asserting it matched the validator's CHECK_* constants. It now comes
+// from the summary's `check_ids`, which the validator emits from the single
+// definition of that set, so the two cannot drift apart. Absent or malformed,
+// it is an ERROR rather than a fallback: guessing the identifier set is how the
+// check would quietly stop meaning anything.
 
-$publishedIds = array_values(array_unique(array_merge(
-    $observedFailures,
-    $observedUnverified,
-    // Everything the validator can currently emit an identifier for. Kept in
-    // step with the CHECK_* constants; an id outside this set cannot appear.
-    [
-        'github.main_ruleset_active',
-        'github.tag_rulesets_active',
-        'github.no_bypass_actors',
-        'github.required_checks_enforced',
-        'github.branch_protection_effective',
-        'github.codeowners_errors_zero',
-        'github.identity_accounts_exist',
-        'github.identity_accounts_write_access',
-        'github.release_actor_id_valid',
-        'policy.independent_human_review',
-        'policy.codeowners_enforcement',
-        'policy.finance_four_eyes',
-    ],
-)));
+$publishedIds = $summary['check_ids'] ?? null;
+
+if (! is_array($publishedIds) || ! array_is_list($publishedIds) || $publishedIds === []) {
+    ratchetError(
+        'validator summary carries no usable `check_ids`; without the authoritative '
+        .'identifier set the ratchet cannot tell a real check from a typo',
+        $outPath,
+    );
+}
+
+foreach ($publishedIds as $id) {
+    if (! is_string($id) || trim($id) === '') {
+        ratchetError('validator summary `check_ids` contains a non-string identifier', $outPath);
+    }
+}
+
+// Anything the validator actually reported must be in its own published set.
+// If it is not, the summary is internally inconsistent and nothing downstream
+// of it can be trusted.
+foreach (array_merge($observedFailures, $observedUnverified) as $id) {
+    if (! in_array($id, $publishedIds, true)) {
+        ratchetError(
+            "the summary reports `{$id}`, which is absent from its own `check_ids` — the summary is inconsistent",
+            $outPath,
+        );
+    }
+}
 
 foreach (array_merge($expectedFailures, $expectedUnverified) as $id) {
     if (! in_array($id, $publishedIds, true)) {

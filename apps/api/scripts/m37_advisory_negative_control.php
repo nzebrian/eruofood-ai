@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * M37 Phase 4B — do the two defect fixes and the ratchet actually bite?
  *
- * Phase 4A proved two fail-open paths by experiment, and this is what stops
- * them coming back:
+ * Phase 4A proved two fail-open paths by experiment, and the Phase 4B REVIEW
+ * found a third. This is what stops all three coming back:
  *
  *   1. `GET /rulesets` carries no `bypass_actors` key. The validator read a
  *      missing key as an empty one and printed
@@ -18,6 +18,14 @@ declare(strict_types=1);
  *      iterated as a list of rulesets, found to contain none, and reported as
  *      "FAIL  the main ruleset is actually active on GitHub". A transient 403
  *      was indistinguishable from somebody switching branch protection off.
+ *
+ *   3. Fixing (1) at the FIELD level left the SET level untouched: the check
+ *      could examine nothing at all and still return PASS, claiming the
+ *      invariant held "on every enforcing ruleset". An empty array, an entry
+ *      with no `name`, or a set entirely excluded by the old
+ *      `str_contains($name, 'creation')` filter each reached it — and the last
+ *      produced `failed=0` with a standing bypass actor sitting in the
+ *      evidence. Section A2 varies the ruleset SET for exactly this reason.
  *
  * Both are now asserted by outcome CLASS — PASS / FAIL / EXTERNAL — and by the
  * specific finding, never by "it exited non-zero". The validator exits non-zero
@@ -203,6 +211,158 @@ if (! str_contains($result['output'], 'PASS '.$bypassCheck)) {
 }
 
 // =============================================================================
+// A2) The ruleset SET itself, not just the field
+// =============================================================================
+//
+// The Phase 4B review found the controls above insufficient: every one of them
+// varies the VALUE of bypass_actors on a single well-formed ruleset, so none
+// could ever have caught a PASS returned after examining nothing. Three inputs
+// reached exactly that, and the third produced `failed=0` while a standing
+// bypass actor sat in the evidence.
+//
+// These vary the set: how many rulesets there are, whether they can be
+// classified, and whether any survive to be examined at all.
+
+heading('A2) Zero examined rulesets can never prove the invariant');
+
+$setCases = [
+    [
+        'the ruleset list is empty',
+        [],
+        'EXTERNAL',
+    ],
+    [
+        'a ruleset carries no name (it used to be dropped before the loop)',
+        [['target' => 'branch', 'enforcement' => 'active']],
+        'EXTERNAL',
+    ],
+    [
+        'a ruleset has no enforcement field',
+        [['name' => 'mystery', 'target' => 'branch']],
+        'EXTERNAL',
+    ],
+    [
+        'a ruleset has an unrecognised enforcement value',
+        [['name' => 'mystery', 'target' => 'branch', 'enforcement' => 'sometimes']],
+        'EXTERNAL',
+    ],
+    [
+        'a ruleset has no target field',
+        [['name' => 'mystery', 'enforcement' => 'active']],
+        'EXTERNAL',
+    ],
+    [
+        'every supplied ruleset is structurally out of scope (disabled)',
+        [['name' => 'off', 'target' => 'branch', 'enforcement' => 'disabled', 'bypass_actors' => []]],
+        'EXTERNAL',
+    ],
+    [
+        'a ruleset entry is not an object at all',
+        [['name' => 'ok', 'target' => 'branch', 'enforcement' => 'active', 'bypass_actors' => []], 'not-an-object'],
+        'EXTERNAL',
+    ],
+    [
+        'one classifiable ruleset is clean but another cannot be classified',
+        [
+            ['name' => 'ok', 'target' => 'branch', 'enforcement' => 'active', 'bypass_actors' => []],
+            ['name' => 'mystery', 'target' => 'branch', 'enforcement' => 'who-knows'],
+        ],
+        'EXTERNAL',
+    ],
+    [
+        'a genuinely creation-only ruleset is excluded, leaving one clean examined ruleset',
+        [
+            ['name' => 'tag creation', 'target' => 'tag', 'enforcement' => 'active',
+                'rules' => [['type' => 'creation']],
+                'bypass_actors' => [['actor_id' => 9, 'actor_type' => 'Integration', 'bypass_mode' => 'always']]],
+            ['name' => 'main protection', 'target' => 'branch', 'enforcement' => 'active', 'bypass_actors' => []],
+        ],
+        'PASS',
+    ],
+];
+
+foreach ($setCases as [$description, $payload, $expected]) {
+    $path = $workdir.'/set-'.substr(md5($description), 0, 8).'.json';
+    writeJson($path, $payload);
+
+    $result = runProcess(sprintf('php %s --rulesets=%s', escapeshellarg($validator), escapeshellarg($path)));
+    $actual = outcomeOf($result['output'], $bypassCheck);
+
+    if ($actual === $expected) {
+        ok("{$description} → {$expected}");
+    } else {
+        bad("{$description} → expected {$expected}, got {$actual}");
+    }
+}
+
+// The sharpest one, asserted on its own. Before the review fix, a ruleset named
+// "main creation guard" was removed from the scan by a substring match on its
+// own name — so a standing bypass actor on it produced three PASSes and
+// failed=0. The name must no longer be able to hide anything.
+$path = $workdir.'/set-namefilter.json';
+writeJson($path, [[
+    'name' => 'main creation guard',
+    'target' => 'branch',
+    'enforcement' => 'active',
+    'bypass_actors' => [['actor_id' => 1, 'actor_type' => 'RepositoryRole', 'bypass_mode' => 'always']],
+]]);
+
+$result = runProcess(sprintf(
+    'php %s --rulesets=%s --json=%s',
+    escapeshellarg($validator),
+    escapeshellarg($path),
+    escapeshellarg($workdir.'/set-namefilter-summary.json'),
+));
+
+$summary = json_decode((string) file_get_contents($workdir.'/set-namefilter-summary.json'), true);
+$ids = array_column($summary['failures'] ?? [], 'id');
+
+if (outcomeOf($result['output'], $bypassCheck) === 'FAIL' && in_array('github.no_bypass_actors', $ids, true)) {
+    ok('a bypass actor cannot be hidden by naming the ruleset "…creation…"');
+} else {
+    bad('A BYPASS ACTOR WAS HIDDEN BY THE RULESET NAME — the substring filter is back');
+}
+
+// The affirmative message must be evidence-bearing: it may only appear when at
+// least one ruleset was actually examined, and it must say how many.
+$path = $workdir.'/set-affirmative.json';
+writeJson($path, [['name' => 'main protection', 'target' => 'branch', 'enforcement' => 'active', 'bypass_actors' => []]]);
+$result = runProcess(sprintf('php %s --rulesets=%s', escapeshellarg($validator), escapeshellarg($path)));
+
+$affirmative = (bool) preg_match('/PASS '.preg_quote($bypassCheck, '/').'\s+\(1 enforcing ruleset\(s\) examined/', $result['output']);
+
+writeJson($workdir.'/set-none.json', []);
+$noneResult = runProcess(sprintf('php %s --rulesets=%s', escapeshellarg($validator), escapeshellarg($workdir.'/set-none.json')));
+$noneAffirms = str_contains($noneResult['output'], 'explicitly empty on every');
+
+if ($affirmative && ! $noneAffirms) {
+    ok('the affirmative PASS states its examined count, and never appears with zero examined');
+} else {
+    bad(sprintf(
+        'the affirmative claim is not evidence-bearing (counted=%s, claimed-with-zero-examined=%s)',
+        $affirmative ? 'yes' : 'NO',
+        $noneAffirms ? 'YES' : 'no',
+    ));
+}
+
+// And it must not have been counted as a passing check.
+$emptySummary = $workdir.'/set-empty-summary.json';
+runProcess(sprintf(
+    'php %s --rulesets=%s --json=%s',
+    escapeshellarg($validator),
+    escapeshellarg($workdir.'/set-none.json'),
+    escapeshellarg($emptySummary),
+));
+$emptyDoc = json_decode((string) file_get_contents($emptySummary), true);
+$unverifiedIds = array_column($emptyDoc['unverified_detail'] ?? [], 'id');
+
+if (in_array('github.no_bypass_actors', $unverifiedIds, true)) {
+    ok('zero examined rulesets counts the bypass invariant as UNVERIFIED, not passed');
+} else {
+    bad('zero examined rulesets did NOT register the bypass invariant as unverified');
+}
+
+// =============================================================================
 // B) API error bodies are not evidence
 // =============================================================================
 
@@ -302,6 +462,20 @@ function summaryDoc(array $failureIds, array $unverifiedIds = []): array
             static fn (?string $id): array => ['id' => $id, 'check' => 'synthetic'],
             $unverifiedIds,
         ),
+        'check_ids' => [
+            'github.main_ruleset_active',
+            'github.tag_rulesets_active',
+            'github.no_bypass_actors',
+            'github.required_checks_enforced',
+            'github.branch_protection_effective',
+            'github.codeowners_errors_zero',
+            'github.identity_accounts_exist',
+            'github.identity_accounts_write_access',
+            'github.release_actor_id_valid',
+            'policy.independent_human_review',
+            'policy.codeowners_enforcement',
+            'policy.finance_four_eyes',
+        ],
     ];
 }
 
@@ -510,6 +684,64 @@ $validatorErrored['exit_reason'] = 'invocation_error';
 ratchetCase(
     'the validator itself could not run',
     $validatorErrored,
+    3,
+    'error',
+    $goodRecord,
+);
+
+// =============================================================================
+// D2) Check identifiers have exactly one definition
+// =============================================================================
+//
+// The Phase 4B review found the ratchet carrying its own copy of the identifier
+// list as string literals, with nothing asserting the two agreed. They did —
+// but only by hand, and a future CHECK_* constant added to the validator alone
+// would have made a legitimate known-gaps entry look like a typo.
+
+heading('D2) Identifier agreement between the validator and the ratchet');
+
+$idsSummary = $workdir.'/ids-summary.json';
+runProcess(sprintf('php %s --json=%s', escapeshellarg($validator), escapeshellarg($idsSummary)));
+$idsDoc = json_decode((string) file_get_contents($idsSummary), true);
+$publishedIds = $idsDoc['check_ids'] ?? null;
+
+// The validator's constants are the single definition; assert the summary
+// carries them, and that the ratchet has no competing copy.
+$validatorSource = (string) file_get_contents($validator);
+preg_match_all("/^const CHECK_[A-Z_]+ = '([^']+)';/m", $validatorSource, $m);
+$constants = $m[1] ?? [];
+
+if (is_array($publishedIds) && $publishedIds !== [] && sort($publishedIds) && sort($constants) && $publishedIds === $constants) {
+    ok(sprintf('the summary publishes all %d CHECK_* identifiers', count($constants)));
+} else {
+    bad('the published check_ids do not match the validator CHECK_* constants');
+}
+
+$ratchetSource = (string) file_get_contents($ratchet);
+
+if (preg_match_all("/'(?:github|policy)\.[a-z_]+'/", $ratchetSource) === 0) {
+    ok('the ratchet holds no competing copy of the identifier list');
+} else {
+    bad('the ratchet still hardcodes check identifiers — drift is expressible again');
+}
+
+// A summary whose check_ids is missing or unusable must be an ERROR, not a
+// fallback: guessing the identifier set is how the check stops meaning anything.
+$noIds = summaryDoc($recordedGaps, $recordedUnverified);
+unset($noIds['check_ids']);
+ratchetCase(
+    'the summary carries no check_ids at all',
+    $noIds,
+    3,
+    'error',
+    $goodRecord,
+);
+
+$shortIds = summaryDoc($recordedGaps, $recordedUnverified);
+$shortIds['check_ids'] = ['github.tag_rulesets_active'];
+ratchetCase(
+    'the summary reports an identifier absent from its own check_ids',
+    $shortIds,
     3,
     'error',
     $goodRecord,

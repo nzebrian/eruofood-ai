@@ -95,6 +95,32 @@ const CHECK_POLICY_CODEOWNERS_ENFORCEMENT = 'policy.codeowners_enforcement';
 const CHECK_POLICY_FINANCE_FOUR_EYES = 'policy.finance_four_eyes';
 
 /**
+ * Every identifier this validator can emit, in one place.
+ *
+ * The Phase 4B review found `governance_ratchet.php` carrying its own copy of
+ * this list as string literals, with nothing asserting the two agreed. They did
+ * agree, but only by hand. The list is now emitted in the `--json` summary as
+ * `check_ids` and the ratchet reads it from there, so there is exactly one
+ * definition and drift is not expressible.
+ *
+ * @var list<string>
+ */
+const PUBLISHED_CHECK_IDS = [
+    CHECK_MAIN_RULESET_ACTIVE,
+    CHECK_TAG_RULESETS_ACTIVE,
+    CHECK_NO_BYPASS_ACTORS,
+    CHECK_REQUIRED_CHECKS_ENFORCED,
+    CHECK_BRANCH_PROTECTION_EFFECTIVE,
+    CHECK_CODEOWNERS_ERRORS_ZERO,
+    CHECK_IDENTITY_ACCOUNTS_EXIST,
+    CHECK_IDENTITY_WRITE_ACCESS,
+    CHECK_RELEASE_ACTOR_ID_VALID,
+    CHECK_POLICY_INDEPENDENT_REVIEW,
+    CHECK_POLICY_CODEOWNERS_ENFORCEMENT,
+    CHECK_POLICY_FINANCE_FOUR_EYES,
+];
+
+/**
  * The identity-side external requirements arrive as prose from
  * IdentityAssessment::externalRequirements(). Mapping them here rather than
  * adding identifiers to the domain class keeps this phase out of `modules/`.
@@ -153,6 +179,7 @@ function invocationError(string $message, ?string $jsonPath = null): never
             'unverified' => [],
             'failures' => [],
             'unverified_detail' => [],
+            'check_ids' => PUBLISHED_CHECK_IDS,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
     }
 
@@ -500,6 +527,101 @@ function readEvidence(string $flag, string $path, string $shape = 'any'): ?array
     }
 
     return $decoded;
+}
+
+/**
+ * Classify one live ruleset for the bypass-actor check, structurally.
+ *
+ * Until the Phase 4B review this was `str_contains(strtolower($name),
+ * 'creation')` — a substring match on a field any repository administrator
+ * chooses freely. Naming a ruleset "main creation guard" removed it from the
+ * scan entirely, so a standing bypass actor on it was never looked at, and the
+ * check reported clean.
+ *
+ * What can actually be classified depends on which endpoint the evidence came
+ * from, and this deliberately claims no more than the payload supports:
+ *
+ *   GET /rulesets        carries `target` and `enforcement`. No `rules`.
+ *   GET /rulesets/{id}   additionally carries `rules`.
+ *
+ * So a creation-only ruleset is only recognisable when `rules` is present. When
+ * it is absent the ruleset stays IN SCOPE rather than being guessed at — the
+ * cost is an EXTERNAL where the field is also missing, which is the direction
+ * that cannot hide a bypass actor.
+ *
+ * @return array{string, string} one of enforcing|creation_only|not_enforcing|ambiguous, and a label
+ */
+function classifyRulesetForBypass(mixed $rs, int|string $index): array
+{
+    $label = 'ruleset #'.(string) $index;
+
+    if (! is_array($rs) || array_is_list($rs)) {
+        return ['ambiguous', $label.' (not an object)'];
+    }
+
+    if (isset($rs['name']) && is_string($rs['name']) && trim($rs['name']) !== '') {
+        $label = '"'.$rs['name'].'"';
+    } elseif (isset($rs['id']) && (is_int($rs['id']) || is_string($rs['id']))) {
+        $label = 'ruleset id '.(string) $rs['id'];
+    } else {
+        $label .= ' (unnamed)';
+    }
+
+    $enforcement = $rs['enforcement'] ?? null;
+
+    if (! is_string($enforcement)) {
+        return ['ambiguous', $label.' (no enforcement field)'];
+    }
+
+    // Only the values GitHub documents. An unrecognised one is not assumed
+    // harmless — it is assumed unknown.
+    if (! in_array($enforcement, ['active', 'evaluate', 'disabled'], true)) {
+        return ['ambiguous', $label." (unrecognised enforcement '{$enforcement}')"];
+    }
+
+    if ($enforcement !== 'active') {
+        return ['not_enforcing', $label." (enforcement={$enforcement})"];
+    }
+
+    $target = $rs['target'] ?? null;
+
+    if (! is_string($target)) {
+        return ['ambiguous', $label.' (no target field)'];
+    }
+
+    if (! in_array($target, ['branch', 'tag', 'push', 'repository'], true)) {
+        return ['ambiguous', $label." (unrecognised target '{$target}')"];
+    }
+
+    if (! in_array($target, ['branch', 'tag'], true)) {
+        return ['not_enforcing', $label." (target={$target}, not branch or tag protection)"];
+    }
+
+    // Creation-only is a statement about the RULES, and can only be made when
+    // the rules were supplied.
+    if (array_key_exists('rules', $rs)) {
+        $rules = $rs['rules'];
+
+        if (! is_array($rules) || ! array_is_list($rules)) {
+            return ['ambiguous', $label.' (rules present but not a list)'];
+        }
+
+        $types = [];
+
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! isset($rule['type']) || ! is_string($rule['type'])) {
+                return ['ambiguous', $label.' (a rule has no usable type)'];
+            }
+
+            $types[] = $rule['type'];
+        }
+
+        if ($types !== [] && array_unique($types) === ['creation']) {
+            return ['creation_only', $label.' (creation-only)'];
+        }
+    }
+
+    return ['enforcing', $label];
 }
 
 /**
@@ -1401,33 +1523,64 @@ if ($liveRulesets === null) {
         return [count($tagRules) >= 2, 'active tag rulesets='.count($tagRules)];
     }, CHECK_TAG_RULESETS_ACTIVE);
 
-    // M37 Phase 4B — four outcomes, because there really are four.
+    // M37 Phase 4B — five outcomes, because there really are five.
     //
     // `GET /repos/{owner}/{repo}/rulesets` does not include `bypass_actors` in
-    // its payload. The old implementation read `$rs['bypass_actors'] ?? []`,
+    // its payload. The first implementation read `$rs['bypass_actors'] ?? []`,
     // so an absent key and a genuinely empty one were the same thing, and the
     // check reported PASS on evidence that said nothing at all about bypass
-    // actors. A ruleset carrying a standing bypass actor would have been
-    // certified clean by a run that had never seen the field.
+    // actors.
     //
-    //   absent      -> null  (EXTERNAL: the evidence does not answer this)
-    //   []          -> PASS  (answered, and the invariant holds)
-    //   non-empty   -> FAIL  (answered, and the invariant is violated)
-    //   not a list  -> FAIL  (answered with something unusable — never silent)
-    externalCheck('no bypass actors on the main or tag-immutability rulesets', function () use ($byName): array {
+    // The Phase 4B REVIEW then found that fixing the field-level cases left a
+    // fifth, and worse, one intact: the loop could examine NOTHING and still
+    // fall through to a PASS whose message affirmatively claimed the invariant
+    // held "on every enforcing ruleset". Three inputs reached it — an empty
+    // array, entries with no `name` (silently dropped before the loop even
+    // began), and a set where every ruleset was excluded by the old
+    // `str_contains($name, 'creation')` filter. The last is the sharp one: a
+    // ruleset named "main creation guard" carrying a standing bypass actor
+    // produced `failed=0` with three PASSes.
+    //
+    //   no enforcing ruleset examined  -> null   EXTERNAL — nothing was checked
+    //   a ruleset cannot be classified -> null   EXTERNAL — it might be hiding one
+    //   bypass_actors absent           -> null   EXTERNAL — the field was not sent
+    //   bypass_actors []               -> PASS   answered, invariant holds
+    //   bypass_actors non-empty        -> FAIL   answered, invariant violated
+    //   bypass_actors not a list       -> FAIL   answered with something unusable
+    //
+    // Iterating `$liveRulesets` rather than `$byName` is part of the fix:
+    // `$byName` is keyed by name, so an entry without one never appeared here
+    // at all. Now it arrives, fails classification, and blocks a PASS.
+    externalCheck('no bypass actors on the main or tag-immutability rulesets', function () use ($liveRulesets): array {
+        $examined = 0;
+        $excluded = 0;
         $offenders = [];
         $malformed = [];
         $silent = [];
+        $unclassifiable = [];
 
-        foreach ($byName as $name => $rs) {
-            // A creation-only ruleset legitimately carries an actor allowed to
-            // create the ref; it is not a standing bypass of enforcement.
-            if (str_contains(strtolower($name), 'creation')) {
+        foreach ($liveRulesets as $index => $rs) {
+            [$class, $label] = classifyRulesetForBypass($rs, $index);
+
+            if ($class === 'ambiguous') {
+                $unclassifiable[] = $label;
+
                 continue;
             }
 
+            if ($class !== 'enforcing') {
+                // Structurally out of scope: a ruleset that enforces nothing,
+                // or one whose only rule is `creation`, cannot be bypassed in
+                // a way that weakens branch or tag protection.
+                $excluded++;
+
+                continue;
+            }
+
+            $examined++;
+
             if (! array_key_exists('bypass_actors', $rs)) {
-                $silent[] = $name;
+                $silent[] = $label;
 
                 continue;
             }
@@ -1435,18 +1588,19 @@ if ($liveRulesets === null) {
             $actors = $rs['bypass_actors'];
 
             if (! is_array($actors) || ! array_is_list($actors)) {
-                $malformed[] = $name.' ('.get_debug_type($actors).')';
+                $malformed[] = $label.' ('.get_debug_type($actors).')';
 
                 continue;
             }
 
             if ($actors !== []) {
-                $offenders[] = $name.' ('.count($actors).')';
+                $offenders[] = $label.' ('.count($actors).')';
             }
         }
 
-        // Precedence inside the check mirrors the validator's own: a definite
-        // violation outranks an unusable value, which outranks a silent one.
+        // Precedence: a definite violation outranks an unusable value, which
+        // outranks a missing field, which outranks not knowing what we were
+        // looking at, which outranks having looked at nothing.
         if ($offenders !== []) {
             return [false, 'bypass actors on: '.implode(', ', $offenders)];
         }
@@ -1460,7 +1614,30 @@ if ($liveRulesets === null) {
                 .' — GET /rulesets omits it; a missing field is not an empty one'];
         }
 
-        return [true, 'bypass_actors explicitly empty on every enforcing ruleset'];
+        if ($unclassifiable !== []) {
+            return [null, sprintf(
+                'could not classify %d ruleset(s): %s — an unclassifiable ruleset may carry a bypass actor, so this cannot be reported as clean',
+                count($unclassifiable),
+                implode(', ', $unclassifiable),
+            )];
+        }
+
+        // The defect the Phase 4B review caught. Reaching here with nothing
+        // examined is not "the invariant holds"; it is "nobody looked".
+        if ($examined === 0) {
+            return [null, sprintf(
+                'no enforcing ruleset was examined (%d supplied, %d structurally out of scope) — an empty examination proves nothing',
+                count($liveRulesets),
+                $excluded,
+            )];
+        }
+
+        // Affirmative, and self-evidencing: the count is in the message, so a
+        // reader can see how much evidence stands behind the claim.
+        return [true, sprintf(
+            '%d enforcing ruleset(s) examined; bypass_actors explicitly empty on every one',
+            $examined,
+        )];
     }, CHECK_NO_BYPASS_ACTORS);
 
     // Even with live ruleset data these remain unprovable here: the first needs
@@ -1557,6 +1734,11 @@ if ($jsonPath !== null) {
         // item it expected to be answered has become unanswerable, that is
         // incomplete verification, not an expected gap.
         'unverified_detail' => array_values($unverifiedDetail),
+
+        // The authoritative identifier set, so the ratchet can reject a
+        // known-gap record naming a check that does not exist without keeping
+        // a second copy of this list.
+        'check_ids' => PUBLISHED_CHECK_IDS,
     ];
 
     // The summary is written outside this repository by whoever chose the

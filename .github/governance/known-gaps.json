@@ -50,7 +50,7 @@
       "github.identity_accounts_exist": "Needs GitHub to confirm an account exists. No identities are configured.",
       "github.identity_accounts_write_access": "Needs GitHub to confirm push access. No identities are configured.",
       "github.release_actor_id_valid": "Needs GitHub to accept the actor id in a bypass_actors payload. No release actor is configured.",
-      "github.no_bypass_actors": "GET /rulesets does not include a bypass_actors field at all. M37 Phase 4B stopped reading that absence as an empty list; it is now honestly unverified rather than a vacuous PASS. Closing it needs an evidence source that carries the field.",
+      "github.no_bypass_actors": "GET /rulesets does not include a bypass_actors field at all. M37 Phase 4B stopped reading that absence as an empty list. Its review then found a second way to reach a vacuous PASS — returning one after examining NO enforcing ruleset — and that is now EXTERNAL too: an affirmative result requires at least one classified, enforcing ruleset that explicitly supplied an empty array. Closing this gap needs an evidence source that actually carries the field.",
       "github.required_checks_enforced": "Needs the per-branch rules endpoint, which the workflow token cannot read.",
       "github.branch_protection_effective": "Needs somebody to actually attempt a direct push and a force-push. No API answers it."
     }
