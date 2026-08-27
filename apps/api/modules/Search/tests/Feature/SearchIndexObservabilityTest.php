@@ -10,6 +10,7 @@ use EruoFood\Search\Domain\Document\SearchDocument;
 use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\Observability\IndexFailure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 
 uses(RefreshDatabase::class);
@@ -88,8 +89,12 @@ it('reports an unknown document type instead of returning in silence', function 
 
 it('reports a missing source document, at info because it is expected', function (): void {
     $records = [];
+
+    // A real UUID: this path reaches `deleteBySourceId`, and `source_id` is a
+    // uuid column. SQLite accepts any string there, PostgreSQL does not — which
+    // is the whole reason this repository runs both engines in CI.
     managerWith(['food' => scriptedProvider(fn (): ?SearchDocument => null)], $records)
-        ->reindex('food', 'vanished');
+        ->reindex('food', (string) Str::orderedUuid());
 
     expect(array_column($records, 'message'))->toContain(IndexFailure::SourceMissing->value)
         // Unpublishing is normal; it must be visible without being an alarm.

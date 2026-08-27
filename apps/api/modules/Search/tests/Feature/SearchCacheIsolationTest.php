@@ -68,8 +68,13 @@ it('leaves unrelated application cache entries alone when search invalidates', f
 
     app(SearchCache::class)->flush();
 
+    // What is under test is SURVIVAL, not the store's serialisation. `toBe(42)`
+    // additionally asserted the return type and so failed on Redis, which hands
+    // back '42' — a true statement about the driver, and nothing to do with
+    // cache isolation.
     expect(Cache::get('unrelated:session:abc'))->toBe('keep me')
-        ->and(Cache::get('unrelated:ratelimit:1.2.3.4'))->toBe(42);
+        ->and(Cache::get('unrelated:ratelimit:1.2.3.4'))->not->toBeNull()
+        ->and((int) Cache::get('unrelated:ratelimit:1.2.3.4'))->toBe(42);
 });
 
 it('invalidates search entries while sparing everything else', function (): void {
