@@ -37,15 +37,18 @@ final readonly class AutocompleteService
         // preventing it was that no provider indexes that type yet.
         //
         // Authorised BEFORE the prefix is even trimmed, so a refusal cannot
-        // depend on the shape of the input.
-        $this->gate->authorize($type, $isAdmin);
+        // depend on the shape of the input. The RESOLVED scope is what goes to
+        // the index — the first fix passed the caller's raw `$type` on and
+        // discarded this return value, which meant a null/Global request was
+        // authorised as "public" and then executed as "unfiltered".
+        $scope = $this->gate->authorize($type, $isAdmin);
 
         $prefix = trim($prefix);
         if ($prefix === '') {
             return [];
         }
 
-        return $this->index->suggest($prefix, $type, $limit ?? $this->suggestionLimit);
+        return $this->index->suggest($prefix, $scope, $limit ?? $this->suggestionLimit);
     }
 
     /**
@@ -56,9 +59,9 @@ final readonly class AutocompleteService
      */
     public function suggestions(string $prefix, ?SearchType $type, bool $isAdmin = false): array
     {
-        $this->gate->authorize($type, $isAdmin);
+        $scope = $this->gate->authorize($type, $isAdmin);
 
-        $fromIndex = $this->autocomplete($prefix, $type, isAdmin: $isAdmin);
+        $fromIndex = $this->autocomplete($prefix, $scope, isAdmin: $isAdmin);
         if (count($fromIndex) >= $this->suggestionLimit) {
             return $fromIndex;
         }

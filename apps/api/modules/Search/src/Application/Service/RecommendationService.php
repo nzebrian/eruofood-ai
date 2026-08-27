@@ -52,16 +52,20 @@ final readonly class RecommendationService
         // route is public, so it goes through the same gate. `similarTo` and
         // `popular` are reached from here, which is why the check sits at the
         // entry point rather than on each branch.
-        $this->gate->authorize($type, $isAdmin);
+        //
+        // The RESOLVED scope is what every branch below uses. Passing the raw
+        // `$type` on instead is what let `?kind=trending&type=global` reach
+        // `popular()` as an unfiltered read.
+        $scope = $this->gate->authorize($type, $isAdmin);
 
         return match ($kind) {
             RecommendationType::Related,
             RecommendationType::Similar,
-            RecommendationType::FrequentlyViewedTogether => $this->contentBased($type, $anchorId, $limit),
+            RecommendationType::FrequentlyViewedTogether => $this->contentBased($scope, $anchorId, $limit),
             RecommendationType::Restaurant => $this->index->popular(SearchType::Vendor, $limit),
-            RecommendationType::Personalised => $this->personalised($type, $userId, $limit),
+            RecommendationType::Personalised => $this->personalised($scope, $userId, $limit),
             RecommendationType::Seasonal,
-            RecommendationType::Trending => $this->index->popular($type, $limit),
+            RecommendationType::Trending => $this->index->popular($scope, $limit),
         };
     }
 

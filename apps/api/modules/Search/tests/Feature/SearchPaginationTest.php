@@ -158,3 +158,107 @@ it('refuses a page beyond the ranking window instead of returning an empty page'
     expect(fn (): mixed => $repository->search($query))
         ->toThrow(\EruoFood\Search\Domain\Exception\SearchPaginationTooDeep::class);
 });
+
+// =============================================================================
+// The window BOUNDARY (M38-SEARCH-001, remediation).
+//
+// The first fix tested only `offset >= max_result_window`. A page that STARTED
+// inside the window but ended outside it was accepted, clamped, and answered
+// with a short page — offset 995 with per_page 20 against a 1000-row window
+// returned 5 hits while `total` reported the full match count. That is the same
+// silent lie as the original defect, one page further in.
+//
+// The rule is now: the whole page must fit. `offset + per_page <= window`.
+// =============================================================================
+
+/** Build a relevance-sorted query (the PHP-ranked path) at an exact position. */
+function windowQuery(int $page, int $perPage): \EruoFood\Search\Domain\ValueObject\SearchQuery
+{
+    return app(\EruoFood\Search\Application\Service\QueryBuilder::class)->build(
+        term: 'jollof',
+        type: SearchType::Food,
+        filters: new SearchFilters(),
+        sort: SortOption::Relevance,   // ranked in PHP, so the window applies
+        page: $page,
+        perPage: $perPage,
+        locale: 'en',
+        geo: null,
+    );
+}
+
+it('accepts the last page that fits entirely inside the ranking window', function (): void {
+    seedDocuments(10);
+    config()->set('search.max_result_window', 1000);
+
+    // offset 980 + per_page 20 = 1000, exactly the window. Accepted.
+    $query = windowQuery(page: 50, perPage: 20);
+    expect($query->offset())->toBe(980);
+
+    $repository = app(\EruoFood\Search\Domain\Document\SearchIndexRepository::class);
+
+    expect(fn (): mixed => $repository->search($query))
+        ->not->toThrow(\EruoFood\Search\Domain\Exception\SearchPaginationTooDeep::class);
+});
+
+it('refuses the next page, whose end falls outside the window', function (): void {
+    seedDocuments(10);
+    config()->set('search.max_result_window', 1000);
+
+    // offset 1000 + per_page 20 = 1020. Refused.
+    $query = windowQuery(page: 51, perPage: 20);
+    expect($query->offset())->toBe(1000);
+
+    $repository = app(\EruoFood\Search\Domain\Document\SearchIndexRepository::class);
+
+    expect(fn (): mixed => $repository->search($query))
+        ->toThrow(\EruoFood\Search\Domain\Exception\SearchPaginationTooDeep::class);
+});
+
+it('refuses a page that STRADDLES the window rather than clamping it short', function (): void {
+    // This is the reported case, expressed at a page boundary: the offset is
+    // INSIDE the window (980 < 995) but the page runs past it (980 + 20 = 1000).
+    // The previous rule accepted this, clamped the window to 995 and returned a
+    // short page. There is nothing in such a response to tell a client that the
+    // page was truncated rather than genuinely final.
+    seedDocuments(10);
+    config()->set('search.max_result_window', 995);
+
+    $query = windowQuery(page: 50, perPage: 20);
+    expect($query->offset())->toBe(980)
+        ->and($query->offset())->toBeLessThan(995)          // the old rule let it through
+        ->and($query->offset() + $query->perPage)->toBeGreaterThan(995);
+
+    $repository = app(\EruoFood\Search\Domain\Document\SearchIndexRepository::class);
+
+    expect(fn (): mixed => $repository->search($query))
+        ->toThrow(\EruoFood\Search\Domain\Exception\SearchPaginationTooDeep::class);
+});
+
+it('tells the caller where the boundary actually is', function (): void {
+    seedDocuments(10);
+    config()->set('search.max_result_window', 1000);
+
+    $repository = app(\EruoFood\Search\Domain\Document\SearchIndexRepository::class);
+
+    try {
+        $repository->search(windowQuery(page: 51, perPage: 20));
+        $this->fail('expected SearchPaginationTooDeep');
+    } catch (\EruoFood\Search\Domain\Exception\SearchPaginationTooDeep $e) {
+        // An actionable refusal names the last usable offset at this page size,
+        // so a client can correct rather than guess.
+        expect($e->errorCode())->toBe('SEARCH_PAGINATION_TOO_DEEP')
+            ->and($e->getMessage())->toContain('980')
+            ->and($e->getMessage())->toContain('1000');
+    }
+});
+
+it('leaves SQL-ordered sorts unbounded — they never needed a window', function (): void {
+    seedDocuments(260);
+    config()->set('search.max_result_window', 50);
+
+    // Popularity is ordered by PostgreSQL with LIMIT/OFFSET, so the PHP window
+    // does not apply and a deep page is exact rather than refused.
+    $this->getJson('/api/v1/search?q=jollof&per_page=10&page=25&sort=popularity')
+        ->assertOk()
+        ->assertJsonPath('data.total', 260);
+});

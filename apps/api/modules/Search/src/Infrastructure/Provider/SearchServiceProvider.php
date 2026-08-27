@@ -64,6 +64,11 @@ final class SearchServiceProvider extends ServiceProvider
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.candidate_pool', 200),
             (bool) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.use_pgvector', true),
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.max_result_window', 1000),
+            // Bounded capability memo. This binding is a singleton and is held
+            // by further singletons, and a queue worker is a long-lived
+            // process — so the answer expires rather than being cached for the
+            // life of the process (M38-VECTOR-001).
+            (float) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.capability_ttl', 30),
         ));
         $this->app->bind(SavedSearchRepository::class, EloquentSavedSearchRepository::class);
         $this->app->bind(SearchAnalyticsRepository::class, EloquentSearchAnalyticsRepository::class);

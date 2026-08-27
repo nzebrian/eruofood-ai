@@ -101,6 +101,18 @@ return [
     'vector_enabled' => (bool) env('SEARCH_VECTOR_ENABLED', true),
     'trgm_enabled' => (bool) env('SEARCH_FTS_ENABLED', true),
 
+    /*
+    | How long the index repository may reuse a probed capability answer.
+    |
+    | The repository is a container singleton held by further singletons. Under
+    | PHP-FPM that is request-scoped, but a QUEUE WORKER is a long-lived
+    | process: a worker started before the acceleration migration provisioned
+    | `vector` would otherwise cache "absent" for its whole life and never write
+    | the vector column again. Bounded, not permanent — set to 0 to re-probe on
+    | every call.
+    */
+    'capability_ttl' => (float) env('SEARCH_CAPABILITY_TTL', 30),
+
     // Autocomplete suggestion count and trending window (days).
     'suggestion_limit' => (int) env('SEARCH_SUGGESTION_LIMIT', 8),
     'trending_days' => (int) env('SEARCH_TRENDING_DAYS', 7),
