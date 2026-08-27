@@ -181,6 +181,19 @@ jobs:
       - name: Enforce — M31/M32 mobile platform negative controls
         run: apps/mobile/scripts/m31_platform_negative_control.sh
 
+      - name: Enforce — M37 Governance Advisory wiring controls
+        # M37 Phase 4A found that the control above reads only THIS file, so it
+        # would not notice a `continue-on-error` added to an enforcement step in
+        # any other workflow — and Phase 4B adds exactly such a workflow. This
+        # runs that workflow's own wiring controls from inside the required
+        # context, so `Governance Advisory` cannot be quietly neutered by a
+        # change that never touches this file.
+        #
+        # Shell and Python only. No PHP, no Composer, no network: the advisory
+        # job owns those, and a packagist outage must not be able to fail a
+        # required gate.
+        run: .github/scripts/m37_governance_advisory_control.sh
+
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
         # every enforcement step still propagates a non-zero exit, then breaks

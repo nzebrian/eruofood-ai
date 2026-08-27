@@ -60,6 +60,82 @@ const EXIT_FAIL = 1;           // a governance invariant is violated
 const EXIT_UNVERIFIED = 2;     // verification incomplete (strict mode only)
 const EXIT_ERROR = 3;          // the validator could not run, or was misinvoked
 
+// The machine-readable summary's schema. Bumped to 2 by M37 Phase 4B, which
+// ADDED `failures[]` and `schema_notes`; every schema-1 field keeps its name,
+// its type and its meaning, so an existing consumer is unaffected.
+const SUMMARY_SCHEMA = 2;
+
+/**
+ * Stable identifiers for the checks that can be evaluated against live GitHub
+ * evidence.
+ *
+ * The known-gap ratchet compares these, never console text. A check with no
+ * identifier still reports normally and still fails the run — it simply cannot
+ * be matched against a recorded gap, so the ratchet treats it as an unknown
+ * failure and goes red. That is deliberate: the safe direction for an
+ * unidentified failure is "somebody must look at this", not "assume it is
+ * expected".
+ *
+ * These strings are a published contract. Renaming one is a governance change:
+ * `.github/governance/known-gaps.json` references them by name, and a rename
+ * that is not mirrored there makes the ratchet fail on an unknown identifier —
+ * loudly, which is the intended failure mode.
+ */
+const CHECK_MAIN_RULESET_ACTIVE = 'github.main_ruleset_active';
+const CHECK_TAG_RULESETS_ACTIVE = 'github.tag_rulesets_active';
+const CHECK_NO_BYPASS_ACTORS = 'github.no_bypass_actors';
+const CHECK_REQUIRED_CHECKS_ENFORCED = 'github.required_checks_enforced';
+const CHECK_BRANCH_PROTECTION_EFFECTIVE = 'github.branch_protection_effective';
+const CHECK_CODEOWNERS_ERRORS_ZERO = 'github.codeowners_errors_zero';
+const CHECK_IDENTITY_ACCOUNTS_EXIST = 'github.identity_accounts_exist';
+const CHECK_IDENTITY_WRITE_ACCESS = 'github.identity_accounts_write_access';
+const CHECK_RELEASE_ACTOR_ID_VALID = 'github.release_actor_id_valid';
+const CHECK_POLICY_INDEPENDENT_REVIEW = 'policy.independent_human_review';
+const CHECK_POLICY_CODEOWNERS_ENFORCEMENT = 'policy.codeowners_enforcement';
+const CHECK_POLICY_FINANCE_FOUR_EYES = 'policy.finance_four_eyes';
+
+/**
+ * Every identifier this validator can emit, in one place.
+ *
+ * The Phase 4B review found `governance_ratchet.php` carrying its own copy of
+ * this list as string literals, with nothing asserting the two agreed. They did
+ * agree, but only by hand. The list is now emitted in the `--json` summary as
+ * `check_ids` and the ratchet reads it from there, so there is exactly one
+ * definition and drift is not expressible.
+ *
+ * @var list<string>
+ */
+const PUBLISHED_CHECK_IDS = [
+    CHECK_MAIN_RULESET_ACTIVE,
+    CHECK_TAG_RULESETS_ACTIVE,
+    CHECK_NO_BYPASS_ACTORS,
+    CHECK_REQUIRED_CHECKS_ENFORCED,
+    CHECK_BRANCH_PROTECTION_EFFECTIVE,
+    CHECK_CODEOWNERS_ERRORS_ZERO,
+    CHECK_IDENTITY_ACCOUNTS_EXIST,
+    CHECK_IDENTITY_WRITE_ACCESS,
+    CHECK_RELEASE_ACTOR_ID_VALID,
+    CHECK_POLICY_INDEPENDENT_REVIEW,
+    CHECK_POLICY_CODEOWNERS_ENFORCEMENT,
+    CHECK_POLICY_FINANCE_FOUR_EYES,
+];
+
+/**
+ * The identity-side external requirements arrive as prose from
+ * IdentityAssessment::externalRequirements(). Mapping them here rather than
+ * adding identifiers to the domain class keeps this phase out of `modules/`.
+ *
+ * The map is keyed by the exact string. If the domain wording changes and this
+ * map is not updated, the lookup misses, the identifier is null, and an
+ * unidentified failure makes the ratchet red — the fail-safe direction.
+ */
+const IDENTITY_REQUIREMENT_IDS = [
+    'each configured account actually exists on GitHub' => CHECK_IDENTITY_ACCOUNTS_EXIST,
+    'each configured account has write access (GitHub silently ignores a code owner who cannot push)' => CHECK_IDENTITY_WRITE_ACCESS,
+    'CODEOWNER identities resolve (GET /codeowners/errors returns zero)' => CHECK_CODEOWNERS_ERRORS_ZERO,
+    'the release actor id is one GitHub will accept in bypass_actors' => CHECK_RELEASE_ACTOR_ID_VALID,
+];
+
 // scripts -> api -> apps -> <repo root>. Three levels, not two: apps/api is
 // the Laravel root, but governance artifacts live across the whole repository.
 $repoRoot = dirname(__DIR__, 3);
@@ -89,7 +165,7 @@ function invocationError(string $message, ?string $jsonPath = null): never
 
     if ($jsonPath !== null) {
         @file_put_contents($jsonPath, json_encode([
-            'schema' => 1,
+            'schema' => SUMMARY_SCHEMA,
             'mode' => 'unknown',
             'total' => 0,
             'passed' => 0,
@@ -101,6 +177,9 @@ function invocationError(string $message, ?string $jsonPath = null): never
             'exit_code' => EXIT_ERROR,
             'exit_reason' => 'invocation_error',
             'unverified' => [],
+            'failures' => [],
+            'unverified_detail' => [],
+            'check_ids' => PUBLISHED_CHECK_IDS,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
     }
 
@@ -195,13 +274,48 @@ $skipped = 0;
 /** @var list<string> Descriptions of everything that could not be verified. */
 $unverifiedItems = [];
 
+/**
+  * Every FAIL, structurally.
+  *
+   * @var list<array{id: string|null, check: string, detail: string}>
+  */
+$failures = [];
+
+/**
+ * Every EXTERNAL / ADMIN REQUIRED item, structurally.
+ *
+ * The ratchet needs this to tell "GitHub could not be reached" from "this is a
+ * recorded governance gap". Both leave the run non-green, and treating them
+ * alike would let an API outage masquerade as an expected state.
+ *
+ * @var list<array{id: string|null, check: string}>
+ */
+$unverifiedDetail = [];
+
 function section(string $title): void
 {
     echo "\n{$title}\n";
 }
 
+/** Record a FAIL for the machine-readable summary as well as the console. */
+function recordFailure(?string $id, string $description, string $detail): void
+{
+    global $failures;
+
+    $failures[] = ['id' => $id, 'check' => $description, 'detail' => $detail];
+}
+
+/** Record an EXTERNAL / ADMIN REQUIRED item for the machine-readable summary. */
+function recordUnverified(?string $id, string $description): void
+{
+    global $unverifiedItems, $unverifiedDetail;
+
+    $unverifiedItems[] = $description;
+    $unverifiedDetail[] = ['id' => $id, 'check' => $description];
+}
+
 /** @param callable():array{bool, string} $check */
-function verify(string $description, callable $check): void
+function verify(string $description, callable $check, ?string $id = null): void
 {
     global $passed, $failed;
 
@@ -212,22 +326,43 @@ function verify(string $description, callable $check): void
         $detail = $e::class.': '.$e->getMessage();
     }
 
-    $ok ? $passed++ : $failed++;
+    if ($ok) {
+        $passed++;
+    } else {
+        $failed++;
+        recordFailure($id, $description, $detail);
+    }
+
     printf("  %s %s%s\n", $ok ? 'PASS' : 'FAIL', $description, $detail === '' ? '' : "  ({$detail})");
 }
 
 /**
  * Something only GitHub can answer.
  *
- * @param null|callable():array{bool, string} $check evaluated only when live data was supplied
+ * The callable returns `[bool|null, string]`. M37 Phase 4B added the `null`
+ * arm, and it exists because of a specific defect: `GET /rulesets` does not
+ * carry a `bypass_actors` key at all, and the bypass check read a missing key
+ * as an empty one. It printed
+ *
+ *     PASS  no bypass actors on the main or tag-immutability rulesets
+ *
+ * on evidence that contained no information about bypass actors whatsoever —
+ * the exact "green while proving nothing" failure this validator exists to
+ * prevent, reached through the live-evidence path instead of the file path.
+ *
+ * `null` means "the evidence was supplied, and it does not answer this". That
+ * is EXTERNAL / ADMIN REQUIRED, never PASS and never FAIL: nobody has done
+ * anything wrong, and nothing has been proved.
+ *
+ * @param null|callable():array{bool|null, string} $check evaluated only when live data was supplied
  */
-function externalCheck(string $description, ?callable $check = null): void
+function externalCheck(string $description, ?callable $check = null, ?string $id = null): void
 {
-    global $external, $passed, $failed, $unverifiedItems;
+    global $external, $passed, $failed;
 
     if ($check === null) {
         $external++;
-        $unverifiedItems[] = $description;
+        recordUnverified($id, $description);
         printf("  EXTERNAL / ADMIN REQUIRED  %s\n", $description);
 
         return;
@@ -240,7 +375,25 @@ function externalCheck(string $description, ?callable $check = null): void
         $detail = $e::class.': '.$e->getMessage();
     }
 
-    $ok ? $passed++ : $failed++;
+    if ($ok === null) {
+        $external++;
+        recordUnverified($id, $description);
+        printf(
+            "  EXTERNAL / ADMIN REQUIRED  %s%s\n",
+            $description,
+            $detail === '' ? '' : "  (evidence does not answer this: {$detail})",
+        );
+
+        return;
+    }
+
+    if ($ok) {
+        $passed++;
+    } else {
+        $failed++;
+        recordFailure($id, $description, $detail);
+    }
+
     printf("  %s %s%s\n", $ok ? 'PASS' : 'FAIL', $description, $detail === '' ? '' : "  ({$detail})");
 }
 
@@ -258,9 +411,9 @@ function externalCheck(string $description, ?callable $check = null): void
  * or malformed ownership.json would make three checks vanish into SKIPPED and
  * strict mode would report success having verified less than it thought.
  */
-function skipCheck(string $description, bool $conditionHolds, string $because): void
+function skipCheck(string $description, bool $conditionHolds, string $because, ?string $id = null): void
 {
-    global $skipped, $external, $unverifiedItems;
+    global $skipped, $external;
 
     if ($conditionHolds) {
         $skipped++;
@@ -270,7 +423,7 @@ function skipCheck(string $description, bool $conditionHolds, string $because): 
     }
 
     $external++;
-    $unverifiedItems[] = $description;
+    recordUnverified($id, $description);
     printf("  EXTERNAL / ADMIN REQUIRED  %s  (skip condition not verified: %s)\n", $description, $because);
 }
 
@@ -284,7 +437,7 @@ function skipCheck(string $description, bool $conditionHolds, string $because): 
  * discarded in silence: the run reported the same twelve EXTERNAL items and
  * exit 0 as if nothing had been supplied at all.
  */
-function readEvidence(string $flag, string $path): ?array
+function readEvidence(string $flag, string $path, string $shape = 'any'): ?array
 {
     global $failed;
 
@@ -333,7 +486,164 @@ function readEvidence(string $flag, string $path): ?array
         return null;
     }
 
+    // A GitHub API error is valid JSON, and until M37 Phase 4B it sailed
+    // through every check above. `{"message":"Resource not accessible by
+    // integration","status":"403"}` is an array to PHP, so it was accepted,
+    // iterated as a list of rulesets, found to contain none, and reported as
+    //
+    //     FAIL  the main ruleset is actually active on GitHub
+    //           (no active ruleset targeting main; found: none)
+    //
+    // A transient 403 was therefore indistinguishable from somebody having
+    // switched branch protection off. Refusing the envelope by name is the
+    // narrow fix; the shape check below is the general one.
+    if (isApiErrorEnvelope($decoded)) {
+        printf(
+            "  FAIL %s file is a GitHub API error response, not evidence  (message: %s)\n",
+            $flag,
+            (string) ($decoded['message'] ?? 'unknown'),
+        );
+        $failed++;
+
+        return null;
+    }
+
+    if ($shape === 'list' && ! array_is_list($decoded)) {
+        printf(
+            "  FAIL %s file must be a JSON array of objects  (got a JSON object with keys: %s)\n",
+            $flag,
+            implode(', ', array_slice(array_map('strval', array_keys($decoded)), 0, 5)) ?: 'none',
+        );
+        $failed++;
+
+        return null;
+    }
+
+    if ($shape === 'object' && array_is_list($decoded) && $decoded !== []) {
+        printf("  FAIL %s file must be a JSON object  (got a JSON array)\n", $flag);
+        $failed++;
+
+        return null;
+    }
+
     return $decoded;
+}
+
+/**
+ * Classify one live ruleset for the bypass-actor check, structurally.
+ *
+ * Until the Phase 4B review this was `str_contains(strtolower($name),
+ * 'creation')` — a substring match on a field any repository administrator
+ * chooses freely. Naming a ruleset "main creation guard" removed it from the
+ * scan entirely, so a standing bypass actor on it was never looked at, and the
+ * check reported clean.
+ *
+ * What can actually be classified depends on which endpoint the evidence came
+ * from, and this deliberately claims no more than the payload supports:
+ *
+ *   GET /rulesets        carries `target` and `enforcement`. No `rules`.
+ *   GET /rulesets/{id}   additionally carries `rules`.
+ *
+ * So a creation-only ruleset is only recognisable when `rules` is present. When
+ * it is absent the ruleset stays IN SCOPE rather than being guessed at — the
+ * cost is an EXTERNAL where the field is also missing, which is the direction
+ * that cannot hide a bypass actor.
+ *
+ * @return array{string, string} one of enforcing|creation_only|not_enforcing|ambiguous, and a label
+ */
+function classifyRulesetForBypass(mixed $rs, int|string $index): array
+{
+    $label = 'ruleset #'.(string) $index;
+
+    if (! is_array($rs) || array_is_list($rs)) {
+        return ['ambiguous', $label.' (not an object)'];
+    }
+
+    if (isset($rs['name']) && is_string($rs['name']) && trim($rs['name']) !== '') {
+        $label = '"'.$rs['name'].'"';
+    } elseif (isset($rs['id']) && (is_int($rs['id']) || is_string($rs['id']))) {
+        $label = 'ruleset id '.(string) $rs['id'];
+    } else {
+        $label .= ' (unnamed)';
+    }
+
+    $enforcement = $rs['enforcement'] ?? null;
+
+    if (! is_string($enforcement)) {
+        return ['ambiguous', $label.' (no enforcement field)'];
+    }
+
+    // Only the values GitHub documents. An unrecognised one is not assumed
+    // harmless — it is assumed unknown.
+    if (! in_array($enforcement, ['active', 'evaluate', 'disabled'], true)) {
+        return ['ambiguous', $label." (unrecognised enforcement '{$enforcement}')"];
+    }
+
+    if ($enforcement !== 'active') {
+        return ['not_enforcing', $label." (enforcement={$enforcement})"];
+    }
+
+    $target = $rs['target'] ?? null;
+
+    if (! is_string($target)) {
+        return ['ambiguous', $label.' (no target field)'];
+    }
+
+    if (! in_array($target, ['branch', 'tag', 'push', 'repository'], true)) {
+        return ['ambiguous', $label." (unrecognised target '{$target}')"];
+    }
+
+    if (! in_array($target, ['branch', 'tag'], true)) {
+        return ['not_enforcing', $label." (target={$target}, not branch or tag protection)"];
+    }
+
+    // Creation-only is a statement about the RULES, and can only be made when
+    // the rules were supplied.
+    if (array_key_exists('rules', $rs)) {
+        $rules = $rs['rules'];
+
+        if (! is_array($rules) || ! array_is_list($rules)) {
+            return ['ambiguous', $label.' (rules present but not a list)'];
+        }
+
+        $types = [];
+
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! isset($rule['type']) || ! is_string($rule['type'])) {
+                return ['ambiguous', $label.' (a rule has no usable type)'];
+            }
+
+            $types[] = $rule['type'];
+        }
+
+        if ($types !== [] && array_unique($types) === ['creation']) {
+            return ['creation_only', $label.' (creation-only)'];
+        }
+    }
+
+    return ['enforcing', $label];
+}
+
+/**
+ * Does this payload look like a GitHub REST error rather than a resource?
+ *
+ * Deliberately conservative. `message` alone is not enough — a legitimate
+ * payload could carry that key — so a second error-shaped field is required.
+ * Being too eager here would reject real evidence, which fails in the
+ * direction this validator must never fail in.
+ */
+function isApiErrorEnvelope(array $decoded): bool
+{
+    if (array_is_list($decoded)) {
+        return false;
+    }
+
+    if (! array_key_exists('message', $decoded)) {
+        return false;
+    }
+
+    return array_key_exists('status', $decoded)
+        || array_key_exists('documentation_url', $decoded);
 }
 
 function readJson(string $path): array
@@ -998,9 +1308,9 @@ if (! $ownership->mode->supportsIndependentReview()) {
     $because = 'ownership.json mode='.$ownership->mode->value
         .($ownership->isUsable() ? '' : ' [DECLARATION UNUSABLE]');
 
-    skipCheck('independent human review (requires a second real human)', $soleOwnerVerified, $because);
-    skipCheck('CODEOWNERS enforcement (CODEOWNERS is inert)', $soleOwnerVerified, $because);
-    skipCheck('finance four-eyes review (one human participant)', $soleOwnerVerified, $because);
+    skipCheck('independent human review (requires a second real human)', $soleOwnerVerified, $because, CHECK_POLICY_INDEPENDENT_REVIEW);
+    skipCheck('CODEOWNERS enforcement (CODEOWNERS is inert)', $soleOwnerVerified, $because, CHECK_POLICY_CODEOWNERS_ENFORCEMENT);
+    skipCheck('finance four-eyes review (one human participant)', $soleOwnerVerified, $because, CHECK_POLICY_FINANCE_FOUR_EYES);
 }
 
 // -- 8. Identity configuration and activation readiness (M29-B) ---------------
@@ -1129,12 +1439,15 @@ foreach ($assessment->warnings() as $warning) {
 $liveCodeownerErrors = null;
 
 if ($codeownerErrorsFile !== null) {
-    $liveCodeownerErrors = readEvidence('--codeowners-errors', $codeownerErrorsFile);
+    // GitHub returns {"errors":[...]} here — an object, never a bare list.
+    $liveCodeownerErrors = readEvidence('--codeowners-errors', $codeownerErrorsFile, 'object');
 }
 
 foreach ($assessment->externalRequirements() as $requirement) {
+    $requirementId = IDENTITY_REQUIREMENT_IDS[$requirement] ?? null;
+
     if (! str_contains($requirement, 'codeowners/errors') || $liveCodeownerErrors === null) {
-        externalCheck($requirement);
+        externalCheck($requirement, null, $requirementId);
 
         continue;
     }
@@ -1156,7 +1469,7 @@ foreach ($assessment->externalRequirements() as $requirement) {
         }
 
         return [true, "zero errors across {$activeRules} active rule(s)"];
-    });
+    }, $requirementId);
 }
 
 if ($assessment->state === ActivationState::ReadyForActivation) {
@@ -1171,15 +1484,18 @@ section('9) GitHub-side — not provable from this repository');
 $liveRulesets = null;
 
 if ($rulesetsFile !== null) {
-    $liveRulesets = readEvidence('--rulesets', $rulesetsFile);
+    // GET /rulesets returns a JSON array. An API error is an object, so
+    // demanding a list is the general form of the fix isApiErrorEnvelope()
+    // makes specific.
+    $liveRulesets = readEvidence('--rulesets', $rulesetsFile, 'list');
 }
 
 if ($liveRulesets === null) {
-    externalCheck('the main ruleset is actually active on GitHub');
-    externalCheck('the production tag rulesets are actually active on GitHub');
-    externalCheck('required status checks are enforced by GitHub, not advisory');
-    externalCheck('no bypass actors are configured on the live rulesets');
-    externalCheck('branch protection is effective (direct push and force-push refused)');
+    externalCheck('the main ruleset is actually active on GitHub', null, CHECK_MAIN_RULESET_ACTIVE);
+    externalCheck('the production tag rulesets are actually active on GitHub', null, CHECK_TAG_RULESETS_ACTIVE);
+    externalCheck('required status checks are enforced by GitHub, not advisory', null, CHECK_REQUIRED_CHECKS_ENFORCED);
+    externalCheck('no bypass actors are configured on the live rulesets', null, CHECK_NO_BYPASS_ACTORS);
+    externalCheck('branch protection is effective (direct push and force-push refused)', null, CHECK_BRANCH_PROTECTION_EFFECTIVE);
 } else {
     $byName = [];
     foreach ($liveRulesets as $rs) {
@@ -1196,7 +1512,7 @@ if ($liveRulesets === null) {
         }
 
         return [false, 'no active ruleset targeting main; found: '.(implode(', ', array_keys($byName)) ?: 'none')];
-    });
+    }, CHECK_MAIN_RULESET_ACTIVE);
 
     externalCheck('the production tag rulesets are actually active on GitHub', function () use ($byName): array {
         $tagRules = array_filter(
@@ -1205,24 +1521,129 @@ if ($liveRulesets === null) {
         );
 
         return [count($tagRules) >= 2, 'active tag rulesets='.count($tagRules)];
-    });
+    }, CHECK_TAG_RULESETS_ACTIVE);
 
-    externalCheck('no bypass actors on the main or tag-immutability rulesets', function () use ($byName): array {
+    // M37 Phase 4B — five outcomes, because there really are five.
+    //
+    // `GET /repos/{owner}/{repo}/rulesets` does not include `bypass_actors` in
+    // its payload. The first implementation read `$rs['bypass_actors'] ?? []`,
+    // so an absent key and a genuinely empty one were the same thing, and the
+    // check reported PASS on evidence that said nothing at all about bypass
+    // actors.
+    //
+    // The Phase 4B REVIEW then found that fixing the field-level cases left a
+    // fifth, and worse, one intact: the loop could examine NOTHING and still
+    // fall through to a PASS whose message affirmatively claimed the invariant
+    // held "on every enforcing ruleset". Three inputs reached it — an empty
+    // array, entries with no `name` (silently dropped before the loop even
+    // began), and a set where every ruleset was excluded by the old
+    // `str_contains($name, 'creation')` filter. The last is the sharp one: a
+    // ruleset named "main creation guard" carrying a standing bypass actor
+    // produced `failed=0` with three PASSes.
+    //
+    //   no enforcing ruleset examined  -> null   EXTERNAL — nothing was checked
+    //   a ruleset cannot be classified -> null   EXTERNAL — it might be hiding one
+    //   bypass_actors absent           -> null   EXTERNAL — the field was not sent
+    //   bypass_actors []               -> PASS   answered, invariant holds
+    //   bypass_actors non-empty        -> FAIL   answered, invariant violated
+    //   bypass_actors not a list       -> FAIL   answered with something unusable
+    //
+    // Iterating `$liveRulesets` rather than `$byName` is part of the fix:
+    // `$byName` is keyed by name, so an entry without one never appeared here
+    // at all. Now it arrives, fails classification, and blocks a PASS.
+    externalCheck('no bypass actors on the main or tag-immutability rulesets', function () use ($liveRulesets): array {
+        $examined = 0;
+        $excluded = 0;
         $offenders = [];
-        foreach ($byName as $name => $rs) {
-            $isCreationOnly = str_contains(strtolower($name), 'creation');
-            if (! $isCreationOnly && ($rs['bypass_actors'] ?? []) !== []) {
-                $offenders[] = $name;
+        $malformed = [];
+        $silent = [];
+        $unclassifiable = [];
+
+        foreach ($liveRulesets as $index => $rs) {
+            [$class, $label] = classifyRulesetForBypass($rs, $index);
+
+            if ($class === 'ambiguous') {
+                $unclassifiable[] = $label;
+
+                continue;
+            }
+
+            if ($class !== 'enforcing') {
+                // Structurally out of scope: a ruleset that enforces nothing,
+                // or one whose only rule is `creation`, cannot be bypassed in
+                // a way that weakens branch or tag protection.
+                $excluded++;
+
+                continue;
+            }
+
+            $examined++;
+
+            if (! array_key_exists('bypass_actors', $rs)) {
+                $silent[] = $label;
+
+                continue;
+            }
+
+            $actors = $rs['bypass_actors'];
+
+            if (! is_array($actors) || ! array_is_list($actors)) {
+                $malformed[] = $label.' ('.get_debug_type($actors).')';
+
+                continue;
+            }
+
+            if ($actors !== []) {
+                $offenders[] = $label.' ('.count($actors).')';
             }
         }
 
-        return [$offenders === [], $offenders === [] ? '' : 'bypass actors on: '.implode(', ', $offenders)];
-    });
+        // Precedence: a definite violation outranks an unusable value, which
+        // outranks a missing field, which outranks not knowing what we were
+        // looking at, which outranks having looked at nothing.
+        if ($offenders !== []) {
+            return [false, 'bypass actors on: '.implode(', ', $offenders)];
+        }
+
+        if ($malformed !== []) {
+            return [false, 'bypass_actors is present but not a list on: '.implode(', ', $malformed)];
+        }
+
+        if ($silent !== []) {
+            return [null, 'no bypass_actors field on: '.implode(', ', $silent)
+                .' — GET /rulesets omits it; a missing field is not an empty one'];
+        }
+
+        if ($unclassifiable !== []) {
+            return [null, sprintf(
+                'could not classify %d ruleset(s): %s — an unclassifiable ruleset may carry a bypass actor, so this cannot be reported as clean',
+                count($unclassifiable),
+                implode(', ', $unclassifiable),
+            )];
+        }
+
+        // The defect the Phase 4B review caught. Reaching here with nothing
+        // examined is not "the invariant holds"; it is "nobody looked".
+        if ($examined === 0) {
+            return [null, sprintf(
+                'no enforcing ruleset was examined (%d supplied, %d structurally out of scope) — an empty examination proves nothing',
+                count($liveRulesets),
+                $excluded,
+            )];
+        }
+
+        // Affirmative, and self-evidencing: the count is in the message, so a
+        // reader can see how much evidence stands behind the claim.
+        return [true, sprintf(
+            '%d enforcing ruleset(s) examined; bypass_actors explicitly empty on every one',
+            $examined,
+        )];
+    }, CHECK_NO_BYPASS_ACTORS);
 
     // Even with live ruleset data these remain unprovable here: the first needs
     // the per-branch rules endpoint, the second needs somebody to try a push.
-    externalCheck('required status checks are enforced by GitHub, not advisory');
-    externalCheck('branch protection is effective (direct push and force-push refused)');
+    externalCheck('required status checks are enforced by GitHub, not advisory', null, CHECK_REQUIRED_CHECKS_ENFORCED);
+    externalCheck('branch protection is effective (direct push and force-push refused)', null, CHECK_BRANCH_PROTECTION_EFFECTIVE);
 }
 
 // The identity-side externals are reported in section 7, from the assessment
@@ -1289,7 +1710,7 @@ if ($mode === 'advisory' && $external > 0) {
 
 if ($jsonPath !== null) {
     $summary = [
-        'schema' => 1,
+        'schema' => SUMMARY_SCHEMA,
         'mode' => $mode,
         'total' => $passed + $failed + $external + $skipped,
         'passed' => $passed,
@@ -1301,6 +1722,23 @@ if ($jsonPath !== null) {
         'exit_code' => $exitCode,
         'exit_reason' => $exitReason,
         'unverified' => array_values($unverifiedItems),
+
+        // Schema 2 (M37 Phase 4B). Every FAIL, with the stable identifier the
+        // known-gap ratchet matches on. `id` is null for a check that has no
+        // published identifier; the ratchet treats that as an unknown failure
+        // and refuses to go green, which is the point.
+        'failures' => array_values($failures),
+
+        // The same items as `unverified`, carrying the stable identifier. The
+        // ratchet uses this to bound what is allowed to be unverified; if an
+        // item it expected to be answered has become unanswerable, that is
+        // incomplete verification, not an expected gap.
+        'unverified_detail' => array_values($unverifiedDetail),
+
+        // The authoritative identifier set, so the ratchet can reject a
+        // known-gap record naming a check that does not exist without keeping
+        // a second copy of this list.
+        'check_ids' => PUBLISHED_CHECK_IDS,
     ];
 
     // The summary is written outside this repository by whoever chose the

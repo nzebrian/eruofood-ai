@@ -89,6 +89,14 @@
       "workflow": ".github/workflows/ci-mobile.yml",
       "reason": "Not part of the M28 evidence set and not analysed by M29-A. Left out rather than required on an assumption.",
       "follow_up": "Audit its trigger conditions and job name before considering it."
+    },
+    {
+      "context": "Governance Advisory",
+      "workflow": ".github/workflows/governance-advisory.yml",
+      "reason": "Added by M37 Phase 4B. It reports what GitHub is actually enforcing, which is exactly the question no other check asks — but two of its findings are accepted governance gaps recorded in .github/governance/known-gaps.json, and one of them (the absent production tag ruleset) can only be closed by an administrative change to live GitHub state. Requiring the context while a known-and-accepted gap is open would block every pull request on a condition no pull request can fix.",
+      "advisory_does_not_mean_it_cannot_fail": "The job carries no continue-on-error, no `|| true` and no forced exit 0. A new governance failure, a recorded gap that has silently resolved, or evidence that could not be fetched all turn it red. It blocks nothing because it is absent from the ruleset — not because it was built unable to fail. .github/scripts/governance_advisory_wiring.py enforces that distinction from inside the required `CI · Workflow Integrity` context.",
+      "pull_request_path_filtered": false,
+      "follow_up": "Consider requiring it once .github/governance/known-gaps.json is empty. The job name is already the permanent context string, so promotion needs no rename — M29-I's finding is that renaming a job detaches any rule requiring the old name."
     }
   ],
   "verification": {

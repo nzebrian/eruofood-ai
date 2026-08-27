@@ -1,0 +1,58 @@
+{
+  "_meta": {
+    "artifact": "known-gaps",
+    "purpose": "The governance failures this repository has explicitly accepted, by stable check identifier. The Governance Advisory ratchet compares the live failure set against this record and goes red on any difference in either direction.",
+    "prepared_by": "M37 Phase 4B",
+    "prepared_against_main_sha": "1eb24b5e3207e004b41d73ed3f9b7d7c7def44ae",
+    "this_is_not_suppression": "A recorded gap is still reported as a FAIL by the validator, still counted in `failed`, and still printed on the console. Recording it here does not silence it; it states that somebody looked at it, decided not to fix it yet, and wrote down what they saw. The ratchet's job is to notice the moment that written-down state stops being true.",
+    "the_ratchet_bites_both_ways": "A NEW failure makes the advisory job red because it is not in this list. A recorded failure that DISAPPEARS also makes it red, because this file is then describing a repository that no longer exists, and a stale record of accepted risk is worse than none. Closing a gap therefore requires deleting its entry here, deliberately.",
+    "identifiers_are_a_contract": "The `id` values are published by apps/api/scripts/verify_repository_governance.php as CHECK_* constants and emitted in its --json summary under `failures[].id`. They are matched exactly. Renaming a constant without updating this file makes the ratchet fail on an unknown identifier, which is the intended failure mode.",
+    "how_to_verify": "php apps/api/scripts/verify_repository_governance.php --mode=strict --rulesets=<live> --codeowners-errors=<live> --json=summary.json && php apps/api/scripts/governance_ratchet.php --summary=summary.json"
+  },
+
+  "schema": 1,
+  "repository": "nzebrian/eruofood-ai",
+
+  "known_gaps": [
+    {
+      "id": "github.tag_rulesets_active",
+      "summary": "The prepared production tag rulesets have never been applied on GitHub.",
+      "observed_evidence": "active tag rulesets=0",
+      "recorded_on": "2026-08-27",
+      "approved_by": "repository owner — M37 Phase 4B implementation contract, locked decision D",
+      "why_not_closed": "Applying a ruleset is an administrative change to live GitHub state. Phase 4B is explicitly forbidden from applying, creating, editing, deleting or activating it. The gap is recorded so that it stays visible on every run instead of being rediscovered by a future audit.",
+      "material_risk": "`.github/governance/required-checks.json` records release.yml as `governed_instead_by` this ruleset. While the ruleset is absent, that governance claim is false: production tags are unprotected — nothing prevents a tag being moved, deleted or recreated.",
+      "how_to_close": "Apply .github/governance/production-tags-ruleset.json on GitHub, confirm `GET /rulesets` reports two active rulesets with target=tag, then delete this entry. The ratchet will go red until the entry is removed."
+    },
+    {
+      "id": "github.codeowners_errors_zero",
+      "summary": "GitHub reports zero CODEOWNERS errors, but the file contains no active rule, so it routes no review to anybody.",
+      "observed_evidence": "zero errors, but no rule is active — a commented-out file also reports zero",
+      "recorded_on": "2026-08-27",
+      "approved_by": "repository owner — M37 Phase 4B implementation contract, locked decision A, gap 2",
+      "why_not_closed": "Closing it requires naming real human GitHub accounts as code owners. Nobody may invent an identity to satisfy a check, and the repository is operating under a declared SOLE_OWNER ownership mode in which there is no second human to name. `.github/governance/identities.json` is deliberately absent.",
+      "material_risk": "An empty effective CODEOWNERS is indistinguishable from a working one when judged by the error count alone. That is the exact defect M29-A found — six teams named for months, every one unresolvable — reached from the opposite direction.",
+      "how_to_close": "Populate .github/governance/identities.json with real handles, render CODEOWNERS from it, confirm `GET /codeowners/errors` returns zero across at least one active rule, then delete this entry."
+    }
+  ],
+
+  "expected_unverified": {
+    "_note": "Check identifiers that are allowed to remain EXTERNAL / ADMIN REQUIRED. This is a SUBSET bound, not an exact match: an item leaving this set (GitHub starting to answer something it did not answer before) is an improvement and must not need a record edit to stay green, whereas an item entering it means verification has got worse — an API outage, a permission change, a payload GitHub stopped sending — and that is incomplete verification, never an expected gap.",
+    "ids": [
+      "github.identity_accounts_exist",
+      "github.identity_accounts_write_access",
+      "github.release_actor_id_valid",
+      "github.no_bypass_actors",
+      "github.required_checks_enforced",
+      "github.branch_protection_effective"
+    ],
+    "why_each": {
+      "github.identity_accounts_exist": "Needs GitHub to confirm an account exists. No identities are configured.",
+      "github.identity_accounts_write_access": "Needs GitHub to confirm push access. No identities are configured.",
+      "github.release_actor_id_valid": "Needs GitHub to accept the actor id in a bypass_actors payload. No release actor is configured.",
+      "github.no_bypass_actors": "GET /rulesets does not include a bypass_actors field at all. M37 Phase 4B stopped reading that absence as an empty list. Its review then found a second way to reach a vacuous PASS — returning one after examining NO enforcing ruleset — and that is now EXTERNAL too: an affirmative result requires at least one classified, enforcing ruleset that explicitly supplied an empty array. Closing this gap needs an evidence source that actually carries the field.",
+      "github.required_checks_enforced": "Needs the per-branch rules endpoint, which the workflow token cannot read.",
+      "github.branch_protection_effective": "Needs somebody to actually attempt a direct push and a force-push. No API answers it."
+    }
+  }
+}
