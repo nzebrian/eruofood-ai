@@ -62,6 +62,13 @@ coverage/
 .turbo/
 .php-cs-fixer.cache
 
+# Python bytecode. Nothing in this repository is a Python package, but several
+# validators are Python scripts, and `python3 -m py_compile` or an import during
+# debugging drops __pycache__ next to them. M36 covered apps/mobile/scripts the
+# same way; this covers .github/scripts and anywhere else.
+__pycache__/
+*.py[cod]
+
 # ---- Always keep directory placeholders ----
 !**/.gitkeep
 dump.rdb

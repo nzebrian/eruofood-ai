@@ -1,0 +1,272 @@
+name: Governance Advisory
+
+# Asks GitHub what it is actually enforcing, and compares the answer with what
+# this repository claims.
+#
+# Every other governance check in this repository reads files. That is the
+# limitation M29-A was built around: `.github/CODEOWNERS` named six teams for
+# months, every one of them unresolvable, and no amount of reading the file
+# could have revealed it. Only GitHub knew. Until now nothing asked GitHub.
+#
+# ## Advisory means not required. It does not mean incapable of failing.
+#
+# This job is absent from the `main` ruleset, so a red run blocks no merge. It
+# is NOT wrapped in continue-on-error, `|| true`, or a forced exit 0 — a job
+# that cannot go red is indistinguishable from a job that checks nothing, which
+# is the failure mode this entire milestone exists to prevent.
+# `.github/scripts/m37_governance_advisory_control.sh` enforces that, and runs
+# inside the required `CI · Workflow Integrity` context.
+#
+# ## Why the verdict comes from the ratchet, not the validator
+#
+# With real evidence the validator fails today, for two accepted reasons
+# recorded in `.github/governance/known-gaps.json`. Its non-zero exit is
+# therefore expected input, not a result — so this job captures it and hands
+# the structured summary to the ratchet, which is green only when the observed
+# failure set is exactly the recorded one. A new failure, a recorded gap that
+# has silently resolved, or evidence that could not be fetched all turn it red,
+# each with a distinguishable reason.
+
+on:
+  # No `paths:` on `pull_request`, deliberately, and no `paths-ignore:` either.
+  #
+  # This repository has paid for that lesson four times (M29-A, M29-I, M32).
+  # GitHub treats a required status check that never reports as PENDING rather
+  # than satisfied, so a path filter here would quietly disqualify this context
+  # from ever being required. Encoding "this must never be required" into a
+  # trigger is how `ci-mobile.yml` became a standing open question.
+  #
+  # The job installs PHP, fetches two public endpoints and runs two scripts.
+  # Running it on every pull request costs about a minute.
+  pull_request:
+
+  push:
+    branches: [main]
+    paths:
+      - ".github/governance/**"
+      - ".github/CODEOWNERS"
+      - ".github/workflows/governance-advisory.yml"
+      - "apps/api/scripts/verify_repository_governance.php"
+      - "apps/api/scripts/governance_ratchet.php"
+
+  # The trigger that actually matters. Ruleset drift happens on GitHub, not in
+  # a commit: somebody edits a rule in the web UI, adds a bypass actor, or
+  # switches enforcement to evaluate-only, and no pull request is ever opened.
+  # Without a schedule this job would only notice by coincidence.
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC. Off the hour so it does not
+      # queue behind everything else that runs at :00.
+
+  workflow_dispatch:
+
+# Read-only, and nothing more is needed: both endpoints below answer
+# unauthenticated on a public repository, so this job holds no secret worth
+# stealing and can do nothing with the token but read. That also makes it safe
+# on pull requests from forks, which receive a read-only token by default.
+permissions:
+  contents: read
+
+concurrency:
+  group: governance-advisory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    # The context string. GitHub matches a required status check against the
+    # JOB name, never the workflow name, so this is the load-bearing one.
+    #
+    # It is deliberately permanent. M29-I's finding is that renaming a job
+    # detaches any rule requiring the old name, so a name like
+    # "Governance Advisory (non-blocking)" would have to be renamed — the one
+    # operation this repository has documented as dangerous — the day anybody
+    # wanted to require it. "Advisory" is expressed by absence from the
+    # ruleset, and recorded in `.github/governance/required-checks.json` under
+    # `deliberately_not_required`.
+    #
+    # It contains no U+00B7 MIDDLE DOT, so it cannot collide with, or be
+    # produced by mistyping, any of the eight required contexts.
+    name: Governance Advisory
+    runs-on: ubuntu-latest
+
+    # Measured, not guessed: the validator runs in ~0.4s and the ratchet in
+    # well under that; PHP setup plus `composer install --no-dev` dominates.
+    # Ten minutes is ample headroom and short enough that a hung run cannot sit
+    # for the six hours GitHub would otherwise allow.
+    timeout-minutes: 10
+
+    env:
+      EVIDENCE: ${{ github.workspace }}/governance-evidence
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+
+      - name: Install PHP dependencies (no dev)
+        working-directory: apps/api
+        # The validator autoloads five classes from modules/Shared, all under
+        # the non-dev PSR-4 map, and none of them touches a vendor package. So
+        # --no-dev is sufficient, and it keeps the dev toolchain out of a job
+        # whose only purpose is reading configuration.
+        run: composer install --no-dev --no-interaction --no-progress --prefer-dist
+
+      - name: Prove the validator and the ratchet still bite
+        working-directory: apps/api
+        # Runs before anything is fetched, deliberately. If the evidence
+        # boundary or the ratchet has regressed, that must surface as its own
+        # failure rather than as a confusing verdict computed by broken code.
+        #
+        # These need PHP, which is why they live here and not in
+        # `CI · Workflow Integrity` — that gate is deliberately free of PHP,
+        # Composer and network access. The wiring controls that protect THIS
+        # workflow do run there, because they need none of it.
+        run: php scripts/m37_advisory_negative_control.php
+
+      - name: Fetch live governance evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Deliberately exits 0 even when GitHub cannot be reached.
+        #
+        # That is not `|| true` masking: a failed fetch is a real outcome this
+        # job must report, and hard-failing here would kill the run before the
+        # ratchet could distinguish "GitHub is down" from "somebody removed
+        # branch protection". Instead the status is recorded structurally, the
+        # evidence file is NOT written, and the ratchet turns an unreachable
+        # endpoint into an INCOMPLETE verdict — red, but red for the right
+        # reason.
+        #
+        # `curl -f` alone is not enough here either: the process exit status is
+        # not the HTTP status, and a 403 body is valid JSON that would sail
+        # into the validator as an empty ruleset list.
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE}"
+          mkdir -p "${EVIDENCE}"
+
+          status_json="${EVIDENCE}/evidence-status.json"
+          entries=""
+
+          fetch() {
+            local name="$1" path="$2" out="$3" expect="$4"
+            local body="${EVIDENCE}/.raw-${name}" code state detail
+
+            # --fail is deliberately absent: a non-2xx must still produce a
+            # captured status rather than a dead shell.
+            if ! code="$(curl -sS --max-time 30 --retry 2 --retry-connrefused \
+                  -o "$body" -w '%{http_code}' \
+                  -H "Authorization: Bearer ${GH_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" \
+                  "https://api.github.com/repos/${GITHUB_REPOSITORY}/${path}")"; then
+              code="000"
+            fi
+
+            echo "GET /${path} -> HTTP ${code}"
+
+            state="ok"
+            detail="HTTP ${code}"
+
+            if [ "$code" != "200" ]; then
+              state="unavailable"
+            elif [ ! -s "$body" ]; then
+              state="empty"
+              detail="HTTP 200 with an empty body"
+            elif ! jq -e "${expect}" "$body" >/dev/null 2>&1; then
+              state="unexpected_shape"
+              detail="HTTP 200, but the payload is not ${expect}"
+            fi
+
+            if [ "$state" = "ok" ]; then
+              # Only a verified-good payload is ever promoted to evidence.
+              mv "$body" "$out"
+            else
+              # No evidence file means the validator is invoked without the
+              # flag, so the affected checks stay EXTERNAL / ADMIN REQUIRED
+              # rather than being judged from a body nobody can trust.
+              rm -f "$body"
+            fi
+
+            entries="${entries}$(jq -nc --arg n "$name" --arg s "$state" --arg d "$detail" \
+              '{($n): {status: $s, detail: $d}}')"
+          }
+
+          fetch rulesets "rulesets" "${EVIDENCE}/rulesets.json" 'type == "array"'
+          fetch codeowners_errors "codeowners/errors" "${EVIDENCE}/codeowners-errors.json" 'type == "object"'
+
+          # No token, header or URL credential is ever written here — only the
+          # endpoint nickname, a status word and an HTTP code.
+          printf '%s' "$entries" | jq -s '{endpoints: add}' > "$status_json"
+          cat "$status_json"
+
+      - name: Governance validation
+        working-directory: apps/api
+        # Exit 0/1/2 are all legitimate results that the ratchet interprets, so
+        # they are captured rather than propagated. Exit 3 is not: it means the
+        # validator could not run, and a run that produced no verdict must fail
+        # here rather than hand the ratchet a summary that means nothing.
+        run: |
+          set -euo pipefail
+          args=(--mode=advisory --json="${EVIDENCE}/summary.json")
+
+          if [ -f "${EVIDENCE}/rulesets.json" ]; then
+            args+=(--rulesets="${EVIDENCE}/rulesets.json")
+          fi
+
+          if [ -f "${EVIDENCE}/codeowners-errors.json" ]; then
+            args+=(--codeowners-errors="${EVIDENCE}/codeowners-errors.json")
+          fi
+
+          code=0
+          php scripts/verify_repository_governance.php "${args[@]}" \
+            | tee "${EVIDENCE}/report.txt" || code=$?
+
+          echo "validator exit: ${code}"
+
+          if [ "$code" -eq 3 ]; then
+            echo "::error::the governance validator could not run (exit 3)"
+            exit 1
+          fi
+
+      - name: Known-gap ratchet
+        working-directory: apps/api
+        # THE VERDICT. Its exit status is the job's, unguarded and unmasked: no
+        # continue-on-error, no `|| true`, no captured exit code. A new
+        # governance failure, a stale recorded gap, or unreachable evidence all
+        # make this job red.
+        run: |
+          php scripts/governance_ratchet.php \
+            --summary="${EVIDENCE}/summary.json" \
+            --evidence-status="${EVIDENCE}/evidence-status.json" \
+            --json="${EVIDENCE}/ratchet.json" \
+            | tee "${EVIDENCE}/ratchet.txt"
+
+      - name: Publish the verdict
+        # `always()` here does NOT mask anything: it runs a reporting step after
+        # a step that has already failed. The job's conclusion is decided by the
+        # ratchet above, and nothing in this step can change it.
+        if: always()
+        # Built entirely from the two JSON documents. Nothing scrapes console
+        # text, so a reworded message cannot change what this reports.
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/governance_advisory_summary.py \
+            --summary "${EVIDENCE}/summary.json" \
+            --ratchet "${EVIDENCE}/ratchet.json" \
+            --evidence-status "${EVIDENCE}/evidence-status.json" \
+            --known-gaps .github/governance/known-gaps.json \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-evidence
+          path: ${{ env.EVIDENCE }}
+          # A missing artifact would mean the run produced no reviewable trace,
+          # which is worse than a red job — it is a red job nobody can audit.
+          if-no-files-found: error
+          retention-days: 30
