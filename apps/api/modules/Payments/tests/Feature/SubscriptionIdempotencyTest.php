@@ -116,9 +116,13 @@ it('does not create a second subscription when the same key and payload are retr
 
     // One subscription, and the retry is answered 200 rather than 201 — the
     // status is how a client tells "I created it" from "you already had it".
+    //
+    // `toEqual`, not `toBe`: the replay is read back from a `jsonb` column,
+    // which does not preserve key order. Same keys, same values, possibly a
+    // different order — which is the guarantee the endpoint actually makes.
     expect(subscriptionCount())->toBe(1)
         ->and($second['id'])->toBe($first['id'])
-        ->and($second)->toBe($first);
+        ->and($second)->toEqual($first);
 });
 
 it('replays the original result rather than a freshly computed one', function (): void {
@@ -494,7 +498,7 @@ it('leaves the existing payment idempotency behaviour intact', function (): void
         ->postJson('/api/v1/payments/payments', $payload)->assertOk()->json('data');
 
     expect($second['payment_id'])->toBe($first['payment_id'])
-        ->and($second)->toBe($first);
+        ->and($second)->toEqual($first);
 
     // `payments.initiate` still claims under the raw key with no principal
     // recorded — M41 changed the subscription path, not this one.
