@@ -145,6 +145,62 @@ final class EloquentSearchAnalyticsRepository implements SearchAnalyticsReposito
         );
     }
 
+    public function countQueriesBefore(DateTimeImmutable $before): int
+    {
+        return (int) SearchQueryLogModel::query()
+            ->where('created_at', '<', $before)
+            ->count();
+    }
+
+    /**
+     * Delete expired query-log rows in bounded batches (M40-SEC-001).
+     *
+     * ## Why ids, and not `DELETE … LIMIT`
+     *
+     * MySQL accepts `LIMIT` on `DELETE`; PostgreSQL does not, and PostgreSQL is
+     * what this platform deploys on. So each batch selects at most
+     * `$chunkSize` primary keys and deletes exactly those — portable across
+     * both engines and across SQLite, which is what the test suite runs.
+     *
+     * ## Why batches at all
+     *
+     * The first purge on an installation that has been logging since M38 could
+     * face a very large backlog. One statement over all of it would hold locks
+     * for the duration and bloat WAL. A sequence of small deletes is
+     * interruptible: killing it mid-run leaves the rows it has already removed
+     * removed, and the rest still there for the next run.
+     *
+     * The loop is bounded by data, not by a fixed iteration count: it stops as
+     * soon as a batch comes back empty, so a purge with nothing to do performs
+     * exactly one cheap indexed SELECT.
+     *
+     * Strictly `<`: a row whose timestamp equals the cutoff is inside the
+     * retention window and survives.
+     */
+    public function purgeQueriesBefore(DateTimeImmutable $before, int $chunkSize): int
+    {
+        $chunk = max(1, $chunkSize);
+        $removed = 0;
+
+        do {
+            /** @var list<string> $ids */
+            $ids = SearchQueryLogModel::query()
+                ->where('created_at', '<', $before)
+                ->orderBy('created_at')
+                ->limit($chunk)
+                ->pluck('id')
+                ->all();
+
+            if ($ids === []) {
+                break;
+            }
+
+            $removed += (int) SearchQueryLogModel::query()->whereIn('id', $ids)->delete();
+        } while (count($ids) === $chunk);
+
+        return $removed;
+    }
+
     /**
      * Group the query log by term.
      *

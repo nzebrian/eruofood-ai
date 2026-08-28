@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EruoFood\Search\Domain\Analytics;
 
+use DateTimeImmutable;
 use EruoFood\Search\Domain\Enum\SearchType;
 
 /**
@@ -87,4 +88,24 @@ interface SearchAnalyticsRepository
     public function recentForUser(string $userId, int $limit): array;
 
     public function metrics(int $days): SearchMetrics;
+
+    /**
+     * How many logged queries are older than `$before` (M40-SEC-001).
+     *
+     * Exists so a purge can be reported before it is performed. `Destroy` is
+     * irreversible, so the dry run has to be able to say how much would go.
+     */
+    public function countQueriesBefore(DateTimeImmutable $before): int;
+
+    /**
+     * Delete logged queries older than `$before`, in bounded batches.
+     *
+     * Returns the number of rows removed. Implementations MUST delete strictly
+     * `< $before` — a row exactly at the cutoff is inside the retention window
+     * and is kept — and MUST NOT materialise the table in memory: this runs
+     * against a log that grows with every search on the platform.
+     *
+     * @param int $chunkSize maximum rows per statement
+     */
+    public function purgeQueriesBefore(DateTimeImmutable $before, int $chunkSize): int;
 }

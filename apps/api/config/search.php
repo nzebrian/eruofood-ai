@@ -139,6 +139,39 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Query-log retention (M40-SEC-001)
+    |--------------------------------------------------------------------------
+    | `search_query_log` stores the VERBATIM text somebody typed, next to their
+    | `user_id`. Before M40 it was written on every search and never removed, so
+    | the platform accumulated an attributable record of what every user had
+    | looked for, for as long as the database lived. M39 limited what is
+    | PUBLISHED from that table; it did nothing about what is STORED.
+    |
+    | The declared policy lives in `RetentionRegistry::platformDefaults()` under
+    | `search.query_log`; this is the period it reads.
+    |
+    | Why 90 days. The analytics that consume this table use much shorter
+    | windows — trending defaults to 7 days (`trending_days`) and the admin
+    | dashboards to 30 (`SearchAdminController::days()`). 90 leaves room for
+    | quarter-over-quarter comparison with a wide margin while being nowhere
+    | near indefinite. The admin dashboard accepts a `days` parameter up to 365;
+    | beyond the retention window it will simply have less to report, which is
+    | the intended trade and is documented rather than hidden.
+    |
+    | Nothing is deleted automatically. `search:purge-query-log` performs the
+    | removal and its scheduled task ships DISABLED — see SearchServiceProvider.
+    */
+    'query_log_retention_days' => (int) env('SEARCH_QUERY_LOG_RETENTION_DAYS', 90),
+
+    /*
+    | Rows deleted per statement. Bounded so a first purge over a large backlog
+    | is a series of small, interruptible deletes rather than one long
+    | lock-holding transaction.
+    */
+    'query_log_purge_chunk' => (int) env('SEARCH_QUERY_LOG_PURGE_CHUNK', 1000),
+
+    /*
+    |--------------------------------------------------------------------------
     | Reindex map: domain event name => [document type, source provider key].
     | The event carries only an id; the index manager asks the named source
     | provider to hydrate the document from the owning context's table (a

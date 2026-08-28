@@ -181,6 +181,18 @@ function adminBackedAutocomplete(): AutocompleteService
             {
                 return $this->inner->metrics($days);
             }
+
+            // Retention (M40-SEC-001) is irrelevant to this M39 control, but the
+            // port declares it, so the stub delegates rather than pretending.
+            public function countQueriesBefore(\DateTimeImmutable $before): int
+            {
+                return $this->inner->countQueriesBefore($before);
+            }
+
+            public function purgeQueriesBefore(\DateTimeImmutable $before, int $chunkSize): int
+            {
+                return $this->inner->purgeQueriesBefore($before, $chunkSize);
+            }
         },
         8,
         7,

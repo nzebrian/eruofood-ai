@@ -225,9 +225,84 @@ a term repeated often enough by a single determined user still qualifies, and it
 offers no protection against an attacker who can generate occurrences. Raw query
 strings remain sensitive data.
 
-> **Not solved here.** `search_query_log` has no retention or pruning policy, so
-> query strings are kept indefinitely. That is tracked separately as
-> **M39-SEC-003** and is *not* addressed by this work.
+> **Storage is a separate control from disclosure.** §6.1b covers retention.
+
+### 6.1b Query-log retention (M40-SEC-001)
+
+`search_query_log` stores the **verbatim text somebody typed**, alongside the
+`user_id` who typed it, written on every executed search. Until M40 nothing ever
+removed a row, so the platform accumulated an attributable record of what every
+user had searched for, indefinitely. §6.1a limits what is *published*; this
+limits what is *kept*.
+
+The policy is declared in the platform register —
+`RetentionRegistry::platformDefaults()`, key **`search.query_log`** — alongside
+identity documents, rider locations, the ledger and the audit trail:
+
+| | |
+|---|---|
+| **What is retained** | one row per executed search: term, scope, result count, `user_id`, `created_at` |
+| **Why** | measure what people fail to find, so the catalogue and synonyms can be corrected. The value is in the aggregate |
+| **Retention** | **90 days** (`SEARCH_QUERY_LOG_RETENTION_DAYS`) |
+| **Category** | `OperationalRecord` — *not* `TransientTechnical`, because that category may enter telemetry and query strings must not |
+| **Deletion mode** | **`Destroy`** — a hard delete, not anonymisation |
+| **User identifiers** | retained inside the window, destroyed with the row |
+| **Erasure requests** | honoured (`OperationalRecord`) |
+
+**Why hard delete and not anonymisation.** Dropping `user_id` would leave the
+verbatim query string in place, and the string is the sensitive part. Removing
+the row removes both.
+
+**Why 90 days.** Not a legal requirement — no regulation in this repository
+demands a search-log period. It is derived from what the analytics actually use:
+trending defaults to 7 days, admin dashboards to 30. Ninety leaves room for
+quarter-over-quarter comparison with a wide margin. The admin dashboard accepts
+`days` up to 365; past the retention window it simply has less to report, which
+is the intended trade.
+
+#### Running it
+
+```
+php artisan search:purge-query-log --dry-run     # report only, deletes nothing
+php artisan search:purge-query-log               # purge at the configured window
+php artisan search:purge-query-log --days=30     # override the window
+php artisan search:purge-query-log --chunk=500   # rows per statement
+```
+
+Deletion is strictly `created_at < cutoff` — a row *at* the cutoff is inside the
+window and survives — performed in bounded batches so a first purge over a large
+backlog is a series of small interruptible deletes rather than one long
+lock-holding transaction. The command prints **counts and timestamps only**:
+never a term, never a `user_id`. A non-positive `--days` is refused with a
+non-zero exit rather than emptying the table.
+
+#### Scheduler state — operator action required
+
+The task is **registered and DISABLED**:
+
+```
+name:    search:purge-query-log
+cadence: Daily
+enabled: false
+```
+
+Nothing is deleted automatically. This matches the convention every task in
+`ScheduleRegistry` already follows — both of Payments' are off too — because an
+unattended irreversible delete against production data is an operator decision
+about a specific database, not a default inherited by upgrading.
+
+**To enable:** re-register the task in `SearchServiceProvider` with
+`enabled: true`, confirm `SEARCH_QUERY_LOG_RETENTION_DAYS` for that environment,
+and run `--dry-run` first. Until then the declared policy is enforced only when
+somebody runs the command, and the gap between *declared* and *enforced* is
+visible rather than assumed away.
+
+#### What is not deleted
+
+Only `search_query_log`. `search_documents`, `search_clicks` and saved searches
+are untouched — `search_clicks` rows reference a `query_id` that may outlive its
+query, which is why click attribution is computed within the analytics window
+rather than by joining to the log.
 
 ### 6.2 Public read-path inventory
 
@@ -292,6 +367,8 @@ SEARCH_USE_PGVECTOR=true
 SEARCH_EMBEDDING_DIMS=64
 SEARCH_CAPABILITY_TTL=30            # seconds a probed capability may be reused; 0 = always re-probe
 SEARCH_PUBLIC_TERM_MIN_OCCURRENCES=3  # public trending/suggestions suppression threshold (§6.1a); 1 disables it
+SEARCH_QUERY_LOG_RETENTION_DAYS=90    # query-log retention window (§6.1b)
+SEARCH_QUERY_LOG_PURGE_CHUNK=1000     # rows deleted per statement during a purge
 POSTGRES_IMAGE=pgvector/pgvector:pg16
 ```
 
@@ -314,7 +391,8 @@ long as it ran. The memo is therefore bounded rather than permanent.
 - **Embeddings are lexical, not semantic** (§5).
 - **Geo distance is computed in PHP** with no spatial index.
 - `state` filtering is refined in PHP, so totals for it are upper bounds.
-- **Query-log retention is unbounded (M39-SEC-003).** `search_query_log` has no
-  pruning job and no retention window, so raw query strings accumulate
-  indefinitely. The public-analytics suppression in §6.1a limits what is
-  *published*; it does nothing about what is *stored*. Open work item.
+- **Query-log retention is declared but not scheduled (M40-SEC-001).** The
+  policy and the `search:purge-query-log` command exist (§6.1b), but the
+  scheduled task ships disabled, so nothing is removed until an operator enables
+  it or runs the command. Deliberate: enabling an unattended irreversible delete
+  is an environment decision.
