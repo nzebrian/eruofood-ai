@@ -38,6 +38,9 @@ it('guards every money-moving operation with an idempotency scope', function ():
         'marketplace.checkout',
         'payments.initiate',
         'payments.refund',
+        // M41. A subscription is a standing charge, so a duplicate is not one
+        // extra payment but one extra payment every billing period.
+        'payments.subscription',
         'payments.wallet.topup',
         'payments.wallet.transfer',
     ];

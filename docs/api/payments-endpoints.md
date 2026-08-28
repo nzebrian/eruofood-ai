@@ -39,7 +39,7 @@ provider management need the `admin` role. Money is in **integer minor units**
 |---|---|
 | `GET /payments/methods` · `POST /payments/methods` | List / save a tokenised method (PCI-safe: token + brand + last4). |
 | `POST /payments/methods/{id}/default` · `DELETE /payments/methods/{id}` | Make default / delete. |
-| `GET /payments/subscriptions` · `POST /payments/subscriptions` | List / start a subscription (`plan`, `amount_minor`, `interval`). |
+| `GET /payments/subscriptions` · `POST /payments/subscriptions` | List / start a subscription (`plan`, `amount_minor`, `interval`). Send `Idempotency-Key` to make a retry safe: the same key and body replays the original subscription (200 rather than 201), the same key with a different body is refused, and the key is scoped to the caller — two users may use the same value independently. |
 | `POST /payments/subscriptions/{id}/cancel` | Cancel a subscription. |
 
 ## Webhooks (public — provider-signed)
@@ -77,3 +77,6 @@ Payments never calls the Order module back directly.
 | `PAYMENTS_INVALID_STATE` | 422 | Illegal transition, insufficient balance, over-refund, split mismatch, bad webhook signature. |
 | `PAYMENTS_CONFLICT` | 409 | Duplicate idempotency key or webhook. |
 | `PAYMENTS_PROVIDER_ERROR` | 502 | Provider unavailable / returned an error. |
+| `IDEMPOTENCY_IN_FLIGHT` | 409 | An earlier request with this `Idempotency-Key` is still running. Nothing was changed; retry shortly. |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | This `Idempotency-Key` was already spent on a different body. Use a fresh key. |
+| `INVALID_ARGUMENT` | 422 | Malformed input — including an `Idempotency-Key` longer than 255 characters. |

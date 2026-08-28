@@ -75,7 +75,10 @@ modules/Payments/src/
 - **Money as integer minor units** everywhere; a **double-entry ledger** makes
   every movement balance and gives tax-ready reporting.
 - **Idempotency at two layers**: payments dedupe on the caller's idempotency
-  key; webhooks dedupe on the provider event id (exactly-once).
+  key; webhooks dedupe on the provider event id (exactly-once). Subscription
+  creation binds the key to the authenticated caller before claiming it, so one
+  customer's key can never reach another's record and two customers may use the
+  same key value independently.
 - **Escrow + settlement**: customer funds land in escrow; the settlement engine
   deducts commission/fees and pays vendors out to wallet or bank.
 - **PCI-aware**: only tokens + display data (brand/last4) are stored; a

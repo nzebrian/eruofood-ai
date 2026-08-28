@@ -31,10 +31,17 @@ interface IdempotencyStore
      *
      * If $work throws, the claim is released so a corrected retry can proceed.
      *
+     * $principalId records *whose* key this is. It is recorded on the claim for
+     * audit and erasure; it does not by itself isolate one caller's keys from
+     * another's, because the uniqueness constraint is on ($scope, $key). A
+     * caller that needs per-principal isolation must bind the principal into the
+     * key it passes — see
+     * {@see \EruoFood\Shared\Interface\Http\Concerns\UsesIdempotencyKey::principalScopedIdempotencyKey()}.
+     *
      * @param callable():array<string, mixed> $work
      * @return IdempotentResult the result, flagged as fresh or replayed
      */
-    public function execute(string $scope, ?string $key, string $requestHash, callable $work): IdempotentResult;
+    public function execute(string $scope, ?string $key, string $requestHash, callable $work, ?string $principalId = null): IdempotentResult;
 
     /** Discard expired keys. Returns how many were removed. */
     public function purgeExpired(): int;
