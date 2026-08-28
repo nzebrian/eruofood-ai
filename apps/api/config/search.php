@@ -120,6 +120,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Public analytics suppression (M39-SEC-001)
+    |--------------------------------------------------------------------------
+    | `/search/trending` and `/search/suggestions` are PUBLIC and serve terms
+    | other people typed. Two rules make a term publishable: it must have been
+    | searched on a scope the public may search (admin-only scopes are excluded
+    | in SQL), and it must have been searched at least this many times.
+    |
+    | A term below the threshold is withheld entirely, so a phrase one person
+    | searched once is never broadcast. This is privacy SUPPRESSION, not
+    | anonymity — a term repeated often enough by a single determined user still
+    | qualifies, and raw query strings remain sensitive data. Retention of the
+    | query log is tracked separately as M39-SEC-003 and is NOT solved here.
+    |
+    | Lowering this to 1 restores the pre-M39 behaviour and re-opens the leak.
+    */
+    'public_term_min_occurrences' => (int) env('SEARCH_PUBLIC_TERM_MIN_OCCURRENCES', 3),
+
+    /*
+    |--------------------------------------------------------------------------
     | Reindex map: domain event name => [document type, source provider key].
     | The event carries only an id; the index manager asks the named source
     | provider to hydrate the document from the owning context's table (a

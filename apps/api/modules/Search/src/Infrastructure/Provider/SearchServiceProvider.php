@@ -167,6 +167,9 @@ final class SearchServiceProvider extends ServiceProvider
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.trending_days', 7),
             (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.recent_limit', 10),
             $app->make(SearchScopeGate::class),
+            // M39-SEC-001: how many times a term must have been searched on a
+            // public scope before it may be shown to an anonymous caller.
+            (int) $app->make(\Illuminate\Contracts\Config\Repository::class)->get('search.public_term_min_occurrences', 3),
         ));
 
         // Event → index translator.

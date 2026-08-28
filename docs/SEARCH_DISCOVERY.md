@@ -182,6 +182,53 @@ Services pass the gate's **return value** (the resolved scope) to the index. The
 first implementation discarded it and passed the caller's raw type on, which is
 how a request authorised as "public" was executed as "unfiltered".
 
+### 6.1a Public analytics are a separate boundary (M39-SEC-001)
+
+`/search/trending` and `/search/suggestions` are public and serve **terms other
+people typed**. Before M39 they consumed `SearchAnalyticsRepository::trending()`
+and `::popular()` directly — the *administrative* reads, which aggregate every
+row in `search_query_log` regardless of the scope it was recorded against and
+apply no occurrence threshold. An anonymous caller therefore received:
+
+- terms an administrator typed against the admin-only `user` scope;
+- any authenticated user's terms, on any scope;
+- terms searched **once, by one person**.
+
+Documents never leaked — §6.1 held throughout — but query strings did.
+
+**Two separate read paths now exist, and they are not interchangeable:**
+
+| Method | Audience | Scope | Threshold |
+|---|---|---|---|
+| `publicTerms($days, $limit, $minOccurrences)` | public routes | `SearchType::publicScopeValues()` | `search.public_term_min_occurrences` (default **3**) |
+| `popular()` / `failed()` / `trending()` | admin routes only | every scope | none |
+
+Administrative analytics are deliberately **not** narrowed. Operators need
+cross-scope and zero-result visibility — that is the point of failed-search
+analysis — and restricting them would break the dashboards without improving
+anything, because those endpoints are already behind `admin` RBAC.
+
+**Why `publicScopeValues()` and not `Global->documentTypeValues()`.**
+`search_query_log.type` records the scope *named on the request*, and a default
+public search names `global`, which is **not** one of `Global`'s document types.
+Filtering on `documentTypeValues()` alone would drop the most common public
+search and quietly empty out trending. `publicScopeValues()` is every case that
+is not admin-only — the seven public document types **plus `global`** — derived
+from `SearchType::cases()` so a future admin-only scope is excluded
+automatically.
+
+**What the threshold does and does not give you.** A term must have at least
+three qualifying public-scope occurrences before it can appear publicly; below
+that it is withheld entirely, enforced as a SQL `HAVING` so a suppressed term is
+never read out of the database. This is **privacy suppression, not anonymity**:
+a term repeated often enough by a single determined user still qualifies, and it
+offers no protection against an attacker who can generate occurrences. Raw query
+strings remain sensitive data.
+
+> **Not solved here.** `search_query_log` has no retention or pruning policy, so
+> query strings are kept indefinitely. That is tracked separately as
+> **M39-SEC-003** and is *not* addressed by this work.
+
 ### 6.2 Public read-path inventory
 
 | Route | Auth | Accepted `type` | Documents it may return | Result cache | Repository call |
@@ -244,6 +291,7 @@ SEARCH_FTS_ENABLED=true             # pg_trgm intent
 SEARCH_USE_PGVECTOR=true
 SEARCH_EMBEDDING_DIMS=64
 SEARCH_CAPABILITY_TTL=30            # seconds a probed capability may be reused; 0 = always re-probe
+SEARCH_PUBLIC_TERM_MIN_OCCURRENCES=3  # public trending/suggestions suppression threshold (§6.1a); 1 disables it
 POSTGRES_IMAGE=pgvector/pgvector:pg16
 ```
 
@@ -266,3 +314,7 @@ long as it ran. The memo is therefore bounded rather than permanent.
 - **Embeddings are lexical, not semantic** (§5).
 - **Geo distance is computed in PHP** with no spatial index.
 - `state` filtering is refined in PHP, so totals for it are upper bounds.
+- **Query-log retention is unbounded (M39-SEC-003).** `search_query_log` has no
+  pruning job and no retention window, so raw query strings accumulate
+  indefinitely. The public-analytics suppression in §6.1a limits what is
+  *published*; it does nothing about what is *stored*. Open work item.
