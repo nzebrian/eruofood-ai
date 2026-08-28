@@ -78,7 +78,8 @@ modules/Payments/src/
   key; webhooks dedupe on the provider event id (exactly-once). Subscription
   creation binds the key to the authenticated caller before claiming it, so one
   customer's key can never reach another's record and two customers may use the
-  same key value independently.
+  same key value independently — and there the header is **required**, not
+  optional, because a duplicate standing instruction bills every period.
 - **Escrow + settlement**: customer funds land in escrow; the settlement engine
   deducts commission/fees and pays vendors out to wallet or bank.
 - **PCI-aware**: only tokens + display data (brand/last4) are stored; a

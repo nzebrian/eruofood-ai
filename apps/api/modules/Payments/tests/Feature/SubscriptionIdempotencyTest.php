@@ -332,15 +332,32 @@ it('ignores surrounding whitespace so a padded key is the same key', function ()
         ->and(subscriptionCount())->toBe(1);
 });
 
-it('treats an empty or absent key as no key at all', function (): void {
+it('refuses a request that carries no Idempotency-Key at all', function (): void {
+    $user = subscriber($this, 'sub-nokey@example.com');
+
+    // The guard is mandatory here, unlike elsewhere on the platform: silently
+    // serving the unguarded path would hand a retrying client a second standing
+    // charge, so the caller is told instead.
+    startSubscription($this, $user['token'])
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'INVALID_ARGUMENT');
+
+    expect(subscriptionCount())->toBe(0)
+        ->and(IdempotencyKeyModel::query()->count())->toBe(0);
+});
+
+it('refuses a blank or whitespace-only Idempotency-Key', function (): void {
     $user = subscriber($this, 'sub-empty@example.com');
 
-    // Idempotency is opt-in platform-wide, so an endpoint can adopt it without
-    // breaking callers that send nothing. Two unkeyed posts are two requests.
-    startSubscription($this, $user['token'])->assertCreated();
-    startSubscription($this, $user['token'], '   ')->assertCreated();
+    // "" and "   " are not keys. Accepting them would let every such caller
+    // share one claim, or none — both worse than a refusal.
+    foreach (['', '   ', "\t\n"] as $blank) {
+        startSubscription($this, $user['token'], $blank)
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'INVALID_ARGUMENT');
+    }
 
-    expect(subscriptionCount())->toBe(2)
+    expect(subscriptionCount())->toBe(0)
         ->and(IdempotencyKeyModel::query()->count())->toBe(0);
 });
 

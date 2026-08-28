@@ -25,9 +25,9 @@ uses(RefreshDatabase::class);
  * subscription service and the real table, and proves the paired assertion
  * tells the two apart. The five reversals the M41 contract names:
  *
- *   A. the database uniqueness guarantee removed
+ *   A. principal-scoped key derivation removed
  *   B. the request fingerprint comparison removed
- *   C. principal scoping removed
+ *   C. the database uniqueness protection removed
  *   D. the idempotency layer bypassed entirely
  *   E. a duplicate created by a read-then-write race
  *
@@ -65,11 +65,11 @@ function fingerprintOf(array $payload): string
 }
 
 // =============================================================================
-// A. The database uniqueness guarantee
+// C. The database uniqueness protection
 // =============================================================================
 
-it('M41 · A · proves the unique index, not the application, is what blocks the second claim', function (): void {
-    $key = derivedKey('11111111-1111-4111-8111-111111111111', 'control-a');
+it('M41 · C · proves the unique index, not the application, is what blocks the second claim', function (): void {
+    $key = derivedKey('11111111-1111-4111-8111-111111111111', 'control-c');
     $hash = str_repeat('a', 64);
 
     // The race-prone pattern the design forbids, played out against the REAL
@@ -97,7 +97,7 @@ it('M41 · A · proves the unique index, not the application, is what blocks the
     expect(IdempotencyKeyModel::query()->count())->toBe(1);
 });
 
-it('M41 · A · false-positive control — the table rejects duplicate keys, not every second row', function (): void {
+it('M41 · C · false-positive control — the table rejects duplicate keys, not every second row', function (): void {
     // If the write above failed for some unrelated reason, the control would be
     // vacuous. Two rows identical in every column EXCEPT the key insert fine,
     // so the rejection is attributable to (scope, idempotency_key) and nothing
@@ -105,8 +105,8 @@ it('M41 · A · false-positive control — the table rejects duplicate keys, not
     $hash = str_repeat('c', 64);
     $user = '22222222-2222-4222-8222-222222222222';
 
-    IdempotencyKeyModel::query()->create(claimRow(derivedKey($user, 'control-a1'), $hash, $user));
-    IdempotencyKeyModel::query()->create(claimRow(derivedKey($user, 'control-a2'), $hash, $user));
+    IdempotencyKeyModel::query()->create(claimRow(derivedKey($user, 'control-c1'), $hash, $user));
+    IdempotencyKeyModel::query()->create(claimRow(derivedKey($user, 'control-c2'), $hash, $user));
 
     expect(IdempotencyKeyModel::query()->count())->toBe(2);
 });
@@ -179,12 +179,12 @@ it('M41 · B · proves that refusal is the fingerprint comparison and nothing el
 });
 
 // =============================================================================
-// C. Principal scoping
+// A. Principal scoping
 // =============================================================================
 
-it('M41 · C · proves an unscoped key hands one user the other user\'s subscription', function (): void {
-    $alice = subscriber($this, 'control-c-alice@example.com');
-    $bob = subscriber($this, 'control-c-bob@example.com');
+it('M41 · A · proves an unscoped key hands one user the other user\'s subscription', function (): void {
+    $alice = subscriber($this, 'control-a-alice@example.com');
+    $bob = subscriber($this, 'control-a-bob@example.com');
 
     $store = app(IdempotencyStore::class);
     $service = app(SubscriptionService::class);
@@ -208,12 +208,12 @@ it('M41 · C · proves an unscoped key hands one user the other user\'s subscrip
         ->and(SubscriptionModel::query()->count())->toBe(1);
 });
 
-it('M41 · C · proves the pre-M41 house pattern refuses Bob rather than isolating him', function (): void {
+it('M41 · A · proves the pre-M41 house pattern refuses Bob rather than isolating him', function (): void {
     // Putting the actor in the fingerprint — what payments.initiate, refunds
     // and wallet moves do — stops the leak above. It does NOT give Bob his own
     // claim: he is told the key is spent, on a key he has never used.
-    $alice = subscriber($this, 'control-c2-alice@example.com');
-    $bob = subscriber($this, 'control-c2-bob@example.com');
+    $alice = subscriber($this, 'control-a2-alice@example.com');
+    $bob = subscriber($this, 'control-a2-bob@example.com');
 
     $store = app(IdempotencyStore::class);
     $service = app(SubscriptionService::class);
@@ -227,12 +227,12 @@ it('M41 · C · proves the pre-M41 house pattern refuses Bob rather than isolati
     expect(SubscriptionModel::query()->count())->toBe(1);
 });
 
-it('M41 · C · proves the shipped derivation isolates the two instead', function (): void {
+it('M41 · A · proves the shipped derivation isolates the two instead', function (): void {
     // Same two users, same key value, through the real endpoint. Both succeed,
     // each gets their own subscription, and neither claim is stored under the
     // key the clients sent.
-    $alice = subscriber($this, 'control-c3-alice@example.com');
-    $bob = subscriber($this, 'control-c3-bob@example.com');
+    $alice = subscriber($this, 'control-a3-alice@example.com');
+    $bob = subscriber($this, 'control-a3-bob@example.com');
 
     $hers = startSubscription($this, $alice['token'], 'shared-key')->assertCreated()->json('data.id');
     $his = startSubscription($this, $bob['token'], 'shared-key')->assertCreated()->json('data.id');
@@ -318,17 +318,17 @@ it('M41 · E · proves the claim-first ordering closes that window', function ()
 // Positive control
 // =============================================================================
 
-it('M41 · positive control — subscriptions still work, keyed and unkeyed', function (): void {
-    // The guard must not be "refuse everything". Both callers get what they
-    // asked for.
+it('M41 · positive control — genuinely distinct requests still both succeed', function (): void {
+    // The guard must not be "refuse everything". Two different keys are two
+    // different intentions, and both get what they asked for.
     $user = subscriber($this, 'control-positive@example.com');
 
-    $keyed = startSubscription($this, $user['token'], 'control-positive')->assertCreated()->json('data');
-    $unkeyed = startSubscription($this, $user['token'])->assertCreated()->json('data');
+    $first = startSubscription($this, $user['token'], 'control-positive-1')->assertCreated()->json('data');
+    $second = startSubscription($this, $user['token'], 'control-positive-2')->assertCreated()->json('data');
 
-    expect($keyed['status'])->toBe('active')
-        ->and($unkeyed['status'])->toBe('active')
-        ->and($unkeyed['id'])->not->toBe($keyed['id'])
+    expect($first['status'])->toBe('active')
+        ->and($second['status'])->toBe('active')
+        ->and($second['id'])->not->toBe($first['id'])
         ->and(subscriptionCount())->toBe(2);
 
     $this->withToken($user['token'])->getJson('/api/v1/payments/subscriptions')

@@ -46,9 +46,13 @@ final readonly class SubscriptionController
      * subscriptions for one user are indistinguishable from a customer who
      * genuinely wanted two. The billing sweep would then charge twice, for ever.
      *
-     * The key is optional, exactly as it is on payments, refunds and wallet
-     * moves: with one, a retry replays the original subscription (200); without
-     * one, the previous behaviour is unchanged.
+     * Unlike payments, refunds and wallet moves — where the header is optional
+     * and its absence merely forfeits the guard — the key is **required** here.
+     * A duplicate payment is one extra charge the customer can see and dispute;
+     * a duplicate subscription is one extra charge every period, and no later
+     * reconciliation can distinguish it from a customer who wanted two. A caller
+     * that omits the header is told so (422) rather than quietly served the
+     * unguarded path.
      *
      * ## Where the guarantee comes from
      *
@@ -76,7 +80,7 @@ final readonly class SubscriptionController
 
         $result = $this->idempotency->execute(
             'payments.subscription',
-            $this->principalScopedIdempotencyKey($request, $userId),
+            $this->requirePrincipalScopedIdempotencyKey($request, $userId),
             $this->requestFingerprint($data + ['actor' => $userId]),
             function () use ($data, $userId): array {
                 $sub = $this->subscriptions->start(

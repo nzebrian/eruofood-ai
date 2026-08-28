@@ -102,6 +102,30 @@ trait UsesIdempotencyKey
     }
 
     /**
+     * The same derivation, for an endpoint on which the key is mandatory.
+     *
+     * Most money-moving endpoints here treat the header as optional: a caller
+     * that omits it simply gets the old at-least-once behaviour. That is a
+     * reasonable default for an operation whose duplicate is one extra charge
+     * the customer can see and dispute.
+     *
+     * A subscription is not that. It is a standing instruction, so a duplicate
+     * is one extra charge *every billing period*, and two identical
+     * subscriptions are indistinguishable from a customer who wanted two — no
+     * later reconciliation can tell them apart. On this endpoint the guard is
+     * therefore not optional, and a caller that omits the header is told so
+     * rather than being quietly served the unguarded path.
+     *
+     * @throws InvalidArgumentException when the header is missing, blank or
+     *                                  longer than {@see MAX_IDEMPOTENCY_KEY_LENGTH}
+     */
+    protected function requirePrincipalScopedIdempotencyKey(Request $request, string $principalId): string
+    {
+        return $this->principalScopedIdempotencyKey($request, $principalId)
+            ?? throw new InvalidArgumentException('An Idempotency-Key header is required for this request.');
+    }
+
+    /**
      * A stable fingerprint of what the caller asked for.
      *
      * Keys are sorted so an equivalent request with its fields in a different
