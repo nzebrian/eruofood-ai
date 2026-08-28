@@ -8,6 +8,7 @@ use EruoFood\Payments\Infrastructure\Persistence\Eloquent\Model\SubscriptionMode
 use EruoFood\Shared\Infrastructure\Idempotency\Model\IdempotencyKeyModel;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -375,11 +376,18 @@ it('enforces the claim with a database uniqueness constraint, not a lookup', fun
     // window in which two concurrent retries both see "no claim yet".
     $unique = collect(Schema::getIndexes('shared_idempotency_keys'))
         ->filter(fn (array $i): bool => (bool) $i['unique'])
-        ->map(fn (array $i): array => $i['columns'])
+        ->map(function (array $i): array {
+            // Column order is not the property under test and is not guaranteed
+            // to be reported identically by every driver.
+            $columns = $i['columns'];
+            sort($columns);
+
+            return $columns;
+        })
         ->values()
         ->all();
 
-    expect($unique)->toContain(['scope', 'idempotency_key']);
+    expect($unique)->toContain(['idempotency_key', 'scope']);
 
     // And it fires. A second claim on the same (scope, key) cannot be written,
     // whatever the application layer believes.
@@ -394,8 +402,14 @@ it('enforces the claim with a database uniqueness constraint, not a lookup', fun
 
     IdempotencyKeyModel::query()->create(['id' => (string) Str::orderedUuid()] + $row);
 
-    expect(fn () => IdempotencyKeyModel::query()->create(['id' => (string) Str::orderedUuid()] + $row))
-        ->toThrow(UniqueConstraintViolationException::class);
+    // Nested so the violation rolls back a SAVEPOINT rather than the enclosing
+    // test transaction — on PostgreSQL an unwrapped one aborts everything after
+    // it, which is why the store wraps its own claim insert the same way.
+    expect(fn () => DB::transaction(
+        fn () => IdempotencyKeyModel::query()->create(['id' => (string) Str::orderedUuid()] + $row),
+    ))->toThrow(UniqueConstraintViolationException::class);
+
+    expect(IdempotencyKeyModel::query()->count())->toBe(1);
 });
 
 it('refuses a duplicate that arrives while the first is still in flight', function (): void {

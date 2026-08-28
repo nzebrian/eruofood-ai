@@ -9,6 +9,7 @@ use EruoFood\Shared\Domain\Idempotency\IdempotentResult;
 use EruoFood\Shared\Infrastructure\Idempotency\Model\IdempotencyKeyModel;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -83,7 +84,14 @@ it('M41 · A · proves the unique index, not the application, is what blocks the
     // Caller B's check already passed. Only the constraint stops it now — if
     // the index were dropped, B's insert would succeed and two requests would
     // each believe they owned the key.
-    expect(fn () => IdempotencyKeyModel::query()->create(claimRow($key, $hash)))
+    //
+    // The losing insert is wrapped exactly as `EloquentIdempotencyStore` wraps
+    // its own: on PostgreSQL a constraint violation aborts the *enclosing*
+    // transaction, which under RefreshDatabase is the whole test, so every
+    // later statement — including the count below — would fail with "current
+    // transaction is aborted". Nesting makes it a SAVEPOINT, so only the losing
+    // insert rolls back.
+    expect(fn () => DB::transaction(fn () => IdempotencyKeyModel::query()->create(claimRow($key, $hash))))
         ->toThrow(UniqueConstraintViolationException::class);
 
     expect(IdempotencyKeyModel::query()->count())->toBe(1);
