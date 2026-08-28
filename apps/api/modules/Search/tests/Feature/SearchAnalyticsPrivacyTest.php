@@ -43,14 +43,38 @@ uses(RefreshDatabase::class);
  */
 
 /**
+ * A stable UUID for a named fixture actor.
+ *
+ * `search_query_log.user_id` is a `uuid` column. SQLite stores any string there
+ * and PostgreSQL rejects it with SQLSTATE[22P02], so a readable label like
+ * "admin-1" passes locally and fails in CI — which is exactly what happened on
+ * the first push of this branch. The label is hashed into a valid v4-shaped
+ * UUID so the fixtures stay readable AND run on both engines.
+ */
+function fixtureActor(string $label): string
+{
+    $h = md5($label);
+
+    return sprintf(
+        '%s-%s-4%s-8%s-%s',
+        substr($h, 0, 8),
+        substr($h, 8, 4),
+        substr($h, 13, 3),
+        substr($h, 17, 3),
+        substr($h, 20, 12),
+    );
+}
+
+/**
  * Record a term `$times` on a given scope.
  *
  * Fixture terms are deliberately synthetic labels — no real names, health
  * information or personal data enters this repository's test data.
  */
-function logTerm(string $term, SearchType $type, int $times, string $userId = 'fixture-user'): void
+function logTerm(string $term, SearchType $type, int $times, string $actor = 'fixture-user'): void
 {
     $analytics = app(SearchAnalyticsRepository::class);
+    $userId = fixtureActor($actor);
 
     for ($i = 0; $i < $times; $i++) {
         $analytics->recordQuery($term, $type, 1, $userId);

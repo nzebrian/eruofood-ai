@@ -48,17 +48,24 @@ function seedPrivacyFixture(): void
 {
     $analytics = app(SearchAnalyticsRepository::class);
 
+    // `user_id` is a uuid column: SQLite accepts any string, PostgreSQL does
+    // not. See fixtureActor() in SearchAnalyticsPrivacyTest for why these are
+    // hashed labels rather than readable ones.
+    $admin = fixtureActor('admin-1');
+    $userC = fixtureActor('user-c');
+    $userA = fixtureActor('user-a');
+
     // Admin-only scope, most frequent term in the log — a filter that does
     // nothing cannot hide behind ordering.
     for ($i = 0; $i < 25; $i++) {
-        $analytics->recordQuery('admin scope term', SearchType::User, 1, 'admin-1');
+        $analytics->recordQuery('admin scope term', SearchType::User, 1, $admin);
     }
     // Public, over the threshold.
     for ($i = 0; $i < 5; $i++) {
-        $analytics->recordQuery('public trend candidate', SearchType::Global, 1, 'user-c');
+        $analytics->recordQuery('public trend candidate', SearchType::Global, 1, $userC);
     }
     // Public, one occurrence only.
-    $analytics->recordQuery('single occurrence term', SearchType::Food, 1, 'user-a');
+    $analytics->recordQuery('single occurrence term', SearchType::Food, 1, $userA);
 }
 
 beforeEach(function (): void {
