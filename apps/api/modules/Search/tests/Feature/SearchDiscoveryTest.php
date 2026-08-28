@@ -89,10 +89,22 @@ it('serves autocomplete and trending', function (): void {
         ->assertOk()
         ->assertJsonPath('data.suggestions.0', 'Jollof Rice');
 
-    // Run a couple of searches so trending has data.
+    // Run enough searches so trending has data. M39-SEC-001: a term needs
+    // `search.public_term_min_occurrences` occurrences before it may be shown
+    // publicly, so two searches is deliberately below the default of three.
     $this->getJson('/api/v1/search?q=rice');
     $this->getJson('/api/v1/search?q=rice');
-    $this->getJson('/api/v1/search/trending')->assertOk();
+
+    // M39-SEC-002. This assertion used to be `->assertOk()` and nothing else,
+    // which is how a leaking endpoint passes its own test: the body was never
+    // looked at. Assert the CONTENT.
+    $belowThreshold = $this->getJson('/api/v1/search/trending')->assertOk();
+    expect($belowThreshold->json('data.trending'))->not->toContain('rice');
+
+    $this->getJson('/api/v1/search?q=rice');
+
+    $atThreshold = $this->getJson('/api/v1/search/trending')->assertOk();
+    expect($atThreshold->json('data.trending'))->toContain('rice');
 });
 
 it('removes a document when its source is no longer published', function (): void {

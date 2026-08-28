@@ -22,7 +22,39 @@ interface SearchAnalyticsRepository
     public function recordClick(string $queryId, string $documentId, int $position, bool $fromRecommendation): void;
 
     /**
+     * Terms that may be shown to an anonymous caller (M39-SEC-001).
+     *
+     * The public analytics boundary. `popular()`, `failed()` and `trending()`
+     * below are ADMINISTRATIVE reads: they aggregate every logged query
+     * regardless of the scope it was run against, which is correct for an
+     * operator and wrong for the public. Before M39 the public `/trending` and
+     * `/suggestions` routes consumed `popular()`/`trending()` directly, so any
+     * user's verbatim query string — including terms an administrator typed
+     * against the admin-only `user` scope — was served to anonymous callers.
+     *
+     * This method applies the two constraints that make a term publishable:
+     *
+     *  - it was recorded against a scope the public may search
+     *    ({@see \EruoFood\Search\Domain\Enum\SearchType::publicScopeValues()});
+     *  - it occurs at least `$minOccurrences` times, so a phrase one person
+     *    typed once cannot be broadcast.
+     *
+     * This is privacy SUPPRESSION, not anonymity: a term repeated often enough
+     * by one determined user still qualifies. Raw query strings remain
+     * sensitive data.
+     *
+     * @param int $minOccurrences minimum qualifying occurrences; below this a
+     *                            term is withheld entirely
+     * @return list<PopularTerm>
+     */
+    public function publicTerms(int $days, int $limit, int $minOccurrences): array;
+
+    /**
      * Most-queried terms with matches, over the last N days.
+     *
+     * ADMINISTRATIVE: spans every scope, including admin-only ones, and applies
+     * no occurrence threshold. Never serve this to an unauthenticated caller —
+     * use {@see self::publicTerms()}.
      *
      * @return list<PopularTerm>
      */
@@ -31,12 +63,17 @@ interface SearchAnalyticsRepository
     /**
      * Most-queried terms that returned nothing, over the last N days.
      *
+     * ADMINISTRATIVE — see {@see self::popular()}. Zero-result terms are the
+     * ones an operator most needs and the public least should see.
+     *
      * @return list<PopularTerm>
      */
     public function failed(int $days, int $limit): array;
 
     /**
      * Trending terms (fastest-rising by recent volume) over the last N days.
+     *
+     * ADMINISTRATIVE — see {@see self::popular()}.
      *
      * @return list<string>
      */

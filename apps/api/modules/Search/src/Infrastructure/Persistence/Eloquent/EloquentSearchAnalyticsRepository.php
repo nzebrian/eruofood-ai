@@ -43,6 +43,37 @@ final class EloquentSearchAnalyticsRepository implements SearchAnalyticsReposito
         $model->save();
     }
 
+    /**
+     * The public analytics boundary (M39-SEC-001).
+     *
+     * Two constraints, both enforced HERE in the query rather than by a caller
+     * remembering to filter:
+     *
+     *  1. `type` must be a scope the public may search. The column records the
+     *     scope named on the request, so this is `SearchType::publicScopeValues()`
+     *     — the concrete public document types AND `global`, which is what a
+     *     default public search records.
+     *  2. The term must occur at least `$minOccurrences` times, applied as a
+     *     SQL `HAVING` so a suppressed term never leaves the database.
+     *
+     * `result_count > 0` matches `popular()`: a term that found nothing is a
+     * zero-result signal for operators, not a suggestion for the public.
+     */
+    public function publicTerms(int $days, int $limit, int $minOccurrences): array
+    {
+        $threshold = max(1, $minOccurrences);
+
+        return $this->groupedTerms(
+            $days,
+            $limit,
+            static function ($q): void {
+                $q->where('result_count', '>', 0)
+                    ->whereIn('type', SearchType::publicScopeValues());
+            },
+            $threshold,
+        );
+    }
+
     public function popular(int $days, int $limit): array
     {
         return $this->groupedTerms($days, $limit, static function ($q): void {
@@ -115,20 +146,38 @@ final class EloquentSearchAnalyticsRepository implements SearchAnalyticsReposito
     }
 
     /**
+     * Group the query log by term.
+     *
+     * Terms are already normalised at write time — `recordQuery()` stores
+     * `mb_strtolower(trim($term))` — so grouping is on the normalised value and
+     * this method deliberately does not normalise again. M39 did not change
+     * that behaviour: altering the grouping key would silently change every
+     * analytics figure the dashboards have reported so far, which is not a
+     * security fix.
+     *
+     * `$minOccurrences` is applied as a SQL `HAVING`, so a suppressed term is
+     * never read out of the database at all. It defaults to 1 — no suppression —
+     * which is the administrative behaviour; only {@see self::publicTerms()}
+     * raises it.
+     *
      * @param callable(\Illuminate\Database\Eloquent\Builder<SearchQueryLogModel>): void $constrain
      * @return list<PopularTerm>
      */
-    private function groupedTerms(int $days, int $limit, callable $constrain): array
+    private function groupedTerms(int $days, int $limit, callable $constrain, int $minOccurrences = 1): array
     {
         $query = SearchQueryLogModel::query()
             ->where('created_at', '>=', $this->threshold($days))
             ->where('term', '!=', '');
         $constrain($query);
 
+        $query->select('term', DB::raw('count(*) as c'))->groupBy('term');
+
+        if ($minOccurrences > 1) {
+            $query->havingRaw('count(*) >= ?', [$minOccurrences]);
+        }
+
         /** @var list<object{term: string, c: int}> $rows */
-        $rows = $query->select('term', DB::raw('count(*) as c'))
-            ->groupBy('term')
-            ->orderByDesc('c')
+        $rows = $query->orderByDesc('c')
             ->limit($limit)
             ->get()
             ->all();

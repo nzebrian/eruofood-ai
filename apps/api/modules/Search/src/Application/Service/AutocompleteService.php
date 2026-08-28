@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EruoFood\Search\Application\Service;
 
 use EruoFood\Search\Domain\Access\SearchScopeGate;
+use EruoFood\Search\Domain\Analytics\PopularTerm;
 use EruoFood\Search\Domain\Analytics\SearchAnalyticsRepository;
 use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\Enum\SearchType;
@@ -23,6 +24,7 @@ final readonly class AutocompleteService
         private int $trendingDays,
         private int $recentLimit,
         private SearchScopeGate $gate = new SearchScopeGate(),
+        private int $publicTermMinOccurrences = 3,
     ) {
     }
 
@@ -66,9 +68,14 @@ final readonly class AutocompleteService
             return $fromIndex;
         }
 
+        // M39-SEC-001. This used to read `analytics->popular()`, which spans
+        // EVERY logged scope and applies no occurrence threshold — so a term an
+        // administrator typed against the admin-only `user` scope, or a phrase
+        // one person searched once, was blended into an anonymous caller's
+        // suggestions. `publicTerms()` enforces both constraints in SQL.
         $needle = mb_strtolower(trim($prefix));
         $fromHistory = [];
-        foreach ($this->analytics->popular($this->trendingDays, 50) as $popular) {
+        foreach ($this->publicTerms(50) as $popular) {
             if ($needle === '' || str_contains(mb_strtolower($popular->term), $needle)) {
                 $fromHistory[] = $popular->term;
             }
@@ -82,7 +89,30 @@ final readonly class AutocompleteService
      */
     public function trending(): array
     {
-        return $this->analytics->trending($this->trendingDays, $this->suggestionLimit);
+        // M39-SEC-001. Previously `analytics->trending()`, which is the
+        // administrative view: every scope, no threshold, served unauthenticated.
+        return array_map(
+            static fn (PopularTerm $t): string => $t->term,
+            $this->publicTerms($this->suggestionLimit),
+        );
+    }
+
+    /**
+     * The only analytics source either public route is allowed to read.
+     *
+     * Both public consumers funnel through here so there is one place to check
+     * — and so a future endpoint cannot reach `popular()`/`trending()` by
+     * copying the shape of an existing call.
+     *
+     * @return list<PopularTerm>
+     */
+    private function publicTerms(int $limit): array
+    {
+        return $this->analytics->publicTerms(
+            $this->trendingDays,
+            $limit,
+            $this->publicTermMinOccurrences,
+        );
     }
 
     /**
