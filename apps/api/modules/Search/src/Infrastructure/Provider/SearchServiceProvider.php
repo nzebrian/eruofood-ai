@@ -21,6 +21,7 @@ use EruoFood\Search\Domain\Document\SearchIndexRepository;
 use EruoFood\Search\Domain\SavedSearch\SavedSearchRepository;
 use EruoFood\Search\Infrastructure\Cache\LaravelSearchCache;
 use EruoFood\Search\Infrastructure\Capability\SearchCapabilityProbe;
+use EruoFood\Search\Infrastructure\Console\PurgeSearchQueryLogCommand;
 use EruoFood\Search\Infrastructure\Console\ReindexSearchCommand;
 use EruoFood\Search\Infrastructure\Embedding\HashingEmbeddingGenerator;
 use EruoFood\Search\Infrastructure\Event\DomainEventSubscriber;
@@ -33,6 +34,9 @@ use EruoFood\Search\Infrastructure\Source\RecipeSourceProvider;
 use EruoFood\Search\Infrastructure\Source\VendorSourceProvider;
 use EruoFood\Search\Infrastructure\Understanding\AiQueryUnderstanding;
 use EruoFood\Search\Infrastructure\Understanding\PassthroughQueryUnderstanding;
+use EruoFood\Shared\Domain\Schedule\Cadence;
+use EruoFood\Shared\Domain\Schedule\ScheduledTask;
+use EruoFood\Shared\Domain\Schedule\ScheduleRegistry;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\ConnectionInterface;
@@ -193,7 +197,41 @@ final class SearchServiceProvider extends ServiceProvider
             );
         });
 
-        $this->commands([ReindexSearchCommand::class]);
+        $this->commands([ReindexSearchCommand::class, PurgeSearchQueryLogCommand::class]);
+
+        $this->registerScheduledWork();
+    }
+
+    /**
+     * Recurring work Search owns, described rather than scheduled (M40-SEC-001).
+     *
+     * ## Why this ships DISABLED
+     *
+     * `ScheduledTask` requires `enabled` explicitly precisely so this decision
+     * is visible, and every task currently in the registry — both of Payments'
+     * — is registered off. A retention purge is an irreversible, unattended
+     * delete against production data; switching it on is an operator decision
+     * about a specific database, not a default somebody inherits by upgrading.
+     *
+     * Until an operator enables it, `search:purge-query-log` is a command they
+     * run when they choose. The retention policy is declared either way, so
+     * `RetentionRegistry` states the intent honestly and the gap between
+     * declared and enforced is visible rather than assumed away.
+     *
+     * To enable: register this task with `enabled: true`, confirm the window in
+     * `search.query_log_retention_days`, and run `--dry-run` first.
+     */
+    private function registerScheduledWork(): void
+    {
+        $this->app->make(ScheduleRegistry::class)->register(ScheduledTask::of(
+            name: 'search:purge-query-log',
+            command: 'search:purge-query-log',
+            cadence: Cadence::Daily,
+            enabled: false,
+            description: 'Deletes search query-log rows past the retention window in '
+                .'search.query_log_retention_days. Destroys rows; prints counts only, never terms or user ids. '
+                .'Disabled by default — enabling an unattended irreversible delete is an operator decision.',
+        ));
     }
 
     public function boot(): void

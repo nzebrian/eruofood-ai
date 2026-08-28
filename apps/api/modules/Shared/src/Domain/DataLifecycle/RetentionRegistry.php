@@ -114,6 +114,17 @@ final class RetentionRegistry
         ));
 
         $registry->register(RetentionPolicy::of(
+            key: 'search.query_log',
+            category: DataCategory::OperationalRecord,
+            purpose: 'Measure what people fail to find, so the catalogue and synonyms can be corrected. '
+                .'The value is in the aggregate; the individual rows stop being useful long before they stop being sensitive.',
+            retainDays: (int) config('search.query_log_retention_days', 90),
+            deletionMode: DeletionMode::Destroy,
+            accessPolicy: 'Aggregates only. Admin dashboards read grouped counts; the public surface additionally '
+                .'requires a public scope and a minimum occurrence count (M39-SEC-001). Raw rows are never exposed.',
+        ));
+
+        $registry->register(RetentionPolicy::of(
             key: 'shared.idempotency_keys',
             category: DataCategory::TransientTechnical,
             purpose: 'Collapse a retried money-moving request onto its original result.',
