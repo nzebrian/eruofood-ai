@@ -177,12 +177,20 @@ describe('required checks', function (): void {
         $this->main = governanceJson('main-ruleset.json')['rulesets'][0] ?? [];
     });
 
-    it('declares the seven contexts M28 evidenced, plus the workflow gate M29-I added', function (): void {
+    it('declares the seven contexts M28 evidenced, plus the gates M29-I and M33 added', function (): void {
         // Pinned as an exact set rather than a count, so that adding a context
         // is a deliberate edit to this list and removing one cannot pass
         // quietly. The eighth arrived in M29-I, once the workflow-integrity
         // check lost the `paths:` filter that would have made requiring it a
         // permanent block.
+        //
+        // The ninth is M33's `Mobile Certification`. It is the AGGREGATOR job
+        // name in ga-flutter-certification.yml, deliberately — not either of
+        // the two platform jobs it depends on. Requiring those would pin two
+        // more byte-exact strings containing U+00B7 MIDDLE DOT into the
+        // ruleset, and a later rename would stop them reporting, which is the
+        // same permanent block described above. It is also not `Analyse · Test`,
+        // the job inside ci-mobile.yml, which remains deliberately not required.
         expect(array_column($this->checks, 'context'))->toEqualCanonicalizing([
             'Lint · Analyse · Test',
             'Tests · SQLite',
@@ -192,7 +200,20 @@ describe('required checks', function (): void {
             'Lint spec · Generate types',
             'Build · Boot · Migrate · Healthcheck',
             'CI · Workflow Integrity',
+            'Mobile Certification',
         ]);
+    });
+
+    it('requires the mobile aggregator and not its platform jobs', function (): void {
+        // The distinction M33 turns on, asserted by exact comparison. Four
+        // similar strings live here and only one belongs in the ruleset.
+        $contexts = array_column($this->checks, 'context');
+
+        expect($contexts)->toContain('Mobile Certification')
+            ->not->toContain('Android · doctor · analyze · test · build apk')
+            ->not->toContain('iOS · analyze · test · build (no codesign)')
+            ->not->toContain('Analyse · Test')
+            ->not->toContain('GA Flutter Certification');
     });
 
     it('keeps the ruleset and the documented list in agreement', function (): void {
