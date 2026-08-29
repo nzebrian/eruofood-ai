@@ -37,7 +37,7 @@ FAIL=0
 # git history — fails loudly instead of vanishing from the total. Update it
 # deliberately when adding or removing a check; the M36 controls verify that a
 # wrong value is itself caught.
-EXPECTED_CHECKS=37
+EXPECTED_CHECKS=49
 
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL + 1)); }
@@ -630,6 +630,234 @@ sys.exit(0 if json.load(sys.stdin)['has_wc'] else 1)
       bad "workflow_call was removed — ga-release-certification.yml calls this workflow"
     fi
   fi
+fi
+
+# -- G3. The aggregator that branch protection actually requires --------------
+#
+# M32 made the platform jobs run on every pull request. M33 makes one context
+# requirable. The distinction the ruleset cares about is not "did Android and
+# iOS run" but "is there exactly one stable name that is green only when both
+# of them are".
+#
+# Two failure modes are guarded here, and they pull in opposite directions.
+#
+#   Bare `needs:` SKIPS the aggregator when a dependency fails. GitHub reports a
+#   skipped required check as PENDING, never as failed — so the gate would hang
+#   every pull request whose Android job went red, which is the exact case it
+#   exists to catch. Hence `if: always()`.
+#
+#   `always()` on its own is the mirror image: a job that reports success while
+#   both platforms burn. Hence the explicit result comparison.
+#
+# Either one alone is a false-green gate. Both are asserted.
+
+head_ "G3) Mobile Certification aggregator integrity"
+
+# Read as YAML for the same reason section G2 does: job names, `needs:` and
+# `if:` are structure, and a line-oriented grep cannot tell which job it is
+# looking at.
+gate_jobs() {
+  python3 -c "
+import yaml, json
+d = yaml.safe_load(open('$CERT_WORKFLOW'))
+jobs = d.get('jobs') or {}
+
+agg_key, agg = None, None
+for key, job in jobs.items():
+    if (job or {}).get('name') == 'Mobile Certification':
+        agg_key, agg = key, (job or {})
+        break
+
+# The aggregator's decision lives in its step bodies AND its env block: the
+# results are mapped in via env: rather than interpolated into the script, so
+# both halves have to be searched for 'needs.<job>.result'.
+run = ''
+if agg is not None:
+    parts = []
+    for step in (agg.get('steps') or []):
+        step = step or {}
+        parts.append(str(step.get('run', '')))
+        parts.append(json.dumps(step.get('env') or {}))
+    run = '\n'.join(parts)
+
+print(json.dumps({
+    'names': [(j or {}).get('name') for j in jobs.values()],
+    'agg_key': agg_key,
+    'needs': (agg.get('needs') if agg is not None else None),
+    'if': (str(agg.get('if')) if agg is not None and 'if' in agg else None),
+    'run': run,
+}))
+" 2>/dev/null
+}
+
+if [[ -f "$CERT_WORKFLOW" ]]; then
+  jobs_json="$(gate_jobs)"
+
+  if [[ -z "$jobs_json" ]]; then
+    bad "the certification workflow jobs could not be parsed as YAML"
+  else
+    jget() { printf '%s' "$jobs_json" | python3 -c "
+import json,sys
+print(json.dumps(json.load(sys.stdin).get('$1')))
+"; }
+
+    # A — the two supporting platform jobs still exist, by exact name. They are
+    # NOT required contexts, but the aggregator is worthless without them.
+    if printf '%s' "$jobs_json" | python3 -c "
+import json,sys
+sys.exit(0 if 'Android · doctor · analyze · test · build apk' in json.load(sys.stdin)['names'] else 1)
+"; then
+      ok "the Android certification job still exists under its exact name"
+    else
+      bad "the Android certification job is missing or was renamed"
+    fi
+
+    if printf '%s' "$jobs_json" | python3 -c "
+import json,sys
+sys.exit(0 if 'iOS · analyze · test · build (no codesign)' in json.load(sys.stdin)['names'] else 1)
+"; then
+      ok "the iOS certification job still exists under its exact name"
+    else
+      bad "the iOS certification job is missing or was renamed"
+    fi
+
+    # B — the aggregator exists under the exact required context name. Compared
+    # literally: a context differing by one character never reports, and a
+    # required check that never reports blocks every pull request forever.
+    if [[ "$(jget agg_key)" == "null" ]]; then
+      bad "no job is named 'Mobile Certification' — the required context cannot report"
+    else
+      ok "a job named exactly 'Mobile Certification' exists"
+
+      # C/D — it must wait for both platforms. One missing dependency makes the
+      # gate green while that platform is untested.
+      if printf '%s' "$jobs_json" | python3 -c "
+import json,sys
+sys.exit(0 if 'android' in (json.load(sys.stdin).get('needs') or []) else 1)
+"; then
+        ok "the aggregator needs the android job"
+      else
+        bad "the aggregator does not need the android job — Android could fail unnoticed"
+      fi
+
+      if printf '%s' "$jobs_json" | python3 -c "
+import json,sys
+sys.exit(0 if 'ios' in (json.load(sys.stdin).get('needs') or []) else 1)
+"; then
+        ok "the aggregator needs the ios job"
+      else
+        bad "the aggregator does not need the ios job — iOS could fail unnoticed"
+      fi
+
+      # E — without always(), a failed dependency SKIPS this job, and a skipped
+      # required check reports no conclusion at all.
+      if printf '%s' "$jobs_json" | python3 -c "
+import json,sys
+v=(json.load(sys.stdin).get('if') or '').replace(' ','')
+sys.exit(0 if v in ('\${{always()}}','always()') else 1)
+"; then
+        ok "the aggregator runs with if: always()"
+      else
+        bad "the aggregator lacks if: always() — a failed platform would skip it, not fail it"
+      fi
+
+      agg_run="$(printf '%s' "$jobs_json" | python3 -c "
+import json,sys
+print(json.load(sys.stdin)['run'])
+")"
+
+      # F/G — it must actually read both results. `always()` without this is a
+      # gate that is green no matter what happened.
+      if printf '%s' "$agg_run" | grep -q 'needs.android.result'; then
+        ok "the aggregator inspects needs.android.result"
+      else
+        bad "the aggregator never reads the Android result — always() would make it always green"
+      fi
+
+      if printf '%s' "$agg_run" | grep -q 'needs.ios.result'; then
+        ok "the aggregator inspects needs.ios.result"
+      else
+        bad "the aggregator never reads the iOS result — always() would make it always green"
+      fi
+
+      # H — and the comparison must be success-only. Anything that accepts a
+      # set of "acceptable" results lets cancelled or skipped through.
+      if printf '%s' "$agg_run" | grep -q 'exit 1'; then
+        ok "the aggregator can fail (it contains a non-zero exit)"
+      else
+        bad "the aggregator has no failing path — it is a false-green gate"
+      fi
+
+      if printf '%s' "$agg_run" | python3 -c "
+import sys, re
+run = sys.stdin.read()
+
+# Collect every literal either result is compared against. Asserting only that
+# a '!= \"success\"' comparison EXISTS is not enough — it survives
+#
+#     [ \"\\\${ANDROID_RESULT}\" != \"success\" && \"\\\${ANDROID_RESULT}\" != \"failure\" ]
+#
+# which is exactly the escape hatch somebody adds when a flaky runner is
+# annoying them. So the accepted set has to be exactly {'success'}: any second
+# verdict, whatever it is, fails this check.
+compared = set(re.findall(
+    r'(?:ANDROID_RESULT|IOS_RESULT)\}?\"?\s*[!=]=\s*\"([^\"]*)\"', run))
+
+android_ok = re.search(r'ANDROID_RESULT[^\n]*[!=]=[^\n]*\"success\"', run) is not None
+ios_ok     = re.search(r'IOS_RESULT[^\n]*[!=]=[^\n]*\"success\"', run) is not None
+
+# '||' because the guard is a disjunction: either result being wrong must fail.
+sys.exit(0 if (android_ok and ios_ok and '||' in run and compared == {'success'}) else 1)
+"; then
+        ok "the aggregator fails unless BOTH results are exactly 'success'"
+      else
+        bad "the aggregator's success condition was weakened — non-success results could pass"
+      fi
+    fi
+  fi
+fi
+
+# -- G4. The required context is the aggregator, and only the aggregator ------
+#
+# The repository-side half of the ruleset change. `verify_repository_governance`
+# owns the cross-file agreement; this asserts the mobile-specific rule that the
+# platform jobs must never become required contexts themselves.
+#
+# The naming trap this guards is real and already latent in the repository:
+# `ci-mobile.yml` is the workflow "CI · Mobile (Flutter)" whose job is named
+# "Analyse · Test", which is a different thing again from either certification
+# job. Exact string matching only.
+
+head_ "G4) Required-context wiring"
+
+CHECKS_JSON="$REPO_ROOT/.github/governance/required-checks.json"
+
+if [[ -f "$CHECKS_JSON" ]]; then
+  if python3 -c "
+import json,sys
+d=json.load(open('$CHECKS_JSON'))
+sys.exit(0 if 'Mobile Certification' in [c.get('context') for c in d.get('required',[])] else 1)
+"; then
+    ok "'Mobile Certification' is declared a required context"
+  else
+    bad "'Mobile Certification' is NOT in required-checks.json — the gate is not required"
+  fi
+
+  if python3 -c "
+import json,sys
+d=json.load(open('$CHECKS_JSON'))
+ctx=[c.get('context') for c in d.get('required',[])]
+forbidden={'Android · doctor · analyze · test · build apk',
+           'iOS · analyze · test · build (no codesign)',
+           'Analyse · Test'}
+sys.exit(1 if forbidden & set(ctx) else 0)
+"; then
+    ok "the platform jobs are not individually required"
+  else
+    bad "a platform job was made an individually required context — rename risk reintroduced"
+  fi
+else
+  bad "required-checks.json was not found"
 fi
 
 # -- H. Every declared check actually ran -------------------------------------
