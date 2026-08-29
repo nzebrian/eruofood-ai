@@ -87,6 +87,9 @@
               },
               {
                 "context": "CI · Workflow Integrity"
+              },
+              {
+                "context": "Mobile Certification"
               }
             ]
           }

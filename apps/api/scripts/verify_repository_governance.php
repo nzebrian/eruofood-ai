@@ -1051,6 +1051,51 @@ verify('the known-failing and tag-only workflows are not required', function () 
     return [$offenders === [], $offenders === [] ? count($contexts).' contexts, none excluded-by-policy' : 'wrongly required: '.implode(',', $offenders)];
 });
 
+verify('the mobile gate is required as its aggregator, not as its platform jobs', function () use ($requiredChecks): array {
+    // M33. Three different strings live in this neighbourhood and exactly one
+    // of them belongs in the ruleset:
+    //
+    //   workflow name  "GA Flutter Certification"   — never a context
+    //   job names      "Android · doctor · …", "iOS · analyze · …"
+    //                                               — supporting, NOT required
+    //   REQUIRED       "Mobile Certification"       — the aggregator job name
+    //
+    // And separately, `ci-mobile.yml` is the workflow "CI · Mobile (Flutter)"
+    // whose job is named "Analyse · Test" — a fourth string, deliberately not
+    // required, and the one an earlier reading of this file confused with the
+    // certification jobs.
+    //
+    // Requiring a platform job directly would pin a second byte-exact context
+    // containing U+00B7 MIDDLE DOT into the ruleset; a later rename would stop
+    // it reporting, and a required check that never reports blocks every pull
+    // request. Exact comparison throughout — no str_contains.
+    $contexts = array_column($requiredChecks, 'context');
+
+    if ($contexts === []) {
+        return [false, 'no required checks declared — nothing was verified'];
+    }
+
+    if (! in_array('Mobile Certification', $contexts, true)) {
+        return [false, "'Mobile Certification' is not a required context"];
+    }
+
+    $mustNotBeRequired = [
+        'Android · doctor · analyze · test · build apk',
+        'iOS · analyze · test · build (no codesign)',
+        'Analyse · Test',
+        'GA Flutter Certification',
+    ];
+
+    $offenders = array_values(array_intersect($mustNotBeRequired, $contexts));
+
+    return [
+        $offenders === [],
+        $offenders === []
+            ? 'aggregator required; platform jobs and ci-mobile left supporting'
+            : 'wrongly required: '.implode(', ', $offenders),
+    ];
+});
+
 // -- 5. CODEOWNERS ------------------------------------------------------------
 
 section('5) CODEOWNERS claims no owner it cannot resolve');

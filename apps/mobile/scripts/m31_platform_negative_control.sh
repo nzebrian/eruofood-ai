@@ -42,11 +42,16 @@ trap 'rm -rf "$WORK"' EXIT
 # fixtures, and it rewrites pubspec.lock and .gitignore in others — so covering
 # only the platform directories would have left the two files most likely to be
 # corrupted by a stray absolute path outside the check.
+# M33 widened it again. The suite now edits required-checks.json and both
+# ruleset files inside fixtures, and those three are the artefacts that decide
+# what branch protection enforces — the last place where a stray absolute path
+# should be allowed to go unnoticed.
 fingerprint() {
   {
     ( cd "$MOBILE_DIR" && find android ios .metadata -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null )
     ( cd "$MOBILE_DIR" && sha256sum pubspec.yaml pubspec.lock analysis_options.yaml .gitignore 2>/dev/null )
     sha256sum "$REPO_ROOT/$CERT_REL" 2>/dev/null
+    ( cd "$REPO_ROOT/.github/governance" && sha256sum required-checks.json main-ruleset.json main-ruleset.sole-owner.json 2>/dev/null )
   } | sha256sum
 }
 BEFORE="$(fingerprint)"
@@ -69,9 +74,21 @@ fixture() {
   cp -a "$MOBILE_DIR/." "$root/apps/mobile/" 2>/dev/null || true
   rm -rf "$root/apps/mobile/build" "$root/apps/mobile/.dart_tool" "$root/apps/mobile/.git"
   cp "$REPO_ROOT/$CERT_REL" "$root/$CERT_REL"
+  # M33: section G4 reads the governance artefacts, so a fixture without them
+  # would fail for the wrong reason and make every control below meaningless —
+  # the same trap the certification workflow copy above already avoids.
+  mkdir -p "$root/.github/governance"
+  cp "$REPO_ROOT/.github/governance/required-checks.json" \
+     "$REPO_ROOT/.github/governance/main-ruleset.json" \
+     "$REPO_ROOT/.github/governance/main-ruleset.sole-owner.json" \
+     "$root/.github/governance/" 2>/dev/null || true
   git -C "$root" init -q 2>/dev/null || true
   echo "$root"
 }
+
+# The certification workflow and the required-checks document inside a fixture.
+cert() { echo "$1/$CERT_REL"; }
+checks() { echo "$1/.github/governance/required-checks.json"; }
 
 # Where apps/mobile lives inside a fixture.
 m() { echo "$1/apps/mobile"; }
@@ -472,6 +489,274 @@ if rejects "$d" "declared checks executed"; then
   ok "19 · a check that does not execute is detected, not silently dropped"
 else
   bad "19 · under-reported coverage PASSED — a section could vanish unnoticed"
+fi
+
+# =========================================================================
+# M33 — the Mobile Certification aggregator.
+#
+# The gate these controls protect is the one branch protection will actually
+# require, and it can be made false-green two opposite ways: strip the
+# always() so a failed platform SKIPS it (skipped reports no conclusion, which
+# GitHub treats as pending, not failed), or keep always() and stop reading the
+# results (green no matter what happened). Both are one-line edits, and every
+# control below is one of them.
+#
+# `yq` is not a dependency here, so the mutations are done with python3 +
+# PyYAML, which the validator already requires. Each writes the mutated
+# workflow back into its own fixture; the real file is never touched, and
+# control 11 proves that by hash.
+# =========================================================================
+
+# Rewrites the aggregator inside a fixture. $2 is python operating on `agg`,
+# the aggregator job dict, and `jobs`, the whole jobs mapping.
+mutate_agg() {
+  local file="$1" code="$2"
+  python3 - "$file" "$code" <<'PY'
+import sys, yaml
+path, code = sys.argv[1], sys.argv[2]
+doc = yaml.safe_load(open(path))
+jobs = doc['jobs']
+agg_key = next((k for k, v in jobs.items() if (v or {}).get('name') == 'Mobile Certification'), None)
+agg = jobs.get(agg_key) if agg_key else None
+exec(code)
+yaml.safe_dump(doc, open(path, 'w'), sort_keys=False, default_flow_style=False, allow_unicode=True)
+PY
+}
+
+# -- 20 -------------------------------------------------------------------
+d="$(fixture c20)"; mutate_agg "$(cert "$d")" "del jobs[agg_key]"
+if rejects "$d" "no job is named 'Mobile Certification'"; then
+  ok "20 · a removed aggregator job is detected"
+else
+  bad "20 · a removed aggregator job was NOT detected"
+fi
+
+# -- 21 -------------------------------------------------------------------
+# A rename is indistinguishable from a deletion as far as the ruleset is
+# concerned: the required context simply stops reporting.
+d="$(fixture c21)"; mutate_agg "$(cert "$d")" "agg['name'] = 'Mobile Certification '"
+if rejects "$d" "no job is named 'Mobile Certification'"; then
+  ok "21 · a renamed aggregator (trailing space) is detected"
+else
+  bad "21 · a renamed aggregator was NOT detected"
+fi
+
+# -- 22 -------------------------------------------------------------------
+d="$(fixture c22)"; mutate_agg "$(cert "$d")" "agg['needs'] = ['ios']"
+if rejects "$d" "does not need the android job"; then
+  ok "22 · a dropped android dependency is detected"
+else
+  bad "22 · a dropped android dependency was NOT detected"
+fi
+
+# -- 23 -------------------------------------------------------------------
+d="$(fixture c23)"; mutate_agg "$(cert "$d")" "agg['needs'] = ['android']"
+if rejects "$d" "does not need the ios job"; then
+  ok "23 · a dropped ios dependency is detected"
+else
+  bad "23 · a dropped ios dependency was NOT detected"
+fi
+
+# -- 24 -------------------------------------------------------------------
+# Without always(), a red Android SKIPS this job. A skipped required check
+# never reports, and a required check that never reports blocks every pull
+# request forever — the M29-A trap, reached from the other side.
+d="$(fixture c24)"; mutate_agg "$(cert "$d")" "agg.pop('if', None)"
+if rejects "$d" "lacks if: always()"; then
+  ok "24 · a removed if: always() is detected"
+else
+  bad "24 · a removed if: always() was NOT detected"
+fi
+
+# -- 25 -------------------------------------------------------------------
+# always() plus success() is the subtle version: it looks defensive and skips
+# on exactly the failures that matter.
+d="$(fixture c25)"; mutate_agg "$(cert "$d")" "agg['if'] = '\${{ success() }}'"
+if rejects "$d" "lacks if: always()"; then
+  ok "25 · if: always() replaced by success() is detected"
+else
+  bad "25 · a weakened job condition was NOT detected"
+fi
+
+# -- 26 -------------------------------------------------------------------
+d="$(fixture c26)"
+mutate_agg "$(cert "$d")" "agg['steps'][0]['env'].pop('ANDROID_RESULT', None)"
+if rejects "$d" "never reads the Android result"; then
+  ok "26 · a removed Android result check is detected"
+else
+  bad "26 · a removed Android result check was NOT detected"
+fi
+
+# -- 27 -------------------------------------------------------------------
+d="$(fixture c27)"
+mutate_agg "$(cert "$d")" "agg['steps'][0]['env'].pop('IOS_RESULT', None)"
+if rejects "$d" "never reads the iOS result"; then
+  ok "27 · a removed iOS result check is detected"
+else
+  bad "27 · a removed iOS result check was NOT detected"
+fi
+
+# -- 28 -------------------------------------------------------------------
+# The false-green gate the milestone brief names explicitly: always() with an
+# unconditional pass.
+d="$(fixture c28)"
+mutate_agg "$(cert "$d")" "agg['steps'][0]['run'] = 'echo ok'"
+if rejects "$d" "no failing path"; then
+  ok "28 · an aggregator with no failing path is detected"
+else
+  bad "28 · a false-green aggregator was NOT detected"
+fi
+
+# -- 29 -------------------------------------------------------------------
+# `&&` instead of `||`: green whenever EITHER platform succeeded.
+d="$(fixture c29)"
+mutate_agg "$(cert "$d")" "agg['steps'][0]['run'] = agg['steps'][0]['run'].replace('||', '&&')"
+if rejects "$d" "success condition was weakened"; then
+  ok "29 · a success-only condition weakened to a conjunction is detected"
+else
+  bad "29 · a weakened success condition was NOT detected"
+fi
+
+# -- 30/31/32 -------------------------------------------------------------
+# Treating a specific non-success result as acceptable. Each of these is the
+# shape somebody reaches for when a flaky macOS runner is annoying them.
+i=30
+for verdict in failure cancelled skipped; do
+  d="$(fixture "c$i")"
+  mutate_agg "$(cert "$d")" \
+    "agg['steps'][0]['run'] = agg['steps'][0]['run'].replace('\"\${ANDROID_RESULT}\" != \"success\"', '\"\${ANDROID_RESULT}\" != \"success\" && \"\${ANDROID_RESULT}\" != \"$verdict\"')"
+  if rejects "$d" "success condition was weakened"; then
+    ok "$i · '$verdict' treated as an acceptable Android result is detected"
+  else
+    bad "$i · '$verdict' treated as acceptable was NOT detected"
+  fi
+  i=$((i + 1))
+done
+
+# -- 33 -------------------------------------------------------------------
+d="$(fixture c33)"
+mutate_agg "$(cert "$d")" "agg['steps'][0]['continue-on-error'] = True"
+if rejects "$d" "continue-on-error"; then
+  ok "33 · continue-on-error on the aggregator is detected"
+else
+  bad "33 · continue-on-error was NOT detected"
+fi
+
+# -- 34/35 ----------------------------------------------------------------
+# Requiring a platform job directly. It looks stricter and is strictly worse:
+# it pins a second byte-exact context containing U+00B7 into the ruleset, so a
+# later rename stops it reporting and wedges every pull request.
+i=34
+for job in "Android · doctor · analyze · test · build apk" "iOS · analyze · test · build (no codesign)"; do
+  d="$(fixture "c$i")"
+  python3 - "$(checks "$d")" "$job" <<'PY'
+import sys, json
+path, ctx = sys.argv[1], sys.argv[2]
+d = json.load(open(path))
+d['required'].append({'context': ctx, 'workflow': '.github/workflows/ga-flutter-certification.yml'})
+json.dump(d, open(path, 'w'), indent=2, ensure_ascii=False)
+PY
+  if rejects "$d" "individually required context"; then
+    ok "$i · requiring a platform job directly is detected"
+  else
+    bad "$i · an individually required platform job was NOT detected"
+  fi
+  i=$((i + 1))
+done
+
+# -- 36 -------------------------------------------------------------------
+d="$(fixture c36)"
+python3 - "$(checks "$d")" <<'PY'
+import sys, json
+path = sys.argv[1]
+d = json.load(open(path))
+d['required'] = [c for c in d['required'] if c.get('context') != 'Mobile Certification']
+json.dump(d, open(path, 'w'), indent=2, ensure_ascii=False)
+PY
+if rejects "$d" "NOT in required-checks.json"; then
+  ok "36 · removing Mobile Certification from required governance is detected"
+else
+  bad "36 · a de-required gate was NOT detected"
+fi
+
+# -- 37 -------------------------------------------------------------------
+# Renaming the context in governance while the job keeps its name. The two
+# drift apart silently and the ruleset waits for a check nobody reports.
+d="$(fixture c37)"
+python3 - "$(checks "$d")" <<'PY'
+import sys, json
+path = sys.argv[1]
+d = json.load(open(path))
+for c in d['required']:
+    if c.get('context') == 'Mobile Certification':
+        c['context'] = 'Mobile certification'
+json.dump(d, open(path, 'w'), indent=2, ensure_ascii=False)
+PY
+if rejects "$d" "NOT in required-checks.json"; then
+  ok "37 · a renamed required context is detected"
+else
+  bad "37 · a renamed required context was NOT detected"
+fi
+
+# -- 38/39 ----------------------------------------------------------------
+# M32's deadlock protection, re-asserted now that the context is genuinely
+# about to be required. Both spellings fail the same way.
+i=38
+for filt in paths paths-ignore; do
+  d="$(fixture "c$i")"
+  python3 - "$(cert "$d")" "$filt" <<'PY'
+import sys, yaml
+path, filt = sys.argv[1], sys.argv[2]
+doc = yaml.safe_load(open(path))
+on = doc.get('on', doc.get(True))
+on['pull_request'] = {filt: ['apps/mobile/**']}
+doc.pop(True, None)
+doc['on'] = on
+yaml.safe_dump(doc, open(path, 'w'), sort_keys=False, default_flow_style=False, allow_unicode=True)
+PY
+  if rejects "$d" "$filt filter"; then
+    ok "$i · a pull_request $filt filter is detected"
+  else
+    bad "$i · a pull_request $filt filter was NOT detected"
+  fi
+  i=$((i + 1))
+done
+
+# -- 40 -------------------------------------------------------------------
+# FAIL-CLOSED MATRIX. Not a mutation: this extracts the aggregator's real
+# script from the real workflow and runs it under every result pair, so the
+# thing under test is the shipped logic rather than a paraphrase of it.
+#
+# The one green cell is success + success. `neutral` stands in for a result
+# GitHub has not invented yet, and the empty string for a dependency that
+# never reported at all.
+matrix_script="$WORK/agg.sh"
+python3 - "$REPO_ROOT/$CERT_REL" "$matrix_script" <<'PY'
+import sys, yaml
+doc = yaml.safe_load(open(sys.argv[1]))
+agg = next(v for v in doc['jobs'].values() if (v or {}).get('name') == 'Mobile Certification')
+open(sys.argv[2], 'w').write(agg['steps'][0]['run'])
+PY
+
+matrix_fail=0
+matrix_cases=0
+for a in success failure cancelled skipped neutral ""; do
+  for o in success failure cancelled skipped neutral ""; do
+    matrix_cases=$((matrix_cases + 1))
+    if ANDROID_RESULT="$a" IOS_RESULT="$o" bash "$matrix_script" >/dev/null 2>&1; then
+      # Exit 0. Legitimate only for the single all-success cell.
+      [[ "$a" == "success" && "$o" == "success" ]] || matrix_fail=$((matrix_fail + 1))
+    else
+      # Exit non-zero. Wrong only if both were success.
+      [[ "$a" == "success" && "$o" == "success" ]] && matrix_fail=$((matrix_fail + 1))
+    fi
+  done
+done
+
+if [[ "$matrix_fail" -eq 0 ]]; then
+  ok "40 · fail-closed across all $matrix_cases result pairs (only success+success passes)"
+else
+  bad "40 · $matrix_fail of $matrix_cases result pairs produced the wrong verdict"
 fi
 
 # -- 10 -------------------------------------------------------------------

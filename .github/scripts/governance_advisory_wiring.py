@@ -38,9 +38,16 @@ REQUIRED_CHECKS = ".github/governance/required-checks.json"
 ADVISORY_JOB_NAME = "Governance Advisory"
 INTEGRITY_JOB_NAME = "CI · Workflow Integrity"
 
-# The eight contexts the live `main` ruleset requires. The advisory job's name
-# must not be any of them: a collision would silently attach a required rule to
-# this job, turning an advisory check into a merge gate by accident.
+# The nine contexts `required-checks.json` records for the `main` ruleset. The
+# advisory job's name must not be any of them: a collision would silently attach
+# a required rule to this job, turning an advisory check into a merge gate by
+# accident.
+#
+# This is a RATCHET, not a mirror. It is deliberately a hand-maintained copy, so
+# that quietly dropping a context from `required-checks.json` shows up here as a
+# finding rather than as agreement between a file and itself. Adding to it is
+# therefore a deliberate act: M33 added "Mobile Certification" in the same change
+# that added the aggregator job and the ruleset entry.
 REQUIRED_CONTEXTS = [
     "Lint spec · Generate types",
     "Lint · Typecheck · Test · Build",
@@ -50,6 +57,7 @@ REQUIRED_CONTEXTS = [
     "Build · Boot · Migrate · Healthcheck",
     "CI · Workflow Integrity",
     "Lint · Analyse · Test",
+    "Mobile Certification",
 ]
 
 # What makes a step critical: it is the step that fetches the evidence, the one

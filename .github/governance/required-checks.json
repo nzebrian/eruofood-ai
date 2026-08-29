@@ -69,6 +69,14 @@
       "covers": "actionlint over every file in .github/workflows — YAML syntax, Actions semantics, expression contexts, and shellcheck over run: blocks — plus a five-case negative control that proves the gate rejects what it should and accepts what it should.",
       "pull_request_path_filtered": false,
       "note": "Added by M29-I. The workflow's pull_request paths filter was removed first: GitHub treats a required check that never reports as pending rather than satisfied, so requiring a path-filtered check would leave every pull request that touches no workflow permanently unmergeable. The job name was aligned to this context in the same change, because GitHub matches on the job name and not the workflow name. This check exists because release.yml was unloadable for two weeks and nothing was asking whether the gates could run at all."
+    },
+    {
+      "context": "Mobile Certification",
+      "workflow": ".github/workflows/ga-flutter-certification.yml",
+      "workflow_name": "GA Flutter Certification",
+      "covers": "A fail-closed aggregator over the two Flutter certification jobs. Green only when BOTH `Android · doctor · analyze · test · build apk` and `iOS · analyze · test · build (no codesign)` report success — analyze under --fatal-infos --fatal-warnings, the full test suite, a release APK with if-no-files-found: error, and an iOS no-codesign build.",
+      "pull_request_path_filtered": false,
+      "note": "Added by M33. The context is the AGGREGATOR job name, deliberately, and the two platform jobs are NOT individually required: requiring them would pin two more byte-exact strings containing U+00B7 MIDDLE DOT into the ruleset, so any later rename would stop them reporting and block every pull request. The aggregator runs with `if: always()` because bare `needs:` SKIPS a dependent job when a dependency fails, and GitHub treats a skipped required check as pending rather than failed — the same trap this file documents from M29-A. `always()` alone would be the opposite defect, so the job compares needs.android.result and needs.ios.result against the literal 'success' and fails on anything else, including cancelled, skipped and any result GitHub adds later. Do not confuse this with `Analyse · Test`, which is the job name inside ci-mobile.yml (workflow `CI · Mobile (Flutter)`) and is a different check that remains deliberately not required."
     }
   ],
   "deliberately_not_required": [

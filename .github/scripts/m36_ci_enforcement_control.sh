@@ -180,7 +180,11 @@ fixture_root=""
 make_fixture() {
     fixture_root="$(mktemp -d)"
     local p
-    for p in .github/workflows .github/scripts docker-compose.yml docker-compose.ci.yml \
+    # `.github/governance` is here because the platform validator's M33 section
+    # reads required-checks.json. A fixture without it fails for a reason that
+    # has nothing to do with what the control is testing, which is exactly how a
+    # positive control turns into noise.
+    for p in .github/workflows .github/scripts .github/governance docker-compose.yml docker-compose.ci.yml \
              docker-compose.override.yml apps/api/phpunit.xml apps/mobile; do
         if [[ -e "$REPO_ROOT/$p" ]]; then
             mkdir -p "$fixture_root/$(dirname "$p")"
