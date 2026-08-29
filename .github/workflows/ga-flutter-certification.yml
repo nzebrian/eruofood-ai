@@ -116,3 +116,68 @@ jobs:
         run: flutter test
       - name: flutter build ios (no codesign) — build validation
         run: flutter build ios --release --no-codesign
+
+  # ---------------------------------------------------------------------------
+  # M33 — the single context that branch protection can require.
+  #
+  # ## Why an aggregator rather than requiring the two platform jobs
+  #
+  # `Android · doctor · analyze · test · build apk` and
+  # `iOS · analyze · test · build (no codesign)` stay supporting jobs. Requiring
+  # them individually would pin two more byte-exact context strings — both
+  # containing U+00B7 MIDDLE DOT — into the ruleset, and every future rename of
+  # a platform job would silently stop reporting and block every pull request.
+  # One stable name, `Mobile Certification`, is the whole surface the ruleset
+  # has to know about, and the platform jobs stay free to be renamed.
+  #
+  # ## Why `if: always()` is load-bearing, and why it is not enough on its own
+  #
+  # Bare `needs:` semantics SKIP a dependent job when a dependency fails. A
+  # skipped required check never reports a conclusion, and GitHub treats that as
+  # PENDING rather than failed — the same trap `required-checks.json` documents
+  # from M29-A, arriving by a different road. So the job must run unconditionally
+  # and decide for itself.
+  #
+  # But `always()` alone is the opposite defect: it would report success while
+  # both platforms burned. The results are therefore inspected explicitly, and
+  # anything that is not exactly `success` — `failure`, `cancelled`, `skipped`,
+  # or any value GitHub adds later — fails the gate. Fail-closed in both
+  # directions.
+  mobile-certification:
+    name: Mobile Certification
+    needs:
+      - android
+      - ios
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # This job checks nothing out and runs no toolchain; it reads two results.
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Verify both platform certifications succeeded
+        # Passed through `env:` rather than interpolated into the script body.
+        # The values are GitHub-generated and not attacker-controlled, but a
+        # `${{ }}` expansion inside `run:` is textual substitution before the
+        # shell ever sees it, and this repository's workflow-integrity gate
+        # shellchecks every `run:` block. Env keeps the script analysable and
+        # keeps the pattern off the injection-shaped list entirely.
+        env:
+          ANDROID_RESULT: ${{ needs.android.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+        run: |
+          set -euo pipefail
+
+          # Printed before the decision, always, so a red gate explains itself
+          # without anyone opening two other jobs.
+          echo "Android result: ${ANDROID_RESULT}"
+          echo "iOS result:     ${IOS_RESULT}"
+
+          if [ "${ANDROID_RESULT}" != "success" ] || [ "${IOS_RESULT}" != "success" ]; then
+            echo "Mobile Certification FAILED"
+            echo "Both platform certifications must report 'success'."
+            exit 1
+          fi
+
+          echo "Mobile Certification PASSED"
