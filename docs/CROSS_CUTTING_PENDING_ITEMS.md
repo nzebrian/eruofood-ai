@@ -29,28 +29,57 @@ change.
 **Pending:** make the key mandatory once all first-party clients send it. Until
 then a caller that omits it is unprotected, and no test can assert otherwise.
 
+**This applies to `payments.initiate` only.** `payments.subscription` (§B)
+*requires* the header, and that is not a departure from the rule above but an
+instance of it: the M41 pre-merge audit traced every caller and found **no
+first-party client of the subscription endpoint at all** — nothing in
+`apps/web`, nothing in `apps/mobile` (its retry queue declares four scopes, none
+of them subscriptions), and no job, command, seeder, script or internal service.
+`SubscriptionController::store()` is the only production caller of
+`SubscriptionService::start()`. The precondition therefore holds vacuously
+there, while `payments.initiate` is called by the mobile app and stays opt-in
+until that client sends the header. The audit could not prove the absence of
+third-party consumers outside the repository; that residual risk is the reason
+this distinction is written down rather than assumed.
+
 ---
 
-## B. Subscription creation remains non-idempotent
+## B. Subscription creation — CLOSED by M41
 
-**Status:** known gap, deliberately not closed.
+**Status:** guarded, and the key is **mandatory** here. See
+[`api/payments-endpoints.md`](api/payments-endpoints.md).
 
-`POST /api/v1/payments/subscriptions` has no idempotency scope. A double
-submission can create duplicate work.
+This entry previously read *"`POST /api/v1/payments/subscriptions` has no
+idempotency scope. A double submission can create duplicate work"*, and argued
+the gap was tolerable because subscriptions are *"a low-frequency lifecycle path
+rather than a customer-facing tap, so the exposure is materially smaller than
+the payment initiation gap"*. **That reasoning was wrong**, and is recorded here
+rather than quietly deleted: frequency is the wrong measure for a standing
+instruction. A duplicate payment is one extra charge the customer can see and
+dispute; a duplicate subscription is one extra charge *every billing period*,
+and two identical subscriptions for one user are indistinguishable from a
+customer who wanted two — so no later reconciliation can separate them. Low
+frequency made the gap rarer, not smaller.
+
+What closed it:
+
+- `payments.subscription` is now in the `IdempotencyCoverageTest` scope list,
+  which §A of this page and that test both treat as the contract.
+- The claim reuses the existing `IdempotencyStore` and `shared_idempotency_keys`
+  table; the correctness boundary is the existing `unique(scope,
+  idempotency_key)` index, not a read-then-write check. No new table, no
+  migration, and the index was deliberately **not** widened to include the
+  nullable `user_id` — PostgreSQL treats nulls in a unique index as distinct, so
+  that would have removed the guarantee from every scope that predates M41.
+- The stored key is `sha256(principalId . "\0" . rawClientKey)`, so the
+  constraint is per-principal without touching the index: two users may use the
+  same key value independently, and neither can reach the other's record.
 
 **Settlement was closed by M27**, though not with an idempotency scope. The new
 path (`POST /api/v1/payments/admin/settlement-runs`) is protected by a partial
 unique index on `(merchant, currency, window)` for live runs, which is stronger:
 it holds regardless of whether the caller supplies a key. An `Idempotency-Key`
 header is honoured additionally when one is sent.
-
-**Why subscriptions are still open:** a low-frequency lifecycle path rather than
-a customer-facing tap, so the exposure is materially smaller than the payment
-initiation gap that *was* closed.
-
-**Pending:** close subscriptions in the milestone that owns them. The scope list
-in `IdempotencyCoverageTest` is the contract — adding a scope there without
-implementing it fails the suite, and vice versa.
 
 ---
 

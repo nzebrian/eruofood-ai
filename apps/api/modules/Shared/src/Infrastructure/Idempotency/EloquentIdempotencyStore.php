@@ -34,6 +34,17 @@ use Throwable;
  * A crash between claim and completion leaves the key `in_progress`, which
  * blocks retries until `expires_at`. That is deliberate: refusing a retry we
  * cannot prove is safe beats risking a second money movement.
+ *
+ * ## What the principal is, and is not
+ *
+ * `$principalId` is written to `user_id` so a claim can be attributed and
+ * erased. It is **not** part of the unique index, and adding it there would be
+ * a mistake: `user_id` is null for every scope that predates M41, and
+ * PostgreSQL treats nulls in a unique index as distinct — so widening the
+ * constraint would silently remove the uniqueness guarantee from all of them.
+ * A caller that needs one principal's keys to be independent of another's binds
+ * the principal into the key value itself; see
+ * {@see \EruoFood\Shared\Interface\Http\Concerns\UsesIdempotencyKey::principalScopedIdempotencyKey()}.
  */
 final readonly class EloquentIdempotencyStore implements IdempotencyStore
 {
@@ -43,13 +54,13 @@ final readonly class EloquentIdempotencyStore implements IdempotencyStore
     ) {
     }
 
-    public function execute(string $scope, ?string $key, string $requestHash, callable $work): IdempotentResult
+    public function execute(string $scope, ?string $key, string $requestHash, callable $work, ?string $principalId = null): IdempotentResult
     {
         if ($key === null) {
             return IdempotentResult::fresh($work());
         }
 
-        $replay = $this->claim($scope, $key, $requestHash);
+        $replay = $this->claim($scope, $key, $requestHash, $principalId);
         if ($replay !== null) {
             return $replay;
         }
@@ -91,11 +102,11 @@ final readonly class EloquentIdempotencyStore implements IdempotencyStore
      * @return IdempotentResult|null null when this caller owns the claim and
      *                               should run the work
      */
-    private function claim(string $scope, string $key, string $requestHash): ?IdempotentResult
+    private function claim(string $scope, string $key, string $requestHash, ?string $principalId): ?IdempotentResult
     {
         $now = $this->clock->now();
 
-        if ($this->tryInsertClaim($scope, $key, $requestHash, $now)) {
+        if ($this->tryInsertClaim($scope, $key, $requestHash, $now, $principalId)) {
             return null;
         }
 
@@ -117,7 +128,7 @@ final readonly class EloquentIdempotencyStore implements IdempotencyStore
             && $existing->expires_at < $now) {
             $existing->delete();
 
-            if ($this->tryInsertClaim($scope, $key, $requestHash, $now)) {
+            if ($this->tryInsertClaim($scope, $key, $requestHash, $now, $principalId)) {
                 return null;
             }
 
@@ -156,11 +167,11 @@ final readonly class EloquentIdempotencyStore implements IdempotencyStore
      *
      * @phpstan-impure
      */
-    private function tryInsertClaim(string $scope, string $key, string $requestHash, DateTimeImmutable $now): bool
+    private function tryInsertClaim(string $scope, string $key, string $requestHash, DateTimeImmutable $now, ?string $principalId): bool
     {
         try {
-            DB::transaction(function () use ($scope, $key, $requestHash, $now): void {
-                $this->insertClaim($scope, $key, $requestHash, $now);
+            DB::transaction(function () use ($scope, $key, $requestHash, $now, $principalId): void {
+                $this->insertClaim($scope, $key, $requestHash, $now, $principalId);
             });
 
             return true;
@@ -170,13 +181,14 @@ final readonly class EloquentIdempotencyStore implements IdempotencyStore
         }
     }
 
-    private function insertClaim(string $scope, string $key, string $requestHash, DateTimeImmutable $now): void
+    private function insertClaim(string $scope, string $key, string $requestHash, DateTimeImmutable $now, ?string $principalId): void
     {
         $row = new IdempotencyKeyModel();
         $row->id = (string) Str::orderedUuid();
         $row->scope = $scope;
         $row->idempotency_key = $key;
         $row->request_hash = $requestHash;
+        $row->user_id = $principalId;
         $row->state = IdempotencyKeyModel::STATE_IN_PROGRESS;
         $row->created_at = $now;
         $row->expires_at = $now->modify(sprintf('+%d seconds', $this->ttlSeconds));

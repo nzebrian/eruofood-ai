@@ -2751,6 +2751,28 @@ paths:
       tags: [Payments]
       summary: Start a recurring subscription
       security: [{ bearerAuth: [] }]
+      parameters:
+        # Declared inline rather than by $ref to the shared IdempotencyKey
+        # parameter: that component is `required: false` and its description
+        # ends "omitting the header preserves the previous at-least-once
+        # behaviour", both of which are wrong here. A Reference Object may
+        # override only `summary` and `description`, never `required`, so the
+        # shared component cannot express this endpoint's contract.
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >
+            Required on this endpoint, unlike every other operation that accepts
+            this header. A subscription is a standing instruction, so a
+            duplicate is one extra charge every billing period rather than one
+            the customer can see and dispute — and two identical subscriptions
+            are indistinguishable from a customer who wanted two, so no later
+            reconciliation can separate them. A missing, blank or over-length
+            key is therefore rejected with 422 rather than silently falling back
+            to the unguarded path. The key is scoped to the authenticated
+            caller, so two users may use the same value independently.
+          schema: { type: string, maxLength: 255 }
+          example: "6f1a2c4e-9b3d-4a71-8f2e-5c7d9a0b1e33"
       requestBody:
         required: true
         content:
@@ -2768,6 +2790,15 @@ paths:
           content:
             application/json:
               schema: { type: object, properties: { data: { $ref: "#/components/schemas/Subscription" } } }
+        "200":
+          description: >
+            Replay of an earlier identical request (same Idempotency-Key and
+            body). No new work was performed.
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/Subscription" } } }
+        "409": { $ref: "#/components/responses/IdempotencyInFlight" }
+        "422": { $ref: "#/components/responses/Error" }
   /v1/payments/webhooks/{provider}:
     post:
       tags: [Payments]
