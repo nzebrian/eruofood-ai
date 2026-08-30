@@ -46,6 +46,14 @@ return [
         | windows and payment provider callback retries.
         */
         'ttl' => (int) env('IDEMPOTENCY_TTL', 86400),
+
+        /*
+        | M42. Rows per delete statement when `shared:purge-idempotency-keys`
+        | removes claims past `expires_at`. Bounds the statement only; it does
+        | not decide WHAT is eligible — expiry does, and expiry comes from the
+        | TTL above.
+        */
+        'purge_chunk' => (int) env('IDEMPOTENCY_PURGE_CHUNK', 1000),
     ],
 
     /*

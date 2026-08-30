@@ -11,6 +11,7 @@ use EruoFood\Geo\Domain\Rider\RiderLocationRepository;
 use EruoFood\Geo\Domain\ValueObject\Coordinates;
 use EruoFood\Geo\Domain\ValueObject\Haversine;
 use EruoFood\Geo\Infrastructure\Persistence\Eloquent\Model\RiderLocationModel;
+use EruoFood\Shared\Domain\Exception\InvalidArgumentException;
 
 /**
  * Eloquent persistence for {@see RiderLocation}.
@@ -116,6 +117,46 @@ final class EloquentRiderLocationRepository implements RiderLocationRepository
     public function forget(string $riderId): void
     {
         RiderLocationModel::query()->whereKey($riderId)->delete();
+    }
+
+    public function countRecordedBefore(DateTimeImmutable $before): int
+    {
+        return RiderLocationModel::query()
+            ->where('recorded_at', '<', $before->format('Y-m-d H:i:s'))
+            ->count();
+    }
+
+    public function purgeRecordedBefore(DateTimeImmutable $before, int $chunkSize): int
+    {
+        if ($chunkSize <= 0) {
+            throw new InvalidArgumentException('Chunk size must be a positive number of rows.');
+        }
+
+        $cutoff = $before->format('Y-m-d H:i:s');
+        $removed = 0;
+
+        // Strictly `<`: a position recorded exactly at the cutoff is inside the
+        // window and survives. Keys first, then delete by key — PostgreSQL has
+        // no `DELETE … LIMIT`, and a first purge over a large backlog must be a
+        // series of small interruptible deletes rather than one lock-holding
+        // transaction. `recorded_at` is indexed, so the empty case is one cheap
+        // indexed SELECT and no DELETE at all.
+        do {
+            /** @var list<string> $ids */
+            $ids = RiderLocationModel::query()
+                ->where('recorded_at', '<', $cutoff)
+                ->limit($chunkSize)
+                ->pluck('rider_id')
+                ->all();
+
+            if ($ids === []) {
+                break;
+            }
+
+            $removed += RiderLocationModel::query()->whereIn('rider_id', $ids)->delete();
+        } while (count($ids) === $chunkSize);
+
+        return $removed;
     }
 
     private function toDomain(RiderLocationModel $m): RiderLocation

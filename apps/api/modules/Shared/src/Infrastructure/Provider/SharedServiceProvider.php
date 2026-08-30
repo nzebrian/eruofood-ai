@@ -13,10 +13,13 @@ use EruoFood\Shared\Domain\Flag\FlagEvaluator;
 use EruoFood\Shared\Domain\Flag\FlagRegistry;
 use EruoFood\Shared\Domain\Idempotency\IdempotencyStore;
 use EruoFood\Shared\Domain\Risk\RiskEvaluator;
+use EruoFood\Shared\Domain\Schedule\Cadence;
+use EruoFood\Shared\Domain\Schedule\ScheduledTask;
 use EruoFood\Shared\Domain\Schedule\ScheduleRegistry;
 use EruoFood\Shared\Domain\TransactionManager;
 use EruoFood\Shared\Infrastructure\Bus\LaravelEventBus;
 use EruoFood\Shared\Infrastructure\Clock\SystemClock;
+use EruoFood\Shared\Infrastructure\Console\PurgeIdempotencyKeysCommand;
 use EruoFood\Shared\Infrastructure\Console\TimezoneManifestCommand;
 use EruoFood\Shared\Infrastructure\Console\VerifyEnvironmentCommand;
 use EruoFood\Shared\Infrastructure\Correlation\PropagatesCorrelationToQueue;
@@ -237,13 +240,69 @@ final class SharedServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__.'/../Persistence/Migration');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([TimezoneManifestCommand::class, VerifyEnvironmentCommand::class]);
+            $this->commands([
+                TimezoneManifestCommand::class,
+                VerifyEnvironmentCommand::class,
+                PurgeIdempotencyKeysCommand::class,
+            ]);
         }
+
+        // Registered unconditionally, matching Search and Payments. The registry
+        // is a *description* of recurring work, and a description that only
+        // exists in a console process cannot be inspected, audited or asserted
+        // on from anywhere else.
+        $this->registerRetentionWork();
 
         // Correlation across the queue boundary. Registered in boot() rather
         // than register() because it needs the event dispatcher, and it is
         // registered unconditionally: a tracing feature that only works when
         // somebody remembers to switch it on is not a tracing feature.
         PropagatesCorrelationToQueue::register($this->app->make(Dispatcher::class));
+    }
+
+    /**
+     * Retention work the Shared kernel owns, registered DISABLED (M42).
+     *
+     * Two independent locks sit under this task and both are off. `enabled` is
+     * false here, and `destructiveRetention: true` additionally subjects it to
+     * {@see \EruoFood\Shared\Domain\DataLifecycle\RetentionGate} — the
+     * `lifecycle.retention_purge` flag, whose safe default is also false. Either
+     * one alone stops an unattended run.
+     *
+     * That redundancy is deliberate rather than belt-and-braces theatre:
+     * `DeletionMode::isReversible()` is true for exactly one mode and this is
+     * not it, so a task flipped on by accident should still do nothing.
+     *
+     * `verification:purge` is registered here too. The command has existed since
+     * M24 and was never scheduled, which left `verification.identity_documents`
+     * with an enforcement path nobody could reach without typing it by hand.
+     */
+    private function registerRetentionWork(): void
+    {
+        $registry = $this->app->make(ScheduleRegistry::class);
+
+        $registry->register(ScheduledTask::of(
+            name: 'shared:purge-idempotency-keys',
+            command: 'shared:purge-idempotency-keys',
+            cadence: Cadence::Daily,
+            enabled: false,
+            description: 'Deletes idempotency claims past expires_at, honouring shared.idempotency_keys '
+                .'(retainDays 1, Destroy). Eligibility is expires_at, never created_at — deleting a live '
+                .'claim would reopen the duplicate-payment window it exists to close. Prints counts only, '
+                .'never keys, snapshots or user ids. Disabled by default.',
+            destructiveRetention: true,
+        ));
+
+        $registry->register(ScheduledTask::of(
+            name: 'verification:purge',
+            command: 'verification:purge',
+            cadence: Cadence::Daily,
+            enabled: false,
+            description: 'Deletes verification identity-document metadata past the retention window in '
+                .'verification.privacy.metadata_retention_days, honouring verification.identity_documents '
+                .'(Destroy). The command predates M42; this registration is what makes it reachable '
+                .'unattended. Disabled by default.',
+            destructiveRetention: true,
+        ));
     }
 }

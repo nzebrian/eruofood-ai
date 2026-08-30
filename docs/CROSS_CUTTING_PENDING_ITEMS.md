@@ -83,27 +83,90 @@ header is honoured additionally when one is sent.
 
 ---
 
-## C. `RetentionRegistry` is declarative only
+## C. `RetentionRegistry` enforcement — enforceable since M42, and switched off
 
-**Status:** the declaration exists; **nothing enforces it**.
+**Status:** every declared policy now has an enforcement path or a written
+reason it has none. **Nothing runs unattended**: every retention schedule is
+registered `enabled: false`, and `lifecycle.retention_purge` is off.
 
-`RetentionRegistry::platformDefaults()` states, for six categories of data, the
-purpose, retention period, deletion mode, access policy and audit requirement.
-It is the answer to "what do we keep and why", in one place instead of scattered
-across three config files.
+This entry previously read *"there is no purge job, no scheduled deletion and no
+anonymisation routine"*. **Two-thirds of that was wrong when it was written**,
+and it is corrected here rather than quietly deleted: `search:purge-query-log`
+has existed since M40 and `verification:purge` since M24. Both were real,
+working purge commands. What was missing was not the code but the reach —
+neither was registered as a scheduled task, so a declared window was enforced
+only if somebody typed the command. A page that says "no purge job" when two
+exist teaches the next reader to distrust the page, which is worse than the gap
+it was describing.
 
-**It deletes nothing.** There is no purge job, no scheduled deletion and no
-anonymisation routine. The `lifecycle.retention_purge` flag exists and is off;
-there is no code behind it.
+### What each policy's enforcement is
 
-**Why not now:** deletion is the one operation on this list that nobody can
-undo. `DeletionMode::isReversible()` returns true only for `Archive`. A purge
-must run in dry-run mode for a full cycle, with counts compared per category,
-before it is ever allowed to act — and that cycle has not happened.
+| Policy | Window | Mode | Enforcement |
+| --- | --- | --- | --- |
+| `shared.idempotency_keys` | 1 day | Destroy | `shared:purge-idempotency-keys` (M42) |
+| `geo.rider_locations` | 30 days | Destroy | `geo:purge-rider-locations` (M42) |
+| `search.query_log` | 90 days | Destroy | `search:purge-query-log` (M40) |
+| `verification.identity_documents` | 1825 days | Destroy | `verification:purge` (M24) |
+| `notifications.sent` | 365 days | Anonymise | **none — see below** |
+| `payments.ledger` | 2555 days | Archive | none; nothing is due for seven years |
+| `admin.audit_entries` | 2555 days | Archive | none; an audit trail cannot be anonymised |
 
-**Pending:** the purge implementation, its dry-run mode, and the drill that
-precedes first destructive use. Until then, data past its declared retention is
-**still present**. The registry describes intent, not current state.
+`RetentionEnforcement` holds that mapping, and it is not a second registry — it
+carries no windows, modes or categories. `for()` **throws** on a key that is in
+neither column, and `RetentionEnforcementTest` walks `RetentionRegistry` itself
+rather than a copied list, so a policy added later cannot arrive unenforced and
+unnoticed.
+
+### The one gap M42 did not close
+
+`notifications.sent` declares `DeletionMode::Anonymise`, and there is no
+anonymisation mechanism anywhere in this codebase to reuse. "The record is kept
+with the person removed from it" would mean clearing `user_id`, `subject`,
+`body`, `data` and `timeline` on `notifications_notifications` — and every one
+of those columns is `NOT NULL`. Honouring the mode needs either a schema
+migration making `user_id` nullable or a sentinel-value convention that does not
+exist here, and M42 was scoped to exclude schema changes. So it is recorded as a
+documented exemption rather than guessed at.
+
+**Converting the policy to `Destroy` would be the wrong fix**, and the negative
+controls fail if anybody tries: the purpose — show somebody what we sent them —
+survives anonymisation and does not survive deletion.
+
+### Both locks, and why there are two
+
+Deletion is the one operation on this list nobody can undo;
+`DeletionMode::isReversible()` is true only for `Archive`. So a destructive task
+passes two independent switches before it can run unattended:
+
+- `enabled: false` on the task, which lives with the module that registered it.
+- `destructiveRetention: true`, which subjects it to `lifecycle.retention_purge`
+  — the master flag, `safeDefault: false`, which lives with the operator who
+  owns the database.
+
+`bootstrap/app.php` skips a `destructiveRetention` task whenever the flag is
+closed, so either switch alone stops a run. A task flipped on by accident still
+does nothing.
+
+### Before the first destructive run
+
+Unchanged from the original entry, and still not optional: each command must run
+under `--dry-run` for a full cycle, with counts compared per category, before it
+is allowed to act. The dry run reports eligibility and returns without touching
+a row. Until an operator does that and then deliberately opens both locks, data
+past its declared retention is **still present** — the difference M42 makes is
+that removing it is now a decision somebody takes, rather than a capability
+nobody has.
+
+Two details worth carrying into that drill:
+
+- **Idempotency eligibility is `expires_at`, never `created_at`.** A claim's age
+  is not its eligibility. `shared:purge-idempotency-keys` therefore has no
+  `--days` option at all: deleting a live claim would reopen the
+  duplicate-payment window that claim exists to close.
+- **The commands print counts and timestamps only** — never keys, request
+  hashes, response snapshots, coordinates, rider ids or user ids. They exist
+  because those values should not persist; echoing them into a terminal, and
+  from there into a CI log, on the way to deleting them would defeat the point.
 
 ---
 

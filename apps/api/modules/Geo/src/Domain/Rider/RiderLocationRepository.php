@@ -35,4 +35,25 @@ interface RiderLocationRepository
 
     /** Forget a rider's position, e.g. when they go offline. */
     public function forget(string $riderId): void;
+
+    /**
+     * How many stored positions were last recorded before $before (M42).
+     *
+     * Reports only; deletes nothing, so a dry run can be read before anything
+     * irreversible happens.
+     */
+    public function countRecordedBefore(DateTimeImmutable $before): int;
+
+    /**
+     * Delete stored positions last recorded before $before, in bounded batches.
+     *
+     * This table holds ONE row per rider — `rider_id` is the primary key and a
+     * new fix upserts over the old one — so this is not trimming a movement
+     * trail. It removes the last known position of a rider who has not reported
+     * since the cutoff: a coordinate that is no longer operationally useful and
+     * has become a record of where somebody was.
+     *
+     * @return int rows removed
+     */
+    public function purgeRecordedBefore(DateTimeImmutable $before, int $chunkSize): int;
 }

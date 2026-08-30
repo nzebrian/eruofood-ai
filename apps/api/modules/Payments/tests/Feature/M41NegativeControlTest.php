@@ -133,9 +133,14 @@ final class FingerprintBlindStore implements IdempotencyStore
         return $this->inner->execute($scope, $key, str_repeat('0', 64), $work, $principalId);
     }
 
-    public function purgeExpired(): int
+    public function countExpired(): int
     {
-        return $this->inner->purgeExpired();
+        return $this->inner->countExpired();
+    }
+
+    public function purgeExpired(int $chunkSize = 1000): int
+    {
+        return $this->inner->purgeExpired($chunkSize);
     }
 }
 

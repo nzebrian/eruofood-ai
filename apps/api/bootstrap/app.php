@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use EruoFood\Shared\Domain\DataLifecycle\RetentionGate;
 use EruoFood\Shared\Domain\Exception\DomainException;
 use EruoFood\Shared\Domain\Schedule\Cadence;
 use EruoFood\Shared\Domain\Schedule\ScheduleRegistry;
@@ -50,7 +51,19 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (Schedule $schedule): void {
         $registry = app(ScheduleRegistry::class);
 
+        // M42. A task that deletes or anonymises data past its retention window
+        // needs a second, independent lock. `enabled` lives in the module that
+        // registered the task; this flag lives with the operator who owns the
+        // database. Both are off, and either one alone stops an unattended run —
+        // which matters because `DeletionMode::isReversible()` is true for
+        // exactly one mode, and it is not the one these tasks use.
+        $retention = app(RetentionGate::class);
+
         foreach ($registry->enabled() as $task) {
+            if ($task->destructiveRetention && ! $retention->allowsScheduledPurge()) {
+                continue;
+            }
+
             $event = match ($task->cadence) {
                 Cadence::EveryMinute => $schedule->command($task->command)->everyMinute(),
                 Cadence::EveryFiveMinutes => $schedule->command($task->command)->everyFiveMinutes(),

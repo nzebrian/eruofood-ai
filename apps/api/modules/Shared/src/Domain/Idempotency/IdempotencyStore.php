@@ -43,6 +43,21 @@ interface IdempotencyStore
      */
     public function execute(string $scope, ?string $key, string $requestHash, callable $work, ?string $principalId = null): IdempotentResult;
 
-    /** Discard expired keys. Returns how many were removed. */
-    public function purgeExpired(): int;
+    /** How many keys are past `expires_at` right now, deleting nothing (M42). */
+    public function countExpired(): int;
+
+    /**
+     * Discard expired keys. Returns how many were removed.
+     *
+     * Eligibility is `expires_at < now` and nothing else. It is emphatically NOT
+     * `created_at`: a claim's age says nothing about whether the operation it
+     * guards is still replayable, and deleting an unexpired claim would let the
+     * retry it exists to collapse execute a second time — a duplicate payment,
+     * refund or subscription. `expires_at` is the only safe predicate here.
+     *
+     * $chunkSize bounds each statement. A first purge over a large backlog must
+     * be a series of small interruptible deletes rather than one lock-holding
+     * transaction.
+     */
+    public function purgeExpired(int $chunkSize = 1000): int;
 }

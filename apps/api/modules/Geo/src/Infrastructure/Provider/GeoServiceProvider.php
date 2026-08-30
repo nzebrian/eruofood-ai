@@ -24,6 +24,7 @@ use EruoFood\Geo\Domain\Rider\RiderLocationRepository;
 use EruoFood\Geo\Domain\Route\RouteCacheRepository;
 use EruoFood\Geo\Domain\Zone\DeliveryZoneRepository;
 use EruoFood\Geo\Infrastructure\Cache\RedisGeoCache;
+use EruoFood\Geo\Infrastructure\Console\PurgeRiderLocationsCommand;
 use EruoFood\Geo\Infrastructure\Event\KybLocationSubscriber;
 use EruoFood\Geo\Infrastructure\Persistence\Eloquent\EloquentCustomerAddressRepository;
 use EruoFood\Geo\Infrastructure\Persistence\Eloquent\EloquentDeliveryZoneRepository;
@@ -35,6 +36,9 @@ use EruoFood\Geo\Infrastructure\Provider\Mock\MockMapProvider;
 use EruoFood\Geo\Infrastructure\RateLimit\CacheGeoRateLimiter;
 use EruoFood\Geo\Interface\Http\Controller\GeoPresenter;
 use EruoFood\Shared\Domain\EventBus;
+use EruoFood\Shared\Domain\Schedule\Cadence;
+use EruoFood\Shared\Domain\Schedule\ScheduledTask;
+use EruoFood\Shared\Domain\Schedule\ScheduleRegistry;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -92,6 +96,38 @@ final class GeoServiceProvider extends ServiceProvider
             'verification.subject_verified',
             [KybLocationSubscriber::class, 'handle'],
         );
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([PurgeRiderLocationsCommand::class]);
+        }
+
+        $this->registerRetentionWork();
+    }
+
+    /**
+     * Retention work Geo owns, registered DISABLED (M42).
+     *
+     * `geo.rider_locations` declares 30 days and had no enforcement path at all.
+     * Note what this task does and does not do: the table holds ONE row per
+     * rider, upserted, so this deletes the last known position of a rider who
+     * has stopped reporting — not segments of a movement trail, which this
+     * platform deliberately never collected.
+     *
+     * Disabled, and additionally gated on `lifecycle.retention_purge` through
+     * `destructiveRetention`. Both locks are off.
+     */
+    private function registerRetentionWork(): void
+    {
+        $this->app->make(ScheduleRegistry::class)->register(ScheduledTask::of(
+            name: 'geo:purge-rider-locations',
+            command: 'geo:purge-rider-locations',
+            cadence: Cadence::Daily,
+            enabled: false,
+            description: 'Deletes rider positions last recorded past the window in '
+                .'geo.rider_location_retention_days, honouring geo.rider_locations (Destroy). Prints counts '
+                .'only, never coordinates or rider ids. Disabled by default.',
+            destructiveRetention: true,
+        ));
     }
 
     private function registerRepositories(): void
