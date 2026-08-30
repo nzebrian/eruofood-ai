@@ -29,6 +29,47 @@ change.
 **Pending:** make the key mandatory once all first-party clients send it. Until
 then a caller that omits it is unprotected, and no test can assert otherwise.
 
+### First-party client adoption — completed by M43
+
+The precondition above named "all first-party clients". As of M43 both send the
+header on every money-moving call they make.
+
+`apps/mobile` has sent it since M30-D, on the four scopes its retry queue
+declares (`commerce.checkout`, `marketplace.checkout`, `payments.initiate`,
+`payments.wallet.topup`). `apps/web` sent it on **nothing** — a gap that
+outlived four milestones of server-side hardening. Its six money-moving calls —
+`payments.initiate`, wallet top-up, wallet transfer, refund, and both checkouts
+— now mint a key each and send it. Nothing else on that client does: repeating a
+cart edit, a coupon, a wishlist change or an order-status transition cannot move
+money, and a key on those would consume a claim row for nothing.
+
+Three details worth carrying forward, because they are the parts that are easy
+to get wrong:
+
+- **Server-side idempotency was already there and is unchanged.** M43 is client
+  adoption only. `IdempotencyStore`, the `unique(scope, idempotency_key)` index
+  and the principal-scoped hashing all predate it, and remain authoritative for
+  what a repeat means. **No schema change and no migration were required.**
+- **The key is minted at the operation boundary, never inside the transport.**
+  `apiClient.request()` re-issues the whole request after a 401 token refresh; a
+  transport that generated keys would mint a second one on that replay, and one
+  logical checkout would reach the server as two. `postIdempotent` therefore
+  takes the key as an argument and cannot generate one, and the replay carries
+  the original value because it re-uses the same `init`. A negative control
+  injects exactly that regression and requires the test to fail.
+- **A retry with a changed payload must take a new key.** The server refuses the
+  same key with a different request hash (`IDEMPOTENCY_KEY_REUSED`), which is
+  correct — replaying a stored response would answer a question the client did
+  not ask. So the key is per invocation by default, and `idempotencyKey` is an
+  explicit optional parameter for the narrower case of re-sending an *identical*
+  payload.
+
+**Still pending, unchanged:** making the header mandatory on `payments.initiate`
+remains a separate decision. First-party adoption removes the internal
+objection, but the M41 audit's point stands — this repository cannot enumerate
+third-party consumers, so flipping the requirement is an owner call, not a
+consequence of M43.
+
 **This applies to `payments.initiate` only.** `payments.subscription` (§B)
 *requires* the header, and that is not a departure from the rule above but an
 instance of it: the M41 pre-merge audit traced every caller and found **no
@@ -37,8 +78,15 @@ first-party client of the subscription endpoint at all** — nothing in
 of them subscriptions), and no job, command, seeder, script or internal service.
 `SubscriptionController::store()` is the only production caller of
 `SubscriptionService::start()`. The precondition therefore holds vacuously
-there, while `payments.initiate` is called by the mobile app and stays opt-in
-until that client sends the header. The audit could not prove the absence of
+there.
+
+This paragraph previously continued *"while `payments.initiate` is called by the
+mobile app and stays opt-in until that client sends the header"*. **That half was
+wrong when it was written**, and is corrected rather than deleted:
+`RetryEligibility.endpoints` has declared `payments.initiate` since M30-D, and
+`RetryQueueInterceptor` sets `Idempotency-Key` on every declared endpoint — so
+the mobile app was already sending it. The client that was not sending it was
+`apps/web`, which M43 fixed. The audit could not prove the absence of
 third-party consumers outside the repository; that residual risk is the reason
 this distinction is written down rather than assumed.
 
