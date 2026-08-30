@@ -1,4 +1,5 @@
 import { apiClient } from '@lib/apiClient';
+import { newIdempotencyKey } from '@lib/idempotency';
 import type {
   Cart,
   Category,
@@ -65,7 +66,20 @@ export const commerceApi = {
 
   quote: (pickup: boolean) =>
     apiClient.get<PriceBreakdown>(`/commerce/checkout/quote${query({ pickup })}`),
-  checkout: (payload: CheckoutPayload) => apiClient.post<Order>('/commerce/checkout', payload),
+  /**
+   * Place the order (M43).
+   *
+   * The one call on this client that moves money, and the only one that carries
+   * an `Idempotency-Key`. Browsing, carting and wishlisting are all safely
+   * repeatable; a second checkout is a second order.
+   *
+   * `idempotencyKey` is explicit so a caller re-sending the *same* payload can
+   * reuse it and have the original order replayed. The server refuses the same
+   * key with a changed payload (`IDEMPOTENCY_KEY_REUSED`), so a retry after the
+   * cart or address changed must take a fresh key — omit the argument for that.
+   */
+  checkout: (payload: CheckoutPayload, idempotencyKey: string = newIdempotencyKey()) =>
+    apiClient.postIdempotent<Order>('/commerce/checkout', payload, idempotencyKey),
   orders: () => apiClient.getPage<Paginated<OrderSummary>>('/commerce/orders'),
   order: (id: string) => apiClient.get<Order>(`/commerce/orders/${id}`),
 };

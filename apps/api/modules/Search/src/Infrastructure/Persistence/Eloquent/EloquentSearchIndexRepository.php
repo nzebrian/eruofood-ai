@@ -194,11 +194,36 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
 
         $window = min(max($this->candidatePool, $needed), $this->maxResultWindow);
 
-        $builder = $predicate();
-        $this->applyCandidateOrder($builder, $queryEmbedding);
+        // Approximate candidate selection is only ever worth its cost when
+        // there are MORE matches than the window can hold — its whole job is
+        // deciding which ones to score in PHP. When the entire match set
+        // already fits, the fetch order is irrelevant (the ranker re-sorts
+        // everything below), so an approximate scan there can only lose rows.
+        //
+        // It loses them silently, and badly. `ORDER BY embedding_vec <=> …`
+        // against an ivfflat index probes one list out of `lists`, and the
+        // WHERE clause is applied to whatever that probe yields. With a
+        // selective filter the two disagree completely: EXPLAIN on a 121-row
+        // index searching for a term that matches ONE document reported
+        // `Index Scan … actual rows=0, Rows Removed by Filter: 39`. `total`
+        // said 1 because it is counted without the ORDER BY; `hits` was empty.
+        // A search with a result answered "nothing found" — and only where
+        // pgvector is installed, so it never reproduced on a portable database.
+        $approximateOrderingHelps = $total > $window;
 
-        /** @var list<SearchDocumentModel> $rows */
-        $rows = $builder->limit($window)->get()->all();
+        $rows = $this->fetchCandidates(
+            $predicate(),
+            $window,
+            $approximateOrderingHelps ? $queryEmbedding : null,
+        );
+
+        // A last defence for the case the branch above still allows. An
+        // approximate index must never turn a non-empty result set into an
+        // empty one; if it did, re-fetch exactly. This costs one extra query
+        // only in the failure case, and never on the path that already works.
+        if ($rows === [] && $total > 0) {
+            $rows = $this->fetchCandidates($predicate(), $window, null);
+        }
 
         $matched = $this->hydrateHits($rows, $query, $queryEmbedding, filter: true);
 
@@ -455,7 +480,36 @@ final class EloquentSearchIndexRepository implements SearchIndexRepository
 
             return;
         }
-        $builder->orderByDesc('popularity');
+
+        // Popularity alone is not an order: every document that has never been
+        // interacted with shares the default of 0, and PostgreSQL is free to
+        // return tied rows in whatever order the plan produced. `id` makes the
+        // window a stable choice rather than a plan-dependent one, so two
+        // identical searches see the same candidates.
+        $builder->orderByDesc('popularity')->orderBy('id');
+    }
+
+    /**
+     * The candidate window for the PHP-ranked path.
+     *
+     * `$embedding` is passed only when approximate nearest-neighbour selection
+     * is actually wanted; null means "order exactly". Keeping that decision at
+     * the call site rather than inside the ordering helper is deliberate — the
+     * question is not "is pgvector available" but "would an approximate answer
+     * change which rows we score", and only the caller knows the match count.
+     *
+     * @param Builder<SearchDocumentModel> $builder
+     *
+     * @return list<SearchDocumentModel>
+     */
+    private function fetchCandidates(Builder $builder, int $window, ?Embedding $embedding): array
+    {
+        $this->applyCandidateOrder($builder, $embedding);
+
+        /** @var list<SearchDocumentModel> $rows */
+        $rows = $builder->limit($window)->get()->all();
+
+        return $rows;
     }
 
     /**
