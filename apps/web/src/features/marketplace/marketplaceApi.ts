@@ -1,4 +1,5 @@
 import { apiClient } from '@lib/apiClient';
+import { newIdempotencyKey } from '@lib/idempotency';
 import type { Cart, MenuItem, Order, OrderSummary, Paginated, SalesSummary, Vendor, VendorSummary } from './types';
 
 function query(params: Record<string, string | number | boolean | undefined>): string {
@@ -39,7 +40,15 @@ export const marketplaceApi = {
     apiClient.put<Cart>('/cart/items', { menu_item_id: menuItemId, quantity, variant_name: variantName }),
   clearCart: () => apiClient.delete<void>('/cart'),
 
-  checkout: (payload: CheckoutPayload) => apiClient.post<Order>('/checkout', payload),
+  /**
+   * Place the order (M43).
+   *
+   * The only money-moving call on this client. `advanceOrder` changes an order's
+   * status and moves nothing, so it stays unkeyed. See `commerceApi.checkout`
+   * for why the key is an explicit parameter rather than a transport default.
+   */
+  checkout: (payload: CheckoutPayload, idempotencyKey: string = newIdempotencyKey()) =>
+    apiClient.postIdempotent<Order>('/checkout', payload, idempotencyKey),
   orders: () => apiClient.getPage<Paginated<OrderSummary>>('/orders'),
   order: (id: string) => apiClient.get<Order>(`/orders/${id}`),
 

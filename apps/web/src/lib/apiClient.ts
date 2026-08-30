@@ -1,10 +1,21 @@
 import { config } from '@config/env';
+import { IDEMPOTENCY_HEADER } from '@lib/idempotency';
 import { tokenStorage } from '@lib/tokenStorage';
 
 /**
  * REST client for the EruoFood API. Attaches the bearer access token, unwraps
  * the standard `{ data }` envelope, and transparently refreshes the access
  * token once on a 401 before retrying (MASTER_PLAN.md §6).
+ *
+ * ## Idempotency (M43)
+ *
+ * `postIdempotent` takes the key as an argument and never mints one. That is
+ * the whole design: a transport layer that generated keys would mint a second
+ * one on the 401 refresh replay below, turning one logical operation into two
+ * as far as the server is concerned — which is the exact duplicate-charge this
+ * exists to prevent. Because the key travels inside `init.headers` and the
+ * replay re-uses the same `init` object, the retried request carries the
+ * original key without any code here having to remember it.
  */
 
 export interface ApiEnvelope<T> {
@@ -122,6 +133,27 @@ export const apiClient = {
   getPage: <T>(path: string) => requestEnvelope<T>(path),
   post: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(payload ?? {}) }),
+  /**
+   * POST a money-moving operation under a caller-supplied idempotency key.
+   *
+   * The key is required rather than defaulted, so an operation cannot become
+   * un-idempotent by omission. It is placed in `init.headers`, which `request`
+   * hands unchanged to the 401 replay — so the replay sends the same key while
+   * still picking up the freshly refreshed `Authorization`.
+   */
+  postIdempotent: <T>(path: string, payload: unknown, idempotencyKey: string) => {
+    if (idempotencyKey === '') {
+      // An empty header is worse than none: the server would treat the request
+      // as unkeyed and the caller would believe it was protected.
+      throw new Error('A money-moving request needs a non-empty idempotency key.');
+    }
+
+    return request<T>(path, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+      headers: { [IDEMPOTENCY_HEADER]: idempotencyKey },
+    });
+  },
   put: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(payload ?? {}) }),
   patch: <T>(path: string, payload?: unknown) =>
