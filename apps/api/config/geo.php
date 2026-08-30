@@ -191,4 +191,14 @@ return [
         // A rider position older than this is not a position, it is history.
         'rider_location_stale_seconds' => (int) env('GEO_RIDER_STALE_SECONDS', 300),
     ],
+
+    /*
+    | M42 retention. The window mirrors `geo.rider_locations` in
+    | RetentionRegistry (30 days); the chunk bounds each delete statement so a
+    | first purge over a backlog stays interruptible. Neither value causes any
+    | deletion on its own — `geo:purge-rider-locations` must be run, and its
+    | schedule ships disabled behind `lifecycle.retention_purge`.
+    */
+    'rider_location_retention_days' => (int) env('GEO_RIDER_LOCATION_RETENTION_DAYS', 30),
+    'rider_location_purge_chunk' => (int) env('GEO_RIDER_LOCATION_PURGE_CHUNK', 1000),
 ];

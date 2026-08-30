@@ -231,6 +231,7 @@ final class SearchServiceProvider extends ServiceProvider
             description: 'Deletes search query-log rows past the retention window in '
                 .'search.query_log_retention_days. Destroys rows; prints counts only, never terms or user ids. '
                 .'Disabled by default — enabling an unattended irreversible delete is an operator decision.',
+            destructiveRetention: true,
         ));
     }
 

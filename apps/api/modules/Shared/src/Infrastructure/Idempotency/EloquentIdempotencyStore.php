@@ -7,6 +7,7 @@ namespace EruoFood\Shared\Infrastructure\Idempotency;
 use DateTimeImmutable;
 use EruoFood\Shared\Domain\Clock;
 use EruoFood\Shared\Domain\Exception\IdempotencyConflict;
+use EruoFood\Shared\Domain\Exception\InvalidArgumentException;
 use EruoFood\Shared\Domain\Idempotency\IdempotencyStore;
 use EruoFood\Shared\Domain\Idempotency\IdempotentResult;
 use EruoFood\Shared\Infrastructure\Idempotency\Model\IdempotencyKeyModel;
@@ -91,9 +92,45 @@ final readonly class EloquentIdempotencyStore implements IdempotencyStore
         return IdempotentResult::fresh($value);
     }
 
-    public function purgeExpired(): int
+    public function countExpired(): int
     {
-        return IdempotencyKeyModel::query()->where('expires_at', '<', $this->clock->now())->delete();
+        return IdempotencyKeyModel::query()->where('expires_at', '<', $this->clock->now())->count();
+    }
+
+    public function purgeExpired(int $chunkSize = 1000): int
+    {
+        if ($chunkSize <= 0) {
+            throw new InvalidArgumentException('Chunk size must be a positive number of rows.');
+        }
+
+        $cutoff = $this->clock->now();
+        $removed = 0;
+
+        // Ids first, then delete by id. PostgreSQL has no `DELETE … LIMIT`, and
+        // an unbounded delete over a large backlog holds locks and bloats WAL
+        // for the duration. The loop stops on an empty batch, so a purge with
+        // nothing to do is one cheap indexed SELECT and zero DELETEs —
+        // `expires_at` is indexed precisely for this.
+        //
+        // `expires_at`, never `created_at`. See the port's docblock: a claim's
+        // age is not its eligibility, and deleting a live claim reopens the
+        // duplicate-payment window the claim exists to close.
+        do {
+            /** @var list<string> $ids */
+            $ids = IdempotencyKeyModel::query()
+                ->where('expires_at', '<', $cutoff)
+                ->limit($chunkSize)
+                ->pluck('id')
+                ->all();
+
+            if ($ids === []) {
+                break;
+            }
+
+            $removed += IdempotencyKeyModel::query()->whereIn('id', $ids)->delete();
+        } while (count($ids) === $chunkSize);
+
+        return $removed;
     }
 
     /**

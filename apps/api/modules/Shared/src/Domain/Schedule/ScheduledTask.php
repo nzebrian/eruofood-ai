@@ -37,6 +37,7 @@ final readonly class ScheduledTask
         public bool $enabled,
         public bool $withoutOverlapping,
         public string $description,
+        public bool $destructiveRetention,
     ) {
     }
 
@@ -44,6 +45,12 @@ final readonly class ScheduledTask
      * @param string $name stable identifier, used for overlap locks and logs
      * @param string $command the artisan command to run
      * @param bool $enabled whether this task should actually be scheduled
+     * @param bool $destructiveRetention whether this task deletes or anonymises
+     *                                   data past its declared retention window.
+     *                                   Such a task is additionally gated on
+     *                                   {@see \EruoFood\Shared\Domain\DataLifecycle\RetentionGate},
+     *                                   so `enabled` alone cannot start an
+     *                                   unattended, irreversible run (M42).
      */
     public static function of(
         string $name,
@@ -52,6 +59,7 @@ final readonly class ScheduledTask
         bool $enabled,
         string $description,
         bool $withoutOverlapping = true,
+        bool $destructiveRetention = false,
     ): self {
         if (trim($name) === '') {
             throw new InvalidArgumentException('A scheduled task needs a name.');
@@ -68,6 +76,6 @@ final readonly class ScheduledTask
             throw new InvalidArgumentException("Scheduled task '{$name}' needs a description.");
         }
 
-        return new self($name, $command, $cadence, $enabled, $withoutOverlapping, $description);
+        return new self($name, $command, $cadence, $enabled, $withoutOverlapping, $description, $destructiveRetention);
     }
 }
