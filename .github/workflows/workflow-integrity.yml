@@ -194,6 +194,26 @@ jobs:
         # required gate.
         run: .github/scripts/m37_governance_advisory_control.sh
 
+      - name: Enforce — M44 deployment safety validator
+        # M44. Everything above guards the workflows that TEST; nothing guarded
+        # the workflow that DEPLOYS. `staging-deploy.yml` carried three
+        # `|| true`s on `kubectl set image`, applied a migration manifest that
+        # did not exist and turned that failure into an `echo`, and exited 0
+        # from its smoke test when it had nothing to probe — so a deployment
+        # that rolled nothing, migrated nothing and verified nothing reported
+        # the same green tick as one that worked.
+        #
+        # Placed in this job because this job's name is the required status
+        # context. A new job would create a context nothing requires, which
+        # enforces nothing while looking like it does — the M36 lesson.
+        run: .github/scripts/verify_deployment_safety.py
+
+      - name: Enforce — M44 deployment safety negative controls
+        # And the control on that validator: eleven historical defects
+        # reinstated one at a time in a mktemp fixture, each required to fail
+        # the check that owns it.
+        run: .github/scripts/m44_deployment_safety_control.sh
+
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
         # every enforcement step still propagates a non-zero exit, then breaks

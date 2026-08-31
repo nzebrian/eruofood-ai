@@ -51,6 +51,33 @@ DB/Redis, Redis AOF on. Health `GET /api/v1/health`, readiness `GET /api/v1/read
 
 Staging is ready when the smoke step is green.
 
+### 3.1 The deploy fails closed (M44)
+
+That list describes what the workflow was always *meant* to do. Until M44 four
+steps could report success without doing it, and this section records what
+changed so a future reader does not reintroduce any of them.
+
+| Was | Now |
+| --- | --- |
+| `kubectl set image` × 3 ended in `\|\| true` | unmasked — a failed roll fails the deploy |
+| only `deploy/api` was waited on | every deployment that is rolled is waited on |
+| `apply -f infra/k8s/jobs/migrate.yaml \|\| echo "add …"`, against a file that **did not exist** | the manifest exists, the apply is unmasked, and the Job is waited on |
+| smoke test `exit 0` with a warning when `STAGING_URL` was unset | a missing `STAGING_URL` is an **error**: an unverifiable deploy is a failed deploy |
+| `${{ inputs.ref }}` spliced into the script run on the staging host | the ref travels through `env:` and reaches the remote as `$1` |
+
+The middle row is the one worth pausing on: **no Kubernetes staging deploy has
+ever run a migration.** The apply failed because the manifest was absent, the
+`echo` succeeded, and the step's exit status was the `echo`'s. Every one of
+those deploys was green.
+
+`STAGING_URL` is now **required**, not optional. A deploy that cannot be probed
+stops rather than reporting the same green tick as one that was verified.
+
+`.github/scripts/verify_deployment_safety.py` asserts all of the above and runs
+inside the required `CI · Workflow Integrity` context;
+`.github/scripts/m44_deployment_safety_control.sh` reinstates each historical
+defect in a throwaway fixture and requires the validator to reject it by name.
+
 ## 4. Logging & monitoring
 - Containers log to stdout/stderr → platform collector (`LOG_STDERR=true`).
 - Load the Prometheus rules `infra/monitoring/alert-rules.yaml`; wire the

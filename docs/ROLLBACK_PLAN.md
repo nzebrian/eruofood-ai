@@ -19,6 +19,16 @@ Anyone on-call may call a rollback; no approval needed to protect availability.
 
 The previous image digest is retained and pinned. Roll deployments back to it:
 
+> **Where the previous digest actually comes from (M44).** This section has
+> always said the previous digest is "kept in the deploy history"; until M44
+> nothing kept it. The deploy job now reads each Deployment's current image
+> *before* rolling and writes it into the job summary under **"Previous image
+> tags (rollback targets)"**, and the SSH path prints `previous ref: <sha>` from
+> the staging host. Open the deploy run that shipped the bad release and take
+> the tags from there. `kubectl rollout undo` below remains the fastest path and
+> needs no tag at all; the recorded tags are for the case where more than one
+> deploy has happened since, and `undo` would land somewhere you did not intend.
+
 ```bash
 # Re-point to the previous known-good digest (kept in the deploy history)
 kubectl rollout undo deploy/api
