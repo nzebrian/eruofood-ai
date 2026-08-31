@@ -1,0 +1,76 @@
+# Expand-only database migration, run once per deployment (M44).
+#
+# ## Why this file did not exist until now
+#
+# `staging-deploy.yml` has applied `infra/k8s/jobs/migrate.yaml` since the
+# workflow was written, with `|| echo "add infra/k8s/jobs/migrate.yaml"` after
+# it. The file was never added, so on the Kubernetes path every staging deploy
+# skipped its migrations and reported success — the apply failed, the echo
+# succeeded, and the step's exit status was the echo's. Nothing downstream could
+# tell a migrated deployment from an unmigrated one.
+#
+# ## Contract
+#
+# The workflow renders `${TAG}`, `${REGISTRY}` and `${IMAGE_PREFIX}` through
+# `envsubst` before applying, then waits for `condition=complete`. A failed
+# migration therefore fails the deploy rather than being discovered later by an
+# application error.
+#
+# `ttlSecondsAfterFinished` lets a completed Job be replaced by the next
+# deployment: a Job's `spec` is immutable, so without expiry the second deploy's
+# apply is rejected. 10 minutes leaves the logs available for a post-mortem
+# while still clearing before any realistic next deploy.
+#
+# ## What this deliberately does NOT do
+#
+# `migrate --force` only ever expands: it adds tables, columns and indexes.
+# Contraction (dropping a column the previous release still reads) belongs in a
+# separate, later release — see ADR-0010 and docs/ROLLBACK_PLAN.md §3. That
+# ordering is what makes a rollback to the previous image safe while this
+# migration stays applied.
+#
+# Application configuration comes from the cluster's own secret store
+# (External Secrets / sealed-secrets), exactly as the long-running deployments
+# consume it. No credential appears in this file, and none may be added to it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eruofood-migrate
+  labels:
+    app.kubernetes.io/name: eruofood
+    app.kubernetes.io/component: migrate
+spec:
+  ttlSecondsAfterFinished: 600
+  # A migration is not a workload to keep retrying blindly. One retry absorbs a
+  # genuinely transient failure (a connection reset while the database elects a
+  # new primary); anything beyond that is a real fault an operator must see.
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eruofood
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "${REGISTRY}/${IMAGE_PREFIX}/api:${TAG}"
+          command: ["php", "artisan", "migrate", "--force"]
+          envFrom:
+            # The same secret the api Deployment reads, so the migration runs
+            # against exactly the database the application will use. Provisioned
+            # by the cluster's secret store; never by this repository.
+            - secretRef:
+                name: eruofood-api
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
