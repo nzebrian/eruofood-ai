@@ -51,6 +51,8 @@ ENFORCED=(
     ".github/scripts/m35_docker_certification_negative_control.sh"
     "apps/mobile/scripts/m31_platform_negative_control.sh"
     ".github/scripts/m37_governance_advisory_control.sh"
+    ".github/scripts/verify_deployment_safety.py"
+    ".github/scripts/m44_deployment_safety_control.sh"
 )
 
 FINGERPRINT_PATHS=(
