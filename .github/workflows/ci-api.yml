@@ -21,6 +21,33 @@ on:
   # See .github/governance/required-checks.json.
   pull_request:
 
+  # Manually runnable (M44).
+  #
+  # The `push` filter above is correct and stays: post-merge runs should be
+  # narrow. But it has a consequence nobody had to confront until M44's
+  # post-merge verification asked for it. A merge that touches no path in that
+  # filter produces no run of this workflow at the merge commit — so
+  # `Tests · SQLite` and `Lint · Analyse · Test`, both REQUIRED contexts, have
+  # no conclusion on `main` at that SHA. Not red: absent.
+  #
+  # That is fine for merge protection, which is evaluated on the pull request,
+  # and it is not fine for anyone who needs to state, with evidence, that the
+  # required contexts pass on `main` as it now stands. Their only options were
+  # to push an empty-ish commit touching a filtered path, or to infer the
+  # result from the pull request run — a different tree.
+  #
+  # `workflow_dispatch` is the narrow fix: the same jobs, unchanged, runnable
+  # on demand against any ref. It adds no inputs (nothing here varies per run,
+  # and an input spliced into a `run:` block is the injection surface M44 spent
+  # its time removing), grants no permissions, and changes nothing about how
+  # this workflow behaves on `push` or `pull_request`.
+  #
+  # One property to know before relying on it: `concurrency` below groups by
+  # `github.ref`, so a dispatch on `main` and a `push` run on `main` share a
+  # group and the newer cancels the older. Dispatch when the branch is quiet,
+  # or re-dispatch — a cancelled run is not a passing one.
+  workflow_dispatch:
+
 concurrency:
   group: ci-api-${{ github.ref }}
   cancel-in-progress: true

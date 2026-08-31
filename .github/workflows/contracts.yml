@@ -21,6 +21,20 @@ on:
   # See .github/governance/required-checks.json.
   pull_request:
 
+  # Manually runnable (M44). See the long note in `ci-api.yml` for the full
+  # reasoning; the short form is that the `push` filter above — which stays —
+  # means a merge touching none of those paths leaves `Lint spec · Generate
+  # types`, a REQUIRED context, with no conclusion on `main` at that commit.
+  # Absent, not red. This makes the same job runnable on demand so that state
+  # can be established from an actual run rather than inferred from the pull
+  # request's.
+  #
+  # No inputs, no added permissions, and no change to `push` or `pull_request`
+  # behaviour. `concurrency` below groups by `github.ref`, so a dispatch on
+  # `main` and a push run on `main` cancel one another; a cancelled run is not
+  # a passing one.
+  workflow_dispatch:
+
 concurrency:
   group: ci-contracts-${{ github.ref }}
   cancel-in-progress: true
