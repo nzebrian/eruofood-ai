@@ -24,6 +24,19 @@ on:
         type: boolean
         default: false
 
+# Least privilege (M46). Every job here checks out the repository and runs
+# build/test tooling; none writes to the repository, publishes a package,
+# comments on a pull request or calls the GitHub API. `contents: read` is
+# therefore the whole requirement.
+#
+# Declaring it matters even where the repository's default is already
+# read-only: that default is live GitHub state, invisible to this repository
+# and reversible by an administrator toggle, at which point every job that
+# installs third-party dependencies would receive a write-scoped token with
+# nothing here to notice. Stated in the workflow, it cannot drift.
+permissions:
+  contents: read
+
 concurrency:
   group: ga-release-cert-${{ github.ref }}
   cancel-in-progress: true
@@ -121,12 +134,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Assert deploy-time confirmations
+        # M46. These three comparisons interpolated `${{ inputs.* }}` straight
+        # into the script. `type: boolean` constrains GitHub's own dispatch form
+        # to true/false, so this was not exploitable in practice — but the
+        # safety came from an input declaration twenty lines away rather than
+        # from the code, and a later `type: string` would silently re-open it.
+        # The values travel through `env:` now, which removes the class rather
+        # than relying on the type. Logic and exit semantics are unchanged.
+        env:
+          STAGING_SMOKE_PASSED: ${{ inputs.staging_smoke_passed }}
+          PERFORMANCE_PASSED: ${{ inputs.performance_passed }}
+          PENTEST_CLEARED: ${{ inputs.pentest_cleared }}
         run: |
           echo "Automated gates: PASSED (backend, web, openapi, security, docker, flutter)."
           fail=0
-          [ "${{ inputs.staging_smoke_passed }}" = "true" ] || { echo "::error::Staging smoke NOT confirmed"; fail=1; }
-          [ "${{ inputs.performance_passed }}"   = "true" ] || { echo "::error::Performance thresholds NOT confirmed"; fail=1; }
-          if [ "${{ inputs.pentest_cleared }}" != "true" ]; then
+          [ "$STAGING_SMOKE_PASSED" = "true" ] || { echo "::error::Staging smoke NOT confirmed"; fail=1; }
+          [ "$PERFORMANCE_PASSED"   = "true" ] || { echo "::error::Performance thresholds NOT confirmed"; fail=1; }
+          if [ "$PENTEST_CLEARED" != "true" ]; then
             echo "::warning::External pentest not cleared — status is TECHNICALLY READY, PENDING INDEPENDENT SECURITY ASSESSMENT."
           fi
           exit $fail
