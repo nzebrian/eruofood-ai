@@ -105,6 +105,146 @@ holding write scope would be a strange thing to hand a future contributor's
 pull request, and `WorkflowIntegrityGuardTest` asserts that `packages:`,
 `id-token:`, `contents: write` and `pull-requests: write` are all absent.
 
+## The repository-wide privilege model (M46)
+
+This gate had the right answer for itself long before the other thirteen
+workflows did. M46 gave every workflow one.
+
+### The default principle
+
+```yaml
+permissions:
+  contents: read
+```
+
+Twelve of the fourteen workflows hold exactly that. Two are different, and both
+differences are recorded in `.github/scripts/verify_workflow_privilege.py`
+rather than in a comment, because a validator that reads comments can be
+satisfied by a comment:
+
+| Workflow | Privilege | Why |
+| --- | --- | --- |
+| `staging-deploy.yml` | `contents: read`, `packages: write` | Publishes images: `docker/login-action` plus two `docker/build-push-action` steps with `push: true`. |
+| everything else | `contents: read` | Checks out, builds, tests. Nothing writes to the repository, publishes a package, comments on a pull request or calls the GitHub API. |
+
+`release.yml` used to hold `packages: write` too, and **nothing used it**: both
+its `docker/build-push-action` steps are `push: false`, it has no
+`docker/login-action`, no registry and no `docker push` in any `run:` block. It
+builds images to prove they build and discards them. Removing that scope changed
+no behaviour — nothing there could push a package before or after — and took a
+write scope out of five jobs that install and execute third-party dependency
+trees. If image publishing is ever added to that workflow, the scope returns in
+the same commit.
+
+### Repository-enforced, versus what GitHub holds
+
+This distinction is the whole point of the milestone, so it is worth being exact
+about which half is which.
+
+**Repository-enforced.** Every workflow declares its own `permissions:` block.
+That declaration is in version control, is asserted on every pull request by the
+required `CI · Workflow Integrity` context, and cannot drift without a diff.
+
+**GitHub/org-level, and NOT enforced by anything in this repository.** A
+workflow that declares no `permissions:` inherits the repository's *default
+workflow permissions* — a setting in GitHub's UI. Measured during M46 discovery,
+from a non-Dependabot run of `ci-web.yml`, which declared nothing at the time:
+
+```
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+```
+
+So the default is currently read-only and nothing was ever exposed. That is
+precisely why this was worth fixing rather than reassuring: the protection lived
+in a place no file here could state, no check could assert, and one
+administrator toggle could remove — at which point nine workflows running
+`npm ci`, `composer install`, `flutter pub get` and `docker compose build` on
+every pull request would have received write-scoped tokens with nothing in the
+repository to notice. Declared in the workflow, the scope no longer depends on
+that setting at all.
+
+Nothing in this repository can read, assert or change that GitHub setting, and
+no validator here claims to. The same is true of rulesets and branch protection
+— see `.github/governance/known-gaps.json`.
+
+## Expression interpolation into `run:` blocks (M46)
+
+GitHub expands `${{ }}` when it **renders** the script, before any shell parses
+it. An attacker-influenced context therefore arrives as shell *source*, not as
+data, and quoting does not help — the quotes are rendered too, and a payload
+closes them.
+
+`release.yml` carried `${{ github.ref_name }}` inside a `run:` block, in a job
+that also held `packages: write`. Git ref names legally contain `` ` ``, `$`,
+`;`, `&` and `|` — the characters `git check-ref-format` forbids are a different
+set — so a tag can be a command substitution. Demonstrated during M46 with
+disposable values:
+
+```
+before:  name-with-$-and-`-and-&-and-|   ->  bash: unexpected EOF while looking for matching ``'
+after:   name-with-$-and-`-and-&-and-|   ->  OK — ... green for name-with-$-and-`-and-&-and-|.
+after:   v1.0.0`id`                      ->  OK — ... green for v1.0.0`id`.
+after:   v1;touch /tmp/m46-pwned          ->  OK — ... green for v1;touch /tmp/m46-pwned.   (no file created)
+```
+
+The fix is `env:`, and only `env:` — the value becomes an environment variable
+and the shell reads `"$RELEASE_REF"`, so no expression is ever part of the
+executable source. `ga-release-certification.yml` got the same treatment for its
+three `${{ inputs.* }}` comparisons; those are `type: boolean` and so were not
+exploitable in practice, but the safety came from an input declaration twenty
+lines away rather than from the code.
+
+M44 applied this same correction to `staging-deploy.yml` and wrote a guard that
+reads only that file. That is why the defect survived three workflows away, and
+why the M46 validator scans **all** of them.
+
+Values that are *not* this defect, and are deliberately left alone:
+`matrix.*` (defined by the workflow itself), `github.workspace` (the runner's
+own path), and `secrets.*` (not attacker-supplied — `performance-certification.yml`
+interpolates `secrets.STAGING_BASE_URL`, which is a hygiene question, not an
+injection one).
+
+## The M46 validator and its controls
+
+- `.github/scripts/verify_workflow_privilege.py` — 47 checks. Per workflow: it
+  declares `permissions:`, the policy equals the recorded minimum, and no job
+  overrides it. Globally: the workflow set matches the expected 14 exactly
+  (missing **and** unexpected are both failures — a deleted gate and an
+  ungranted workflow are equally not fine), no workflow holds an unrecorded
+  write scope, every elevation carries a recorded reason, and no
+  attacker-influenced expression reaches any `run:` block. It parses YAML
+  structurally and resolves the `on:` key under both the string and YAML 1.1's
+  boolean `True`.
+- `.github/scripts/m46_workflow_privilege_control.sh` — 12 mutations in a
+  `mktemp` fixture, each required to fail the check that owns it: permissions
+  removed from two *different* workflows, `contents` widened to write, an
+  unnecessary scope, `write-all`, a job-level override, all three tainted
+  expression shapes (ref name, dispatch input, branch expression), and the
+  expected set losing, gaining and renaming a member. Plus a positive control
+  and a sha256 integrity check over the whole workflow tree.
+
+Both run inside the required `CI · Workflow Integrity` context and are recorded
+in the M36 `ENFORCED` ratchet, which now stands at ten.
+
+## Rollback (M46)
+
+`git revert` the M46 commits. Nothing runtime depends on them: no schema, no
+migration, no application code, no deployed configuration.
+
+The one operational consequence worth stating: after a revert, the nine
+workflows that M46 gave a `permissions:` block go back to inheriting the
+repository default. That is the *current* behaviour and is safe **while** the
+GitHub setting remains read-only — which is the dependency M46 removed and a
+revert reinstates.
+
+Partial rollback is safe too. Reverting only the validator commit leaves the
+permission blocks and the `env:` fix in place with nothing asserting them;
+reverting only the workflow commit makes the validator correctly go red, which
+is the control working rather than a breakage.
+
 ## Supply chain
 
 `actionlint` is pinned to an exact version and its archive is checksum-verified
