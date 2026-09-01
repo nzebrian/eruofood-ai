@@ -24,7 +24,7 @@ export function RegisterPage(): React.JSX.Element {
     setBusy(true);
     try {
       await register(form);
-      navigate('/');
+      void navigate('/');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.error.message : 'Registration failed.');
     } finally {

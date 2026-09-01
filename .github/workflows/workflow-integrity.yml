@@ -214,6 +214,33 @@ jobs:
         # the check that owns it.
         run: .github/scripts/m44_deployment_safety_control.sh
 
+      - name: Enforce — M45 dependency audit gate validator
+        # M45. `security.yml`'s audit steps carried `|| true` from the day they
+        # were written, so the required `Dependency audit` context could not
+        # fail on a dependency vulnerability — the one thing it exists to
+        # catch. The tree it was silently passing held 11 npm advisories (2
+        # critical) and 7 Composer advisories (3 high).
+        #
+        # The second defect was quieter and is the reason this validator checks
+        # more than masking: that job has no `composer install`, and without
+        # `vendor/` a bare `composer audit` prints "No packages - skipping
+        # audit." and exits 0. Removing the mask alone would have left a step
+        # that audits nothing and passes for it.
+        #
+        # Placed in this job because this job's name is the required status
+        # context — the M36 lesson. A new job would create a context nothing
+        # requires, which enforces nothing while looking like it does.
+        run: .github/scripts/verify_dependency_audit_gate.py
+
+      - name: Enforce — M45 dependency audit negative controls
+        # And the control on that validator: twelve ways to neuter the gate,
+        # reinstated one at a time in a mktemp fixture, each required to fail
+        # the check that owns it — plus four live controls that run the real
+        # audit commands against the pre- and post-M45 lockfiles, because every
+        # other check here reads YAML and YAML cannot tell you whether a
+        # command gates on anything.
+        run: .github/scripts/m45_dependency_audit_control.sh
+
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
         # every enforcement step still propagates a non-zero exit, then breaks

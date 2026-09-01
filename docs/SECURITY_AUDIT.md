@@ -60,10 +60,25 @@ only as SHA-256 hashes (verified constant-time); plaintext is returned once at
 issue and never persisted. Confirmed by `ScopeAndKeyTest` and the OAuth
 validation script.
 
-## 5. Dependency & secret scanning — STATIC VALIDATION ONLY
+## 5. Dependency & secret scanning — EXECUTED — PASSED (M45)
 
-`security.yml` runs Gitleaks + `npm audit` + `composer audit` on CI. Authored
-and configured; not executed in this session.
+`security.yml` runs Gitleaks + `npm audit` + `composer audit` on CI.
+
+> **Superseded by M45.** This section said "authored and configured; not
+> executed" — and until M45 that was the generous reading. Both audit commands
+> ended in `|| true`, so the required `Dependency audit` context could not fail
+> on a dependency vulnerability, and the Composer step had no `vendor/` to audit
+> and would have exited 0 even unmasked. The tree it was passing held 11 npm
+> advisories (2 critical, 4 high) and 7 Composer advisories (3 high).
+>
+> M45 remediated all eighteen, removed both masks, and switched the Composer
+> command to `--locked` so it reads the lockfile rather than an absent install.
+> `npm audit` now reports zero vulnerabilities at every severity and
+> `composer audit --locked` reports no advisories. Two validators enforce the
+> gate from inside the required `CI · Workflow Integrity` context.
+>
+> Full findings, remediation, compatibility notes and rollback:
+> **`docs/DEPENDENCY_SECURITY.md`**.
 
 ## 6. OWASP API Security Top 10
 
