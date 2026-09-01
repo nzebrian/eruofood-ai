@@ -36,7 +36,23 @@ jobs:
           node-version: "22"
       - name: npm audit (web)
         working-directory: apps/web
-        run: npm audit --audit-level=high || true
+        # M45. This carried `|| true` from the day it was written, so the
+        # required `Dependency audit` context could not fail on a dependency
+        # vulnerability — the one thing it exists to catch. At M44 the tree it
+        # was silently passing held 11 advisories, 2 of them critical.
+        #
+        # The threshold is unchanged: HIGH and CRITICAL fail, moderate and below
+        # do not. That is the repository's existing policy, the same flag
+        # `release.yml` uses, and it is not relaxed here to make anything green —
+        # `npm audit` reports zero vulnerabilities at every severity as of M45.
+        #
+        # No `npm ci` first, deliberately. `npm audit` resolves the advisory set
+        # from package-lock.json alone; installing would add a minute to a job
+        # whose answer does not depend on it. Verified both ways in M45: this
+        # command exits 1 against the pre-M45 lockfile with no node_modules
+        # present, so its passing is a fact about the lockfile, not an artefact
+        # of an empty tree.
+        run: npm audit --audit-level=high
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -45,4 +61,23 @@ jobs:
           tools: composer:v2
       - name: composer audit (api)
         working-directory: apps/api
-        run: composer audit || true
+        # M45, and `--locked` is the load-bearing part.
+        #
+        # This step had two independent defects, and the second is the sharper
+        # one. `|| true` masked the exit status — but there is no
+        # `composer install` in this job, and without `vendor/` a bare
+        # `composer audit` prints "No packages - skipping audit." and exits 0.
+        # So even with the mask removed it would have audited nothing and passed
+        # for it: a green tick reporting on work that never happened, which is
+        # the M44 staging-deploy defect reproduced inside the security gate.
+        #
+        # `--locked` audits composer.lock directly, which needs no install and
+        # is what we actually want to gate on. Verified in M45: it exits 1
+        # against the pre-M45 lockfile with no vendor/ present.
+        #
+        # No severity filter, unlike npm above. `release.yml` and
+        # `ga-release-certification.yml` both run a bare `composer audit`, so
+        # matching them here makes this pull-request gate a faithful preview of
+        # the release gates rather than a laxer one that defers the bad news to
+        # tag time. There are zero advisories at any severity as of M45.
+        run: composer audit --locked
