@@ -28,7 +28,7 @@ export function ResetPasswordPage(): React.JSX.Element {
         password,
         password_confirmation: confirmation,
       });
-      navigate('/login');
+      void navigate('/login');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.error.message : 'Reset failed.');
     } finally {

@@ -26,14 +26,14 @@ export function LoginPage(): React.JSX.Element {
     try {
       if (challengeToken) {
         completeLogin(await authApi.loginTwoFactor({ challenge_token: challengeToken, code }));
-        navigate('/');
+        void navigate('/');
         return;
       }
       const result = await login(email, password);
       if (isTwoFactorChallenge(result)) {
         setChallengeToken(result.challenge_token);
       } else {
-        navigate('/');
+        void navigate('/');
       }
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.error.message : 'Something went wrong.');
