@@ -183,38 +183,33 @@ echo
 # 1-3. The trigger is removed again — the pre-M44 state, one workflow at a time.
 # ---------------------------------------------------------------------------
 
+# NOTE (M46): the four mutations below used to span from `workflow_dispatch:`
+# down to the `concurrency:` line. M46 inserted a `permissions:` block between
+# the two, and every one of those anchors stopped matching — which the control
+# reported as BROKEN rather than passing, correctly, because a mutation that
+# silently does nothing proves nothing. The anchors now key on the trigger line
+# alone, which is unique in each file and does not care what follows it. The
+# properties tested are unchanged.
 control "1. ci-api loses workflow_dispatch (the pre-M44 state)" \
   "ci.ci-api.dispatchable" \
   ".github/workflows/ci-api.yml" \
   '  workflow_dispatch:
-
-concurrency:
-  group: ci-api-' \
-  '
-concurrency:
-  group: ci-api-'
+' \
+  ''
 
 control "2. ci-web loses workflow_dispatch" \
   "ci.ci-web.dispatchable" \
   ".github/workflows/ci-web.yml" \
   '  workflow_dispatch:
-
-concurrency:
-  group: ci-web-' \
-  '
-concurrency:
-  group: ci-web-'
+' \
+  ''
 
 control "3. contracts loses workflow_dispatch" \
   "ci.contracts.dispatchable" \
   ".github/workflows/contracts.yml" \
   '  workflow_dispatch:
-
-concurrency:
-  group: ci-contracts-' \
-  '
-concurrency:
-  group: ci-contracts-'
+' \
+  ''
 
 # ---------------------------------------------------------------------------
 # 4. A required job name is renamed. GitHub matches a required status check on
@@ -257,16 +252,14 @@ control "7. a dispatch input appears (a new shell-injection surface)" \
   "ci.ci-api.dispatch_has_no_inputs" \
   ".github/workflows/ci-api.yml" \
   '  workflow_dispatch:
-
-concurrency:' \
+' \
   '  workflow_dispatch:
     inputs:
       ref:
         description: "ref to test"
         required: false
         default: ""
-
-concurrency:'
+'
 
 control "8. pull_request regains a paths filter (the M29-A trap)" \
   "ci.contracts.pull_request_unfiltered" \

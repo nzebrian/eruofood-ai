@@ -256,6 +256,37 @@ jobs:
         # cannot exit 0, and that the old arithmetic has not come back.
         run: .github/scripts/m47_control_integrity_control.sh
 
+      - name: Enforce — M46 workflow privilege & injection validator
+        # M46. Two gaps, and the first is the one this repository keeps
+        # rediscovering in new clothes.
+        #
+        # Nine of the fourteen workflows declared no `permissions:` at all, so
+        # their token scope came from the repository's *default workflow
+        # permissions* — live GitHub state, invisible from here, and one
+        # administrator toggle away from read/write. Measured during discovery
+        # that default is currently read-only, so nothing was exposed; the
+        # defect was that nothing in the repository said so, asserted it, or
+        # would notice it changing. M29-A, M37 and M44 are the same shape.
+        #
+        # The second: `${{ }}` is expanded when GitHub RENDERS a script, before
+        # any shell parses it, so an attacker-influenced context arrives as
+        # shell source. `release.yml` carried `${{ github.ref_name }}` in a
+        # `run:` block, and git ref names legally contain backticks and `$`.
+        # M44 fixed this class in staging-deploy.yml and wrote a guard that
+        # reads only that file — which is precisely why it survived here.
+        #
+        # In this job because this job's name is the required status context.
+        run: .github/scripts/verify_workflow_privilege.py
+
+      - name: Enforce — M46 workflow privilege negative controls
+        # And the control on that validator: twelve properties broken one at a
+        # time in a mktemp fixture, each required to fail the check that owns
+        # it — permissions removed from two different workflows, contents
+        # widened to write, an unnecessary scope, write-all, a job-level
+        # override, all three tainted expression shapes, and the expected
+        # workflow set losing, gaining and renaming a member.
+        run: .github/scripts/m46_workflow_privilege_control.sh
+
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
         # every enforcement step still propagates a non-zero exit, then breaks
