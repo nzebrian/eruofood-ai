@@ -335,25 +335,61 @@ echo "-- Part B: the real commands, against real lockfiles ---------------------
 
 live_ok=0
 live_total=4
-live_skipped=0
+live_unavailable=0
 
 live_fixture="$(mktemp -d "${TMPDIR:-/tmp}/m45-live-XXXXXXXX")"
 mkdir -p "$live_fixture/before/web" "$live_fixture/before/api" \
          "$live_fixture/after/web"  "$live_fixture/after/api"
 
-# BASE is the commit this branch started from — the pre-M45 dependency state.
-BASE="${M45_BASE_REF:-origin/main}"
+# The pre-M45 dependency state, pinned (M47).
+#
+# This was `${M45_BASE_REF:-origin/main}`, which was true exactly once: while
+# M45 was an unmerged branch. The moment M45 merged, `origin/main` became the
+# POST-M45 state, "before" and "after" resolved to the same lockfiles, and
+# "the pre-M45 lockfile must fail the audit" became unsatisfiable — a control
+# that invalidated itself by succeeding.
+#
+# The baseline is now an immutable commit. A commit hash cannot drift, cannot
+# be re-pointed, and means the same thing in a shallow CI clone as it does
+# here. `M45_BASE_REF` remains available as an explicit override for
+# controlled testing, and there is deliberately no fallback: if the baseline
+# cannot be resolved, this control fails. It does not skip.
+M45_BASELINE_COMMIT="f840e1c0092dd0695ca0fd35bef0bb4bfacbf00d"
+BASE="${M45_BASE_REF:-$M45_BASELINE_COMMIT}"
+
+# CI checks out with `fetch-depth: 1`, so the baseline commit is not in the
+# clone. That is why Part B silently skipped on every run before M47 — the
+# `git show` failed, and a failed extraction was treated as "skipped".
+#
+# Fetching the one commit is cheaper and narrower than deepening the checkout,
+# and keeps the repair inside this script rather than changing a workflow that
+# fourteen other things depend on. `actions/checkout` leaves its credentials
+# configured, so this needs no token of its own.
+baseline_error=""
+if ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+  if ! git fetch --quiet --depth=1 origin "$BASE" 2>/dev/null \
+     || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+    baseline_error="the pre-M45 baseline commit ${BASE} is not present and could not be fetched"
+  fi
+fi
 
 extract_ok=1
-for spec in \
-  "apps/web/package.json:web/package.json" \
-  "apps/web/package-lock.json:web/package-lock.json" \
-  "apps/api/composer.json:api/composer.json" \
-  "apps/api/composer.lock:api/composer.lock"; do
-  src="${spec%%:*}" dst="${spec#*:}"
-  git show "$BASE:$src" > "$live_fixture/before/$dst" 2>/dev/null || extract_ok=0
-  cp "$src" "$live_fixture/after/$dst"
-done
+if [[ -n "$baseline_error" ]]; then
+  extract_ok=0
+else
+  for spec in \
+    "apps/web/package.json:web/package.json" \
+    "apps/web/package-lock.json:web/package-lock.json" \
+    "apps/api/composer.json:api/composer.json" \
+    "apps/api/composer.lock:api/composer.lock"; do
+    src="${spec%%:*}" dst="${spec#*:}"
+    if ! git show "$BASE:$src" > "$live_fixture/before/$dst" 2>/dev/null; then
+      extract_ok=0
+      baseline_error="${BASE} does not contain $src"
+    fi
+    cp "$src" "$live_fixture/after/$dst"
+  done
+fi
 
 live() {
   local name="$1" expected="$2"
@@ -367,10 +403,13 @@ live() {
   exit_code=$?
   set -e
 
-  # A registry that cannot be reached is not evidence either way. Say so.
+  # A registry that cannot be reached is not evidence either way — and M47's
+  # correction is that "not evidence either way" is not a pass. It is counted
+  # as UNAVAILABLE, and any unavailable control makes Part B incomplete, which
+  # fails this suite. Absent evidence must never satisfy a required check.
   if grep -qiE "ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|could not be fully loaded|SSL connection timeout" <<<"$output"; then
-    live_skipped=$((live_skipped + 1))
-    echo " SKIPPED (advisory endpoint unreachable)"
+    live_unavailable=$((live_unavailable + 1))
+    echo " UNAVAILABLE (advisory endpoint unreachable — evidence missing)"
     return 0
   fi
 
@@ -384,8 +423,12 @@ live() {
 }
 
 if [[ "$extract_ok" -ne 1 ]]; then
-  echo "  SKIPPED — could not extract the pre-M45 manifests from $BASE."
-  live_skipped=$live_total
+  # M47: this printed "SKIPPED" and set live_skipped=live_total, which the old
+  # success condition then accepted. A baseline that cannot be resolved is a
+  # broken control, not an excused one.
+  echo "  BASELINE UNRESOLVABLE — ${baseline_error}."
+  echo "  Part B cannot run without the pre-M45 lockfiles; this is a failure."
+  live_unavailable=$live_total
 else
   live "B1. pre-M45 lockfile: npm audit --audit-level=high must FAIL" 1 \
     npm audit --prefix "$live_fixture/before/web" --audit-level=high
@@ -412,7 +455,9 @@ echo
 echo "=============================================================================="
 printf '%d/12 broken properties confirmed by the check that owns them.\n' "$confirmed"
 printf '%d/%d live audit controls confirmed' "$live_ok" "$live_total"
-if [[ "$live_skipped" -gt 0 ]]; then printf ' (%d skipped: endpoint unreachable)' "$live_skipped"; fi
+if [[ "$live_unavailable" -gt 0 ]]; then
+  printf ' (%d UNAVAILABLE — evidence missing)' "$live_unavailable"
+fi
 echo "."
 
 if [[ ${#broken[@]} -gt 0 ]]; then
@@ -432,17 +477,25 @@ if [[ "$integrity_ok" -ne 1 ]]; then
   echo "INTEGRITY FAILURE — the real repository changed during this run."
 fi
 
+if [[ "$live_unavailable" -gt 0 ]]; then
+  echo
+  echo "PART B INCOMPLETE — REQUIRED LIVE AUDIT EVIDENCE UNAVAILABLE"
+  echo "  ${live_unavailable}/${live_total} live audit control(s) produced no evidence."
+  echo "  Part A proves the validator can read YAML. Only Part B proves the gate"
+  echo "  actually fails on a vulnerable lockfile and passes on a clean one, and"
+  echo "  without it this suite is asserting nothing about the audit itself."
+fi
+
+# M47. This condition previously read `live_ok + live_skipped == live_total`,
+# which is satisfied by live_ok=0, live_skipped=4 — every live control skipped,
+# suite green. That is exactly the defect class the suite exists to catch: a
+# green tick over work that never happened. Complete evidence is now required.
 if [[ "$confirmed" -eq 12 && ${#broken[@]} -eq 0 && ${#false_positives[@]} -eq 0 \
       && "$positive_ok" -eq 1 && "$integrity_ok" -eq 1 \
-      && $((live_ok + live_skipped)) -eq "$live_total" ]]; then
+      && "$live_ok" -eq "$live_total" && "$live_unavailable" -eq 0 ]]; then
   echo
-  if [[ "$live_skipped" -gt 0 ]]; then
-    echo "The validator discriminates and the tree is untouched, but $live_skipped live"
-    echo "control(s) could not reach an advisory endpoint — Part B is INCOMPLETE."
-  else
-    echo "The audit gate fails closed on the old lockfiles, passes on the new ones,"
-    echo "and the working tree is unchanged."
-  fi
+  echo "The audit gate fails closed on the old lockfiles, passes on the new ones,"
+  echo "and the working tree is unchanged."
   exit 0
 fi
 

@@ -241,6 +241,21 @@ jobs:
         # command gates on anything.
         run: .github/scripts/m45_dependency_audit_control.sh
 
+      - name: Enforce — M47 control-integrity checks on the M45 control
+        # M47. The step above ran in this job for the whole of M45 and M46 and
+        # proved nothing: its Part B resolved the pre-M45 baseline as
+        # `origin/main`, which after the M45 merge was the post-M45 state, and
+        # in CI — checked out at fetch-depth 1 — did not resolve at all. All
+        # four live controls were marked "skipped", and the success condition
+        # `live_ok + live_skipped == live_total` accepted that. Zero live
+        # evidence, green required check.
+        #
+        # M47 pins the baseline to an immutable commit and requires complete
+        # evidence. This step is the guard on that repair: it proves an
+        # unresolvable baseline fails, that four evidenceless live controls
+        # cannot exit 0, and that the old arithmetic has not come back.
+        run: .github/scripts/m47_control_integrity_control.sh
+
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
         # every enforcement step still propagates a non-zero exit, then breaks

@@ -55,6 +55,7 @@ ENFORCED=(
     ".github/scripts/m44_deployment_safety_control.sh"
     ".github/scripts/verify_dependency_audit_gate.py"
     ".github/scripts/m45_dependency_audit_control.sh"
+    ".github/scripts/m47_control_integrity_control.sh"
 )
 
 FINGERPRINT_PATHS=(
