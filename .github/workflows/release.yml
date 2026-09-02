@@ -8,9 +8,21 @@ on:
   push:
     tags: ["v*.*.*"]
 
+# Least privilege (M46). `packages: write` was here and nothing used it.
+#
+# The `images` job carries two `docker/build-push-action` steps and both are
+# `push: false`; there is no `docker/login-action`, no registry, and no
+# `docker push` in any `run:` block. This workflow builds images to prove they
+# build and then discards them — the publishing path is `staging-deploy.yml`,
+# which does log in and does push, and keeps `packages: write` for that reason.
+#
+# So this is not a behaviour change: nothing here can push a package today, and
+# nothing here will push one after. It removes a write scope that a tag-
+# triggered workflow was carrying into five jobs that install and execute
+# third-party dependency trees. If image publishing is ever added to this
+# workflow, the scope comes back with it, in the same commit.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -179,4 +191,23 @@ jobs:
     needs: [api, web, mobile, contract, security, images]
     steps:
       - name: All mandatory gates passed — release may proceed
-        run: echo "OK — every mandatory gate is green for ${{ github.ref_name }}."
+        # M46. This line read:
+        #
+        #     run: echo "... green for ${{ github.ref_name }}."
+        #
+        # GitHub expands `${{ }}` when it RENDERS the script, before any shell
+        # parses it, so the tag name arrived as shell *source*, not as data.
+        # Git ref names may legally contain `$`, backtick, `;`, `&`, `|`, `(`
+        # and `)` — everything the refname rules forbid is a different set — so
+        # a tag like ``v1.0.0`id` `` is both a valid tag and a command
+        # substitution. Quoting the expression does not help: the quotes are
+        # rendered too, and a payload simply closes them.
+        #
+        # `env:` is the fix, and the only one. The value becomes an environment
+        # variable, the shell reads it with `"$RELEASE_REF"`, and no expression
+        # is ever part of the executable source. This is the same correction
+        # M44 applied to `staging-deploy.yml`; the guard M44 wrote reads only
+        # that file, which is why this survived here.
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: echo "OK — every mandatory gate is green for $RELEASE_REF."

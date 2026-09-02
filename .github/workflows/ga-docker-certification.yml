@@ -24,6 +24,19 @@ on:
       - ".github/workflows/ga-docker-certification.yml"
   workflow_call: {}   # allow the consolidated release-certification workflow to invoke this
 
+# Least privilege (M46). Every job here checks out the repository and runs
+# build/test tooling; none writes to the repository, publishes a package,
+# comments on a pull request or calls the GitHub API. `contents: read` is
+# therefore the whole requirement.
+#
+# Declaring it matters even where the repository's default is already
+# read-only: that default is live GitHub state, invisible to this repository
+# and reversible by an administrator toggle, at which point every job that
+# installs third-party dependencies would receive a write-scoped token with
+# nothing here to notice. Stated in the workflow, it cannot drift.
+permissions:
+  contents: read
+
 concurrency:
   group: ga-docker-${{ github.ref }}
   cancel-in-progress: true
