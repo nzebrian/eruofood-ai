@@ -70,6 +70,63 @@ no `node_modules` and no `vendor/` present, both commands exit 1.
 
 Both run inside the required `CI · Workflow Integrity` context.
 
+### 1.3 Part B was vacuous in CI until M47
+
+The paragraph above describes what the four live controls were *meant* to do.
+For the whole of M45 and M46 they did not do it, and the suite reported green
+anyway. Two defects compounded.
+
+**The baseline moved.** Part B resolved the pre-M45 lockfiles as
+`${M45_BASE_REF:-origin/main}`. That was correct exactly once — while M45 was an
+unmerged branch. The moment M45 merged, `origin/main` *became* the post-M45
+state, so "before" and "after" were the same lockfiles and "the pre-M45 lockfile
+must fail the audit" was unsatisfiable. The control invalidated itself by
+succeeding.
+
+**Absent evidence counted as evidence.** The success condition was
+`live_ok + live_skipped == live_total`, which `live_ok=0, live_skipped=4`
+satisfies. Every live control could skip and the suite still exited 0.
+
+Together they were worse than either alone, because CI checks out at
+`fetch-depth: 1` and `origin/main` does not exist in that clone at all. From
+PR #54's own `CI · Workflow Integrity` log:
+
+```
+-- Part B: the real commands, against real lockfiles --
+  SKIPPED — could not extract the pre-M45 manifests from origin/main.
+0/4 live audit controls confirmed (4 skipped: endpoint unreachable).
+```
+
+The message was wrong twice over: the cause was a missing git ref, not an
+unreachable endpoint, and the outcome was not a skip — it was a required check
+passing with no evidence behind it. A control written to prove a gate is not
+vacuous, itself vacuous, inside the required context.
+
+**What M47 changed.**
+
+| Was | Now |
+| --- | --- |
+| baseline `${M45_BASE_REF:-origin/main}` | pinned to the immutable commit `f840e1c`; `M45_BASE_REF` remains an explicit override, with **no fallback** |
+| baseline missing → `SKIPPED`, suite green | `BASELINE UNRESOLVABLE` → **fails** |
+| endpoint unreachable → `SKIPPED`, suite green | `UNAVAILABLE (evidence missing)` → **fails** |
+| success if `live_ok + live_skipped == live_total` | success requires `live_ok == live_total` **and** `live_unavailable == 0` |
+
+Part B needs a commit that a shallow clone does not have, and M47 does **not**
+deepen the checkout for it. The control fetches that one commit itself
+(`git fetch --depth=1 origin <sha>`), which is narrower than deepening the clone
+and keeps the repair inside the script rather than in a workflow fourteen other
+things depend on. Verified against a real `--depth=1` clone: the fetch succeeds,
+the lockfiles read back, and all four live controls run.
+
+`.github/scripts/m47_control_integrity_control.sh` is the guard on that repair —
+14 checks. Cases A, B, D and E are deterministic and need no network: an
+unresolvable baseline must fail; four evidenceless live controls must not exit 0
+(with Part A still passing inside the fixture, so the failure is attributable to
+Part B alone); the success condition must still require complete evidence; and
+the pinned baseline must be an immutable 40-character commit with no
+`origin/main` fallback. Case C needs the real advisory endpoints and is reported
+as **unproven, not passed**, when they are unreachable.
+
 ## 2. What M45 found
 
 Measured at `main` = `f840e1c`, before any change.
