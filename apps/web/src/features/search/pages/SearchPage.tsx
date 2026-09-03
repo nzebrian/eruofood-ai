@@ -34,10 +34,15 @@ export function SearchPage(): React.JSX.Element {
     searchApi
       .trending()
       .then((r) => setTrending(r.trending))
+      // Deliberately silent, unlike the search itself: trending terms are a
+      // suggestion strip. Not showing it costs the user nothing, and an error
+      // banner for it would be noise on a page that has not been used yet.
       .catch(() => setTrending([]));
     searchApi
       .recommendations('trending', 'food', undefined, 6)
       .then((r) => setRecommended(r.items))
+      // Same reasoning as `trending` above: a merchandising strip, not an
+      // answer the user asked for.
       .catch(() => setRecommended([]));
   }, []);
 
@@ -75,6 +80,9 @@ export function SearchPage(): React.JSX.Element {
       searchApi
         .autocomplete(value, type)
         .then((r) => setSuggestions(r.suggestions))
+        // Autocomplete is a convenience over a request the user has not yet
+        // made. Failing quietly leaves them typing; surfacing it would put an
+        // alert under the cursor on every keystroke.
         .catch(() => setSuggestions([]));
     }, 150);
   };

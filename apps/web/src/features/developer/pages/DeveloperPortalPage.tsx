@@ -44,6 +44,9 @@ export function DeveloperPortalPage(): React.JSX.Element {
     developerApi
       .scopes()
       .then((r) => setScopeCatalogue(r.scopes))
+      // The scope catalogue only populates checkboxes on the create form. An
+      // empty list is a visibly degraded form rather than a false statement,
+      // and every action that depends on it reports its own failure.
       .catch(() => setScopeCatalogue([]));
   }, []);
 
