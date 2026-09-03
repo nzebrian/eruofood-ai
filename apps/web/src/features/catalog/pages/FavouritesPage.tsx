@@ -1,37 +1,44 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '@shared/components/Layout';
+import { AsyncView, EmptyState } from '@shared/components/StateViews';
+import { useAsyncData } from '@shared/hooks/useAsyncData';
 import { catalogApi } from '../catalogApi';
-import type { RecipeSummary } from '../types';
 
 export function FavouritesPage(): React.JSX.Element {
-  const [recipes, setRecipes] = useState<RecipeSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    catalogApi
-      .favourites()
-      .then((page) => setRecipes(page.data))
-      .catch(() => setRecipes([]))
-      .finally(() => setLoading(false));
-  }, []);
+  const favourites = useAsyncData(() => catalogApi.favourites(), 'catalog|favourites');
 
   return (
     <Layout>
       <h1>My favourite recipes</h1>
-      {loading ? (
-        <p>Loading…</p>
-      ) : recipes.length === 0 ? (
-        <p>You haven&apos;t favourited any recipes yet.</p>
-      ) : (
-        <ul className="list">
-          {recipes.map((r) => (
-            <li key={r.id}>
-              <Link to={`/recipes/${r.slug}`}>{r.title}</Link>
-            </li>
-          ))}
-        </ul>
-      )}
+
+      <AsyncView
+        state={favourites.state}
+        loadingLabel="Loading your favourites…"
+        errorTitle="We could not load your favourites"
+        onRetry={favourites.reload}
+      >
+        {(page) =>
+          page.data.length === 0 ? (
+            <EmptyState
+              title="No favourites yet"
+              description="Save a recipe and it will appear here."
+              action={
+                <Link className="button button--secondary" to="/recipes">
+                  Browse recipes
+                </Link>
+              }
+            />
+          ) : (
+            <ul className="list">
+              {page.data.map((r) => (
+                <li key={r.id}>
+                  <Link to={`/recipes/${r.slug}`}>{r.title}</Link>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </AsyncView>
     </Layout>
   );
 }

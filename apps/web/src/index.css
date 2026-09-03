@@ -1881,3 +1881,99 @@ body {
     width: 100%;
   }
 }
+
+/* Visible to assistive technology only. Used where an icon or a repeated
+   control label ("Delete") needs the context a sighted user gets from the
+   surrounding row (M48). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Responsive, focus and overflow corrections (M48) ------------------ */
+
+/*
+ * Visible focus, everywhere. The stylesheet had no `:focus` or
+ * `:focus-visible` rule of any kind, so keyboard users navigated 50 pages on
+ * whatever the browser's default happened to be — which several browsers
+ * suppress entirely once a stylesheet touches `outline`.
+ */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Brand green on the brand-green header is invisible; switch to white there. */
+.nav :where(a, button):focus-visible {
+  outline-color: #fff;
+}
+
+/*
+ * The header holds up to twenty links for a signed-in administrator, in a
+ * flex row that could not wrap. Below roughly a tablet that overflowed the
+ * viewport and scrolled the whole page sideways.
+ */
+.nav {
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.nav__links {
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+/* A larger touch target than a bare inline link, without moving anything. */
+.nav__links a {
+  display: inline-block;
+  padding: 0.3rem 0;
+}
+
+@media (max-width: 720px) {
+  .nav {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.75rem 1rem;
+  }
+
+  .container {
+    margin: 1rem auto;
+    padding: 0 1rem;
+  }
+}
+
+/*
+ * Wide content scrolls inside its own box rather than widening the page.
+ * Tables are the usual offender: four columns of references and amounts do
+ * not fit a phone, and without this the entire layout stretches to match.
+ */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll table {
+  min-width: 34rem;
+}
+
+/* Row-level action clusters wrap instead of pushing the row wide. */
+.pay-row__actions,
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Long identifiers — references, keys, emails — break rather than overflow. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+}
