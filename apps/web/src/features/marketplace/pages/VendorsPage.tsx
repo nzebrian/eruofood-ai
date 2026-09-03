@@ -1,25 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '@shared/components/Layout';
+import { Button } from '@shared/components/Button';
+import { AsyncView, EmptyState } from '@shared/components/StateViews';
+import { useAsyncData } from '@shared/hooks/useAsyncData';
 import { marketplaceApi } from '../marketplaceApi';
-import type { VendorSummary } from '../types';
 
 /** Browse & search verified vendors (restaurants, kitchens, market vendors). */
 export function VendorsPage(): React.JSX.Element {
-  const [vendors, setVendors] = useState<VendorSummary[]>([]);
   const [q, setQ] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [term, setTerm] = useState('');
 
-  function load(term: string): void {
-    setLoading(true);
-    marketplaceApi
-      .vendors({ q: term, per_page: 30 })
-      .then((page) => setVendors(page.data))
-      .catch(() => setVendors([]))
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => load(''), []);
+  const vendors = useAsyncData(
+    () => marketplaceApi.vendors({ q: term, per_page: 30 }),
+    `marketplace|vendors|${term}`,
+  );
 
   return (
     <Layout>
@@ -28,7 +23,7 @@ export function VendorsPage(): React.JSX.Element {
         className="chat__form"
         onSubmit={(e) => {
           e.preventDefault();
-          load(q);
+          setTerm(q);
         }}
       >
         <input
@@ -38,28 +33,40 @@ export function VendorsPage(): React.JSX.Element {
           placeholder="Search vendors…"
           aria-label="Search vendors"
         />
-        <button className="button" type="submit">
-          Search
-        </button>
+        <Button type="submit">Search</Button>
       </form>
 
-      {loading ? (
-        <p>Loading…</p>
-      ) : vendors.length === 0 ? (
-        <p className="muted">No vendors found.</p>
-      ) : (
-        <ul className="list">
-          {vendors.map((v) => (
-            <li key={v.id}>
-              <Link to={`/vendors/${v.slug}`}>
-                <strong>{v.name}</strong>
-              </Link>{' '}
-              — {v.category} · ⭐ {v.rating_average} ({v.rating_count})
-              {v.featured ? ' · ⭐ featured' : ''}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AsyncView
+        state={vendors.state}
+        loadingLabel="Loading vendors…"
+        errorTitle="We could not load the vendor list"
+        onRetry={vendors.reload}
+      >
+        {(page) =>
+          page.data.length === 0 ? (
+            <EmptyState
+              title={term === '' ? 'No vendors yet' : `No vendors match “${term}”`}
+              description={
+                term === ''
+                  ? 'Verified vendors will appear here as they join.'
+                  : 'Try a shorter or different search term.'
+              }
+            />
+          ) : (
+            <ul className="list">
+              {page.data.map((v) => (
+                <li key={v.id}>
+                  <Link to={`/vendors/${v.slug}`}>
+                    <strong>{v.name}</strong>
+                  </Link>{' '}
+                  — {v.category} · ⭐ {v.rating_average} ({v.rating_count})
+                  {v.featured ? ' · ⭐ featured' : ''}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </AsyncView>
     </Layout>
   );
 }

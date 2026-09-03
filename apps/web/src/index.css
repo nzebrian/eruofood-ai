@@ -1977,3 +1977,9 @@ body {
 .break-anywhere {
   overflow-wrap: anywhere;
 }
+
+/* Preserve the newlines in AI-generated prose. Replaces three inline
+   `style={{ whiteSpace: 'pre-wrap' }}` attributes (M48). */
+.prewrap {
+  white-space: pre-wrap;
+}

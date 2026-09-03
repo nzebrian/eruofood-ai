@@ -1,47 +1,82 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Layout } from '@shared/components/Layout';
 import { Button } from '@shared/components/Button';
 import { FormField } from '@shared/components/FormField';
-import { ApiRequestError } from '@lib/apiClient';
+import { AsyncView } from '@shared/components/StateViews';
+import { describeError, useAsyncData } from '@shared/hooks/useAsyncData';
 import { nutritionApi, type HealthProfilePayload } from '../nutritionApi';
 
 const GOALS = ['lose_weight', 'maintain', 'gain_weight', 'gain_muscle'];
 const ACTIVITY = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
 
+const BLANK: HealthProfilePayload = {
+  weight_kg: 80,
+  height_cm: 175,
+  age: 30,
+  gender: 'male',
+  activity_level: 'moderate',
+  goal: 'maintain',
+};
+
 /** Health profile: capture the inputs the calculators and personalisation need. */
 export function HealthProfilePage(): React.JSX.Element {
-  const [form, setForm] = useState<HealthProfilePayload>({
-    weight_kg: 80,
-    height_cm: 175,
-    age: 30,
-    gender: 'male',
-    activity_level: 'moderate',
-    goal: 'maintain',
-  });
+  // The load used to `.catch(() => undefined)` and leave the form showing its
+  // placeholder defaults — 80 kg, 175 cm, 30 years — which are indistinguishable
+  // from a saved profile. Somebody whose profile failed to load would have
+  // saved those numbers over their real ones. The form is therefore not
+  // rendered at all until the read has succeeded.
+  const existing = useAsyncData(() => nutritionApi.getProfile(), 'nutrition|profile');
+
+  return (
+    <Layout>
+      <h1>Health profile</h1>
+      <p>Your details drive the calorie, macro and personalisation features.</p>
+
+      <AsyncView
+        state={existing.state}
+        loadingLabel="Loading your profile…"
+        errorTitle="We could not load your profile"
+        onRetry={existing.reload}
+      >
+        {(profile) => (
+          <ProfileForm
+            // Remount the form when a reload brings different saved values,
+            // so the fields reflect what the server actually holds.
+            key={profile === null ? 'blank' : 'saved'}
+            initial={
+              profile === null
+                ? BLANK
+                : {
+                    weight_kg: profile.weight_kg,
+                    height_cm: profile.height_cm,
+                    age: profile.age,
+                    gender: profile.gender,
+                    activity_level: profile.activity_level,
+                    goal: profile.goal,
+                    dietary_preferences: profile.dietary_preferences,
+                    allergies: profile.allergies,
+                    medical_restrictions: profile.medical_restrictions,
+                  }
+            }
+            isNew={profile === null}
+          />
+        )}
+      </AsyncView>
+    </Layout>
+  );
+}
+
+function ProfileForm({
+  initial,
+  isNew,
+}: {
+  initial: HealthProfilePayload;
+  isNew: boolean;
+}): React.JSX.Element {
+  const [form, setForm] = useState<HealthProfilePayload>(initial);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    nutritionApi
-      .getProfile()
-      .then((p) => {
-        if (p) {
-          setForm({
-            weight_kg: p.weight_kg,
-            height_cm: p.height_cm,
-            age: p.age,
-            gender: p.gender,
-            activity_level: p.activity_level,
-            goal: p.goal,
-            dietary_preferences: p.dietary_preferences,
-            allergies: p.allergies,
-            medical_restrictions: p.medical_restrictions,
-          });
-        }
-      })
-      .catch(() => undefined);
-  }, []);
 
   function set<K extends keyof HealthProfilePayload>(key: K, value: HealthProfilePayload[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -56,16 +91,19 @@ export function HealthProfilePage(): React.JSX.Element {
       await nutritionApi.saveProfile(form);
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.error.message : 'Could not save profile.');
+      setError(describeError(err, 'Could not save profile.'));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Layout>
-      <h1>Health profile</h1>
-      <p>Your details drive the calorie, macro and personalisation features.</p>
+    <>
+      {isNew ? (
+        <p className="muted">
+          You have not saved a profile yet — the values below are starting points, not your data.
+        </p>
+      ) : null}
 
       <form onSubmit={(e) => void onSubmit(e)} className="form">
         <FormField
@@ -117,7 +155,11 @@ export function HealthProfilePage(): React.JSX.Element {
         </label>
         <label className="field">
           <span className="field__label">Goal</span>
-          <select className="field__input" value={form.goal} onChange={(e) => set('goal', e.target.value)}>
+          <select
+            className="field__input"
+            value={form.goal}
+            onChange={(e) => set('goal', e.target.value)}
+          >
             {GOALS.map((g) => (
               <option key={g} value={g}>
                 {g.replace('_', ' ')}
@@ -130,8 +172,16 @@ export function HealthProfilePage(): React.JSX.Element {
         </Button>
       </form>
 
-      {saved ? <p className="success">Profile saved.</p> : null}
-      {error ? <p className="error">{error}</p> : null}
-    </Layout>
+      {saved ? (
+        <p className="success" role="status">
+          Profile saved.
+        </p>
+      ) : null}
+      {error !== null ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
   );
 }

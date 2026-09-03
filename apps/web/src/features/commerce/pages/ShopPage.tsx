@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '@shared/components/Layout';
+import { AsyncView, EmptyState } from '@shared/components/StateViews';
+import { useAsyncData } from '@shared/hooks/useAsyncData';
 import { commerceApi } from '../commerceApi';
 import {
   DEPARTMENTS,
@@ -8,42 +10,43 @@ import {
   type GroceryDepartment,
   type ProductKind,
   type ProductSummary,
-  type Promotion,
-  type Recommendation,
 } from '../types';
 
 /** The storefront: search, filter by kind/department, and browse products. */
 export function ShopPage(): React.JSX.Element {
-  const [products, setProducts] = useState<ProductSummary[]>([]);
-  const [promotions, setPromotions] = useState<Promotion[]>([]);
-  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [term, setTerm] = useState('');
   const [kind, setKind] = useState<ProductKind | ''>('');
   const [department, setDepartment] = useState<GroceryDepartment | ''>('');
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setLoading(true);
-    commerceApi
-      .products({ q: term, kind: kind || undefined, department: department || undefined, per_page: 24 })
-      .then((page) => setProducts(page.data))
-      .catch(() => setProducts([]))
-      .finally(() => setLoading(false));
-  }, [term, kind, department]);
+  const products = useAsyncData(
+    () =>
+      commerceApi.products({
+        q: term,
+        kind: kind || undefined,
+        department: department || undefined,
+        per_page: 24,
+      }),
+    `commerce|products|${term}|${kind}|${department}`,
+  );
 
-  useEffect(() => {
-    commerceApi.flashSales().then(setPromotions).catch(() => setPromotions([]));
-    commerceApi.recommendations().then(setRecommendation).catch(() => setRecommendation(null));
-  }, []);
+  // Merchandising, not the page's reason for existing: if either fails the
+  // shop still works, so their banners are simply not rendered.
+  const promotions = useAsyncData(() => commerceApi.flashSales(), 'commerce|flash-sales');
+  const recommendation = useAsyncData(() => commerceApi.recommendations(), 'commerce|recommended');
+  const flashSales = promotions.state.status === 'ready' ? promotions.state.data : [];
+  const recommended =
+    recommendation.state.status === 'ready' ? recommendation.state.data : null;
+
+  const hasFilters = term !== '' || kind !== '' || department !== '';
 
   return (
     <Layout>
       <h1>Marketplace &amp; Grocery</h1>
 
-      {promotions.length > 0 && (
-        <div className="commerce-flash">
-          ⚡ Flash sale: {promotions.map((p) => p.name).join(' · ')}
-        </div>
+      {flashSales.length > 0 && (
+        <p className="commerce-flash">
+          ⚡ Flash sale: {flashSales.map((p) => p.name).join(' · ')}
+        </p>
       )}
 
       <div className="commerce-filters">
@@ -54,7 +57,11 @@ export function ShopPage(): React.JSX.Element {
           onChange={(e) => setTerm(e.target.value)}
           aria-label="Search products"
         />
-        <select value={kind} onChange={(e) => setKind(e.target.value as ProductKind | '')} aria-label="Kind">
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as ProductKind | '')}
+          aria-label="Filter by kind"
+        >
           <option value="">All kinds</option>
           <option value="grocery">Grocery</option>
           <option value="general">General</option>
@@ -62,7 +69,7 @@ export function ShopPage(): React.JSX.Element {
         <select
           value={department}
           onChange={(e) => setDepartment(e.target.value as GroceryDepartment | '')}
-          aria-label="Department"
+          aria-label="Filter by department"
         >
           <option value="">All departments</option>
           {DEPARTMENTS.map((d) => (
@@ -73,29 +80,43 @@ export function ShopPage(): React.JSX.Element {
         </select>
       </div>
 
-      {recommendation && recommendation.products.length > 0 && (
+      {recommended && recommended.products.length > 0 && (
         <section className="commerce-recs">
           <h2>Recommended for you</h2>
-          {recommendation.blurb && <p className="muted">{recommendation.blurb}</p>}
+          {recommended.blurb && <p className="muted">{recommended.blurb}</p>}
           <div className="commerce-grid">
-            {recommendation.products.slice(0, 4).map((p) => (
+            {recommended.products.slice(0, 4).map((p) => (
               <ProductCard key={p.id} product={p} />
             ))}
           </div>
         </section>
       )}
 
-      {loading ? (
-        <p className="muted">Loading products…</p>
-      ) : products.length === 0 ? (
-        <p className="muted">No products found.</p>
-      ) : (
-        <div className="commerce-grid">
-          {products.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
-      )}
+      <AsyncView
+        state={products.state}
+        loadingLabel="Loading products…"
+        errorTitle="We could not load the shop"
+        onRetry={products.reload}
+      >
+        {(page) =>
+          page.data.length === 0 ? (
+            <EmptyState
+              title={hasFilters ? 'No products match those filters' : 'Nothing in the shop yet'}
+              description={
+                hasFilters
+                  ? 'Try a different search term, kind or department.'
+                  : 'Products will appear here as they are listed.'
+              }
+            />
+          ) : (
+            <div className="commerce-grid">
+              {page.data.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          )
+        }
+      </AsyncView>
     </Layout>
   );
 }
@@ -103,7 +124,7 @@ export function ShopPage(): React.JSX.Element {
 function ProductCard({ product }: { product: ProductSummary }): React.JSX.Element {
   return (
     <Link to={`/shop/${product.slug}`} className="commerce-card">
-      <div className="commerce-card__img" aria-hidden>
+      <div className="commerce-card__img" aria-hidden="true">
         {product.primary_image ? (
           <img src={product.primary_image} alt="" />
         ) : (
@@ -112,7 +133,9 @@ function ProductCard({ product }: { product: ProductSummary }): React.JSX.Elemen
       </div>
       <div className="commerce-card__body">
         <strong>{product.name}</strong>
-        <span className="commerce-price">{formatMoney(product.base_price_minor, product.currency)}</span>
+        <span className="commerce-price">
+          {formatMoney(product.base_price_minor, product.currency)}
+        </span>
         {product.rating_count > 0 && (
           <span className="muted">
             ★ {product.rating_average.toFixed(1)} ({product.rating_count})
