@@ -37,6 +37,30 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/main.tsx'],
+
+      /*
+       * The coverage floor (M48, F-05).
+       *
+       * `npm run test:coverage` is what the required `Lint · Typecheck · Test
+       * · Build` job runs, and until now it measured coverage, printed it, and
+       * threw the number away. Coverage could have fallen to zero without the
+       * gate noticing — which is how one shared component ended up shipping a
+       * live defect with no test rendering it at all.
+       *
+       * These numbers are the measured baseline of this branch rounded down,
+       * not an aspiration: 29.87 / 78.83 / 34.83 / 29.87 across three
+       * consecutive identical runs. Setting a target the repository cannot
+       * currently meet would block every pull request on work nobody has done
+       * yet, which is the failure mode this milestone spent its time removing
+       * elsewhere. The point of a ratchet is that it only turns one way; raise
+       * these as tests land.
+       */
+      thresholds: {
+        statements: 29,
+        branches: 77,
+        functions: 34,
+        lines: 29,
+      },
     },
   },
 });
