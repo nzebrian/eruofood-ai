@@ -67,8 +67,12 @@ no `node_modules` and no `vendor/` present, both commands exit 1.
   **four live controls** that run the real audit commands against the pre- and
   post-M45 lockfiles and require exit 1 then exit 0. Everything else in the suite
   reads YAML; YAML cannot tell you whether a command gates on anything.
+- `.github/scripts/m48_npm_audit_resilience_control.sh` — 18 checks on the
+  bounded-retry wrapper the npm audit now runs through, so that retrying a
+  third-party outage cannot become retrying until the gate stops objecting. See
+  §1.4.
 
-Both run inside the required `CI · Workflow Integrity` context.
+All three run inside the required `CI · Workflow Integrity` context.
 
 ### 1.3 Part B was vacuous in CI until M47
 
@@ -126,6 +130,94 @@ Part B alone); the success condition must still require complete evidence; and
 the pinned baseline must be an immutable 40-character commit with no
 `origin/main` fallback. Case C needs the real advisory endpoints and is reported
 as **unproven, not passed**, when they are unreachable.
+
+### 1.4 npm's advisory service is a third party, and it goes down (M48)
+
+On 2026-09-04 the required `Dependency audit` context failed like this:
+
+```
+npm warn audit 503 Service Unavailable -
+    POST https://registry.npmjs.org/-/npm/v1/security/audits/quick
+npm error audit endpoint returned an error
+Process completed with exit code 1
+```
+
+The lockfile had zero advisories. npm's advisory service had a bad ten minutes.
+
+This is a real problem and not a cosmetic one, because the obvious remedies are
+both wrong. Leaving it makes a required security gate flap on a third party's
+availability, which trains people to re-run red checks until they go green —
+which is how a genuine advisory eventually gets clicked past. Suppressing it
+with `|| true` or `continue-on-error` is the *exact defect M45 was created to
+remove*, and would silently reintroduce it under cover of a reliability fix.
+
+**What M48 changed.** `apps/web`'s audit now runs through
+`.github/scripts/npm_audit_resilient.sh`, which distinguishes three answers
+where npm offers two:
+
+| Answer | Meaning | Exit |
+| --- | --- | --- |
+| `PASS` | npm audited the tree and found nothing at or above the threshold | 0 |
+| `VULNERABLE` | npm audited the tree and found advisories | 1 |
+| `UNAVAILABLE` | npm could not produce trustworthy evidence | 3 |
+
+`npm audit` exits 1 for a vulnerability *and* for a dead endpoint, and that
+ambiguity is what made the incident take six minutes of log archaeology. All
+three answers are now printed in words as well as returned as exit codes.
+
+Only the transient class is retried — HTTP 429/500/502/503/504, connection
+reset/refused/timeout, DNS failure — up to three attempts with a 3s then 9s
+backoff. A malformed response or dependency tree is **not** retried: retrying
+cannot repair it, so it fails closed immediately rather than burning the budget.
+A finding is **never** retried, and the verdict patterns are matched *before* the
+outage patterns so a real advisory can never be downgraded to "the service was
+down". That precedence is the single misclassification that would turn this
+script into a security regression, and it has its own test.
+
+**`UNAVAILABLE` exits non-zero, deliberately.** Absent evidence is not clean
+evidence. A gate that cannot see must not wave things through, so an audit that
+could not be performed fails the check exactly as a finding would — it just says
+which of the two happened.
+
+**It is also faster than not having it.** npm's own retry behaviour
+(`fetch-retries=2`, `fetch-retry-maxtimeout=60000`) is generous and serialises
+across many requests. On 2026-09-04 it consumed nine minutes of
+`CI · Workflow Integrity`'s ten-minute cap and the job was **cancelled**
+mid-step, taking four later controls with it. The wrapper disables that internal
+retry storm and imposes a hard per-attempt timeout, so the worst case is
+predictable: 3 × 45s + 12s backoff = 147s. A healthy audit still returns in about
+two seconds, because nothing sleeps on success. M45's Part B uses a tighter
+budget still (2 × 40s + 5s = 85s per control) precisely because it runs inside
+that ten-minute job.
+
+The audit policy stays at the call site in `security.yml` —
+`npm audit --audit-level=high`, passed through verbatim rather than
+reconstructed inside the wrapper — so `verify_dependency_audit_gate.py` still
+reads the threshold where it always did, M45's mutation tests still anchor on
+it, and it cannot be lowered somewhere less visible. The threshold is unchanged:
+HIGH and CRITICAL fail.
+
+**What enforces it.** `.github/scripts/m48_npm_audit_resilience_control.sh`,
+inside the required `CI · Workflow Integrity` context — 18 checks. A retry
+wrapper around a security gate is a dangerous object, because every bug in one
+points the same way: towards passing. So the control drives a **stub `npm` on
+PATH** from a scenario file, never the real registry — a control that needs
+npm's advisory service to be up cannot describe what happens when it is down —
+and asserts the exit code, the verdict word, *and the number of npm invocations*
+for each case: clean → PASS in one attempt; a finding → VULNERABLE in one
+attempt; 503/429/500/502/504 then success → PASS in two; every attempt failing →
+UNAVAILABLE in three; a persistent timeout → UNAVAILABLE; a malformed response →
+fail closed in **one** attempt; a finding printed alongside a 503 banner → still
+VULNERABLE; and exit 0 accompanied by an error banner → refused, not read as
+clean. It also greps the security path for `|| true`, `|| :`, `set +e`,
+`continue-on-error` and bare forced `exit 0`, and re-fingerprints the helper and
+`security.yml` to prove the run changed neither.
+
+That suite was itself checked against three deliberate regressions, each
+reverted immediately afterwards with the file's sha256 confirmed restored:
+making `UNAVAILABLE` exit 0 failed 4 checks, classifying a vulnerability as
+transient failed 3 (including the invocation count — it retried a real finding),
+and appending `|| true` to the helper failed the masking check.
 
 ## 2. What M45 found
 

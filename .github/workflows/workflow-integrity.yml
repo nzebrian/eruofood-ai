@@ -256,6 +256,22 @@ jobs:
         # cannot exit 0, and that the old arithmetic has not come back.
         run: .github/scripts/m47_control_integrity_control.sh
 
+      - name: Enforce — M48 npm audit resilience controls
+        # M48. `Dependency audit` now runs `npm audit` through a bounded-retry
+        # wrapper, and a retry wrapper wrapped around a security gate is a
+        # dangerous object: every bug in one points the same way, towards
+        # passing. "Retry until the service answers" and "retry until it stops
+        # complaining" are one edit apart and both print green.
+        #
+        # So this proves the three answers stay distinguishable — clean passes,
+        # a finding fails and is never retried, a transient outage is retried
+        # within a bound, and an audit that could not be performed exits
+        # non-zero instead of being mistaken for one that found nothing. It
+        # drives a stub `npm` from a scenario file rather than the real
+        # registry: a control that needs npm's advisory service to be up cannot
+        # describe what happens when it is down.
+        run: .github/scripts/m48_npm_audit_resilience_control.sh
+
       - name: Enforce — M46 workflow privilege & injection validator
         # M46. Two gaps, and the first is the one this repository keeps
         # rediscovering in new clothes.

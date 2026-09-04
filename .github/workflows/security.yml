@@ -65,7 +65,20 @@ jobs:
         # command exits 1 against the pre-M45 lockfile with no node_modules
         # present, so its passing is a fact about the lockfile, not an artefact
         # of an empty tree.
-        run: npm audit --audit-level=high
+        #
+        # Wrapped since M48. The audit policy below is unchanged and is stated
+        # here rather than inside the wrapper on purpose: this line is what
+        # `verify_dependency_audit_gate.py` reads and what M45's mutation tests
+        # anchor on, so a threshold cannot be lowered somewhere less visible.
+        #
+        # The wrapper exists because on 2026-09-04 this step went red on
+        # `npm error audit endpoint returned an error` — a 503 from npm's
+        # advisory service against a lockfile with zero advisories. It retries a
+        # *transient* outage a bounded number of times and, if evidence still
+        # cannot be obtained, exits 3: UNAVAILABLE is a failure, not a pass. It
+        # is also strictly faster than not having it, because it disables npm's
+        # own multi-minute internal retry storm in favour of a hard bound.
+        run: ${{ github.workspace }}/.github/scripts/npm_audit_resilient.sh npm audit --audit-level=high
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
