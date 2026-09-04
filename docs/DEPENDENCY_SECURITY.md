@@ -71,8 +71,14 @@ no `node_modules` and no `vendor/` present, both commands exit 1.
   bounded-retry wrapper the npm audit now runs through, so that retrying a
   third-party outage cannot become retrying until the gate stops objecting. See
   §1.4.
+- `.github/scripts/verify_ci_reliability.py` + `m49_ci_reliability_control.sh`
+  + `m49_reliability_wrappers_control.sh` — the Phase 1 reliability gate. It
+  asserts that **every** dependency-audit call site routes through an approved
+  wrapper, not just this one: `release.yml` and `ga-release-certification.yml`
+  were still running unwrapped audits after M48, and nothing noticed because the
+  validator above only ever read `security.yml`. See `docs/CI_RELIABILITY.md`.
 
-All three run inside the required `CI · Workflow Integrity` context.
+All of them run inside the required `CI · Workflow Integrity` context.
 
 ### 1.3 Part B was vacuous in CI until M47
 
@@ -196,6 +202,15 @@ reconstructed inside the wrapper — so `verify_dependency_audit_gate.py` still
 reads the threshold where it always did, M45's mutation tests still anchor on
 it, and it cannot be lowered somewhere less visible. The threshold is unchanged:
 HIGH and CRITICAL fail.
+
+**Extended in Phase 1.** M48 wrapped one of five audit call sites. Phase 1
+wrapped the rest — `composer audit` in `security.yml`, `release.yml` and
+`ga-release-certification.yml`, and `npm audit` in `release.yml` — behind the
+same three-verdict protocol, with `composer_audit_resilient.sh` as the composer
+half. Composer needed it for a reason of its own: it reserves exit **100** for a
+generic error, which is never a verdict but which "non-zero means bad" reports
+as a vulnerability. A validator now fails if an ungoverned audit is reintroduced
+anywhere. See `docs/CI_RELIABILITY.md`.
 
 **What enforces it.** `.github/scripts/m48_npm_audit_resilience_control.sh`,
 inside the required `CI · Workflow Integrity` context — 18 checks. A retry

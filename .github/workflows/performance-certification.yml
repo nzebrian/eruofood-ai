@@ -47,6 +47,7 @@ jobs:
   k6:
     name: k6 ${{ matrix.scenario }} · ${{ matrix.script }}
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment: staging
     strategy:
       fail-fast: false

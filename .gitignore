@@ -72,3 +72,7 @@ __pycache__/
 # ---- Always keep directory placeholders ----
 !**/.gitkeep
 dump.rdb
+
+# CI control completion records, written by .github/scripts/run_control.sh
+# during the required workflow-integrity job. Runtime evidence, not source.
+.ci-control-manifest/

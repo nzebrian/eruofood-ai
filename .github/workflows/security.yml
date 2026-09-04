@@ -28,6 +28,7 @@ jobs:
   secret-scan:
     name: Secret scanning
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +41,7 @@ jobs:
   dependency-audit:
     name: Dependency audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -106,4 +108,16 @@ jobs:
         # matching them here makes this pull-request gate a faithful preview of
         # the release gates rather than a laxer one that defers the bad news to
         # tag time. There are zero advisories at any severity as of M45.
-        run: composer audit --locked
+        #
+        # Wrapped in Phase 1, for the reason npm was wrapped in M48: Packagist
+        # is a third party and it has bad days. Observed live while preparing
+        # this: `curl error 28 while downloading
+        # https://packagist.org/api/security-advisories/: Connection timed out`.
+        #
+        # Composer makes the same mistake npm does and one of its own: 0 is
+        # clean, 1 is advisories found, and 100 is a generic error that is NEVER
+        # a verdict but which "non-zero means bad" reports as a vulnerability.
+        # The wrapper separates the three, retries only the transient class
+        # within a hard bound, and exits 3 for UNAVAILABLE — a failure, not a
+        # pass. `--locked` stays here, where M45's mutation tests anchor on it.
+        run: ${{ github.workspace }}/.github/scripts/composer_audit_resilient.sh composer audit --locked

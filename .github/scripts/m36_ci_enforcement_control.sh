@@ -57,6 +57,10 @@ ENFORCED=(
     ".github/scripts/m45_dependency_audit_control.sh"
     ".github/scripts/m47_control_integrity_control.sh"
     ".github/scripts/m48_npm_audit_resilience_control.sh"
+    ".github/scripts/verify_ci_reliability.py"
+    ".github/scripts/m49_ci_reliability_control.sh"
+    ".github/scripts/m49_reliability_wrappers_control.sh"
+    ".github/scripts/verify_control_manifest.py"
     ".github/scripts/verify_workflow_privilege.py"
     ".github/scripts/m46_workflow_privilege_control.sh"
 )

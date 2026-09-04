@@ -32,6 +32,7 @@ jobs:
   api:
     name: API · Lint · PHPStan L8 · Tests (PostgreSQL)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/api
@@ -95,6 +96,18 @@ jobs:
   web:
     name: Web · Typecheck · Test · Build
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # npm network policy (Phase 1). npm's defaults are fetch-retries=2 with
+      # fetch-retry-maxtimeout=60000, serialised across every request an install
+      # makes — which is how one `npm audit` burned 7m01s on 2026-09-04. Retry
+      # stays ON here, because a dropped request mid-install is common and cheap
+      # to retry; what changes is the per-retry ceiling, from 60s to 20s. A
+      # healthy install is unaffected; the tail is bounded.
+      npm_config_fetch_retries: "2"
+      npm_config_fetch_retry_mintimeout: "1000"
+      npm_config_fetch_retry_maxtimeout: "20000"
+      npm_config_fetch_timeout: "60000"
     defaults:
       run:
         working-directory: apps/web
@@ -110,6 +123,7 @@ jobs:
   mobile:
     name: Mobile · Analyze · Test
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/mobile
@@ -127,6 +141,7 @@ jobs:
   contract:
     name: OpenAPI · Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: packages/api-contracts
@@ -139,6 +154,18 @@ jobs:
   security:
     name: Security · Secrets + Dependency Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # npm network policy (Phase 1). npm's defaults are fetch-retries=2 with
+      # fetch-retry-maxtimeout=60000, serialised across every request an install
+      # makes — which is how one `npm audit` burned 7m01s on 2026-09-04. Retry
+      # stays ON here, because a dropped request mid-install is common and cheap
+      # to retry; what changes is the per-retry ceiling, from 60s to 20s. A
+      # healthy install is unaffected; the tail is bounded.
+      npm_config_fetch_retries: "2"
+      npm_config_fetch_retry_mintimeout: "1000"
+      npm_config_fetch_retry_maxtimeout: "20000"
+      npm_config_fetch_timeout: "60000"
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -155,16 +182,27 @@ jobs:
           GITHUB_TOKEN: "${{ github.token }}"
       - name: Composer audit
         working-directory: apps/api
+        # Wrapped in Phase 1. This is the production release path, which is
+        # where an ambiguous audit failure is most expensive to diagnose.
         run: |
           composer install --prefer-dist --no-interaction --no-progress
-          composer audit
+          "${GITHUB_WORKSPACE}/.github/scripts/composer_audit_resilient.sh" composer audit
       - name: npm audit (web)
         working-directory: apps/web
-        run: npm ci && npm audit --audit-level=high
+        # Wrapped in Phase 1. M48 fixed this exact defect in security.yml and
+        # left the identical unwrapped command here on the release path: an
+        # npm advisory-service 503 during a tag push failed the release for a
+        # reason unrelated to the code, and because `npm audit` exits 1 for
+        # both, the log was indistinguishable from a genuine critical advisory.
+        # The threshold is unchanged.
+        run: |
+          npm ci
+          "${GITHUB_WORKSPACE}/.github/scripts/npm_audit_resilient.sh" npm audit --audit-level=high
 
   images:
     name: Docker · Build images (api, nginx, web)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     # Images are only built once ALL quality/security gates pass.
     needs: [api, web, mobile, contract, security]
     steps:
@@ -188,6 +226,7 @@ jobs:
   release-gate:
     name: Release Gate (all mandatory gates green)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [api, web, mobile, contract, security, images]
     steps:
       - name: All mandatory gates passed — release may proceed

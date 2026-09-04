@@ -81,7 +81,16 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # Transient: the service is there but not answering right now. Retryable.
-TRANSIENT='audit (429|500|502|503|504) |Service Unavailable|Bad Gateway|Gateway Timeout|Too Many Requests|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|ERR_SOCKET_TIMEOUT|socket timeout|network timeout|request to .* failed|audit endpoint returned an error'
+#
+# Widened in Phase 1 to cover every status and network token in
+# `.github/governance/ci-reliability-policy.json`, because
+# `verify_ci_reliability.py` now asserts that this classifier and
+# `lib/reliability_classify.sh` both do — two classifiers that drift apart are
+# two different definitions of "outage", and only one of them can be right.
+# The change is purely additive: more failures are recognised as retryable
+# infrastructure weather. Nothing about the verdict-before-transient ordering
+# below is altered, which is the property the M48 controls exist to protect.
+TRANSIENT='audit (408|425|429|500|502|503|504) |Service Unavailable|Bad Gateway|Gateway Timeout|Request Timeout|Too Many Requests|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|ERR_SOCKET_TIMEOUT|socket timeout|network timeout|Connection timed out|Connection reset by peer|Could not resolve host|Operation timed out|Empty reply from server|request to .* failed|audit endpoint returned an error'
 
 # Malformed: npm reached the service and the exchange was structurally wrong.
 # Retrying cannot fix this, so it fails closed immediately rather than burning

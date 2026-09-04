@@ -220,8 +220,8 @@ control "1. '|| true' restored on npm audit (the pre-M45 state)" \
 control "2. '|| true' restored on composer audit" \
   "audit.composer_unmasked" \
   ".github/workflows/security.yml" \
-  '        run: composer audit --locked' \
-  '        run: composer audit --locked || true'
+  'composer audit --locked' \
+  'composer audit --locked || true'
 
 # ---------------------------------------------------------------------------
 # 3-4. The same masking one level up, where a step-level check would miss it.
@@ -249,12 +249,13 @@ control "4. continue-on-error added to the whole audit job" \
 # 5. A forced exit 0 — the same defect wearing different clothes.
 # ---------------------------------------------------------------------------
 
+# shellcheck disable=SC2016  # `${{ }}` is literal workflow text being matched
 control "5. a forced 'exit 0' appended to the composer audit" \
   "audit.composer_unmasked" \
   ".github/workflows/security.yml" \
-  '        run: composer audit --locked' \
+  '        run: ${{ github.workspace }}/.github/scripts/composer_audit_resilient.sh composer audit --locked' \
   '        run: |
-          composer audit --locked
+          ${{ github.workspace }}/.github/scripts/composer_audit_resilient.sh composer audit --locked
           exit 0'
 
 # ---------------------------------------------------------------------------
@@ -280,8 +281,8 @@ control "7. the npm audit command removed entirely" \
 control "8. the composer audit command removed entirely" \
   "audit.composer_step_present" \
   ".github/workflows/security.yml" \
-  '        run: composer audit --locked' \
-  '        run: echo "skipped"'
+  'composer audit --locked' \
+  'echo "skipped"'
 
 # ---------------------------------------------------------------------------
 # 9. `--locked` dropped: the vacuity defect. The step still looks unmasked and
@@ -291,8 +292,8 @@ control "8. the composer audit command removed entirely" \
 control "9. '--locked' dropped, so composer audits an absent vendor tree" \
   "audit.composer_reads_lockfile" \
   ".github/workflows/security.yml" \
-  '        run: composer audit --locked' \
-  '        run: composer audit'
+  'composer audit --locked' \
+  'composer audit'
 
 # ---------------------------------------------------------------------------
 # 10-12. The context itself removed, renamed, or skipped.
@@ -382,12 +383,50 @@ BASE="${M45_BASE_REF:-$M45_BASELINE_COMMIT}"
 # and keeps the repair inside this script rather than changing a workflow that
 # fourteen other things depend on. `actions/checkout` leaves its credentials
 # configured, so this needs no token of its own.
+#
+# Phase 1 hardened this. It was a single `git fetch ... 2>/dev/null`, which
+# threw away the one piece of information an operator needs: a transient
+# GitHub git error and a baseline that genuinely does not exist produced the
+# identical message. Both still fail — a missing baseline must never become
+# success — but they now say which they are, and the transient one is retried
+# within a bound before being believed.
 baseline_error=""
+baseline_fetch_log=""
 if ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-  if ! git fetch --quiet --depth=1 origin "$BASE" 2>/dev/null \
-     || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-    baseline_error="the pre-M45 baseline commit ${BASE} is not present and could not be fetched"
-  fi
+  fetch_attempts="${M45_FETCH_ATTEMPTS:-2}"
+  fetch_timeout="${M45_FETCH_TIMEOUT:-15}"
+  fetch_backoff="${M45_FETCH_BACKOFF:-4}"
+  attempt=1
+  while :; do
+    # This file runs under `set -e`, so the capture has to sit inside an `if`
+    # condition: a bare assignment from a failing command would abort the whole
+    # control at exit 128 before it could report WHY the baseline was missing —
+    # which is the diagnosis this retry loop exists to produce. No `set +e` and
+    # no `|| true`: the exit code is read, not suppressed.
+    if baseline_fetch_log="$(timeout "$fetch_timeout" \
+        git fetch --quiet --depth=1 origin "$BASE" 2>&1)"; then
+      fetch_code=0
+    else
+      fetch_code=$?
+    fi
+    if [[ "$fetch_code" -eq 0 ]] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+      break
+    fi
+    # A ref that does not exist upstream is a permanent answer; retrying it
+    # just spends the budget to be told the same thing twice.
+    if grep -qiE "couldn.t find remote ref|not our ref|unadvertised object|does not exist" \
+         <<<"$baseline_fetch_log"; then
+      baseline_error="the pre-M45 baseline commit ${BASE} does not exist upstream (permanent)"
+      break
+    fi
+    if [[ "$attempt" -ge "$fetch_attempts" ]]; then
+      baseline_error="the pre-M45 baseline commit ${BASE} could not be fetched after ${fetch_attempts} attempts (exit ${fetch_code})"
+      break
+    fi
+    echo "  baseline fetch attempt ${attempt}/${fetch_attempts} failed (exit ${fetch_code}); retrying in ${fetch_backoff}s"
+    sleep "$fetch_backoff"
+    attempt=$((attempt + 1))
+  done
 fi
 
 extract_ok=1
@@ -513,6 +552,9 @@ if [[ "$extract_ok" -ne 1 ]]; then
   # success condition then accepted. A baseline that cannot be resolved is a
   # broken control, not an excused one.
   echo "  BASELINE UNRESOLVABLE — ${baseline_error}."
+  if [[ -n "$baseline_fetch_log" ]]; then
+    echo "  git said: ${baseline_fetch_log}"
+  fi
   echo "  Part B cannot run without the pre-M45 lockfiles; this is a failure."
   live_unavailable=$live_total
 else
@@ -526,19 +568,38 @@ else
   # controls with it. Two attempts at 40s plus one 5s backoff bounds each
   # control at 85s, so Part B cannot consume the job again. A healthy audit
   # still returns in a couple of seconds; nothing sleeps on success.
+  # Both live audits now run through the same governed wrappers `security.yml`
+  # uses, so what Part B measures is the gate as deployed rather than a
+  # lookalike. Composer joined them in Phase 1: it was the last unbounded
+  # network call inside this ten-minute job, and `COMPOSER_PROCESS_TIMEOUT=0`
+  # from setup-php meant it had no upper bound at all.
+  #
+  # The budgets are tighter than the production gates' on purpose, and the
+  # numbers are not arbitrary: they are the ones
+  # `.github/governance/ci-reliability-policy.json` uses to compute this job's
+  # worst case, and `verify_ci_reliability.py` fails if that sum stops fitting.
+  # npm 2 x 25s + 4s = 54s; composer 2 x 15s + 4s = 34s. Healthy runs are
+  # unaffected — nothing sleeps on success.
+  npm_budget=(env NPM_AUDIT_ATTEMPTS=2 NPM_AUDIT_TIMEOUT=25 NPM_AUDIT_BACKOFF=4)
+  composer_budget=(env COMPOSER_AUDIT_ATTEMPTS=2 COMPOSER_AUDIT_TIMEOUT=15 COMPOSER_AUDIT_BACKOFF=4)
+
   live "B1. pre-M45 lockfile: npm audit --audit-level=high must FAIL" 1 \
     "$live_fixture/before/web" \
-    env NPM_AUDIT_ATTEMPTS=2 NPM_AUDIT_TIMEOUT=40 NPM_AUDIT_BACKOFF=5 \
+    "${npm_budget[@]}" \
     "$REPO_ROOT/.github/scripts/npm_audit_resilient.sh" npm audit --audit-level=high
   live "B2. pre-M45 lockfile: composer audit --locked must FAIL" 1 \
     "$REPO_ROOT" \
+    "${composer_budget[@]}" \
+    "$REPO_ROOT/.github/scripts/composer_audit_resilient.sh" \
     composer audit --locked --no-interaction --working-dir="$live_fixture/before/api"
   live "B3. post-M45 lockfile: npm audit --audit-level=high must PASS" 0 \
     "$live_fixture/after/web" \
-    env NPM_AUDIT_ATTEMPTS=2 NPM_AUDIT_TIMEOUT=40 NPM_AUDIT_BACKOFF=5 \
+    "${npm_budget[@]}" \
     "$REPO_ROOT/.github/scripts/npm_audit_resilient.sh" npm audit --audit-level=high
   live "B4. post-M45 lockfile: composer audit --locked must PASS" 0 \
     "$REPO_ROOT" \
+    "${composer_budget[@]}" \
+    "$REPO_ROOT/.github/scripts/composer_audit_resilient.sh" \
     composer audit --locked --no-interaction --working-dir="$live_fixture/after/api"
 fi
 
