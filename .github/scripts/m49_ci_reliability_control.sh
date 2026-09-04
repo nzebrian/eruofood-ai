@@ -278,28 +278,145 @@ control "20. policy and workflow disagree on the integrity job's timeout" "budge
 
 # 21 — a stale policy entry for a job that no longer exists.
 r="$(fixture t21)"
-mutate "$r/$POLICY" '"ci-mobile.yml:quality":                      { "class": "application-tests",    "measured_seconds": null },' \
-                    '"ci-mobile.yml:quality":                      { "class": "application-tests",    "measured_seconds": null },
-    "ci-ghost.yml:phantom":                       { "class": "fast-validation",      "measured_seconds": null },'
+mutate "$r/$POLICY" '    "ci-mobile.yml:quality": {' \
+                    '    "ci-ghost.yml:phantom": {
+      "class": "fast-validation",
+      "measured_seconds": null
+    },
+    "ci-mobile.yml:quality": {'
 control "21. the policy lists a job that does not exist" "timeout.policy_not_stale" "$r"
 
-# 22 — positive control. Without it, a validator that rejects everything would
+# ---------------------------------------------------------------------------
+# M50 Phase 1 — the generalised rules. Each of these was ACCEPTED by every
+# validator before this phase; the Phase 0 permanence probe confirmed it.
+# ---------------------------------------------------------------------------
+
+# 24 — masking on a GA certification command. Probe F in the Phase 0 audit.
+r="$(fixture t24)"
+mutate "$r/$WF/ga-release-certification.yml" \
+  "        run: php scripts/redis_validation.php" \
+  "        run: php scripts/redis_validation.php || true"
+control "24. '|| true' added to a GA certification command" "masking.workflows" "$r"
+
+# 25 — masking on the release path.
+r="$(fixture t25)"
+mutate "$r/$WF/release.yml" \
+  "      - name: Analyzer — MANDATORY
+        run: flutter analyze" \
+  "      - name: Analyzer — MANDATORY
+        run: flutter analyze || true"
+control "25. masking added to release.yml" "masking.workflows" "$r"
+
+# 26 — continue-on-error, the other spelling.
+r="$(fixture t26)"
+mutate "$r/$WF/contracts.yml" \
+  "      - name: Lint OpenAPI specification" \
+  "      - name: Lint OpenAPI specification
+        continue-on-error: true"
+control "26. continue-on-error added to a required check's step" "masking.workflows" "$r"
+
+# 27 — an exemption that no longer describes the repository. A stale allowlist
+#      entry is how a real mask later slips in under a name nobody re-reads.
+r="$(fixture t27)"
+mutate "$r/$POLICY" \
+  '"step": "Upload coverage",' \
+  '"step": "Upload coverage that no longer exists",'
+control "27. a masking exemption that matches nothing" "masking.no_stale_exemption" "$r"
+
+# 28 — an exemption with no written reason: a wildcard wearing a costume.
+r="$(fixture t28)"
+mutate "$r/$POLICY" \
+  '"reason": "Artifact upload after the test gate. Runs so coverage is retrievable from a failed run; cannot change the job'"'"'s conclusion."' \
+  '"reason": ""'
+control "28. a masking exemption with an empty reason" "masking.exemption_has_reason" "$r"
+
+# 29 — a bare download curl in a workflow that is not workflow-integrity.
+#      Probe E in the Phase 0 audit: previously accepted.
+r="$(fixture t29)"
+mutate "$r/$WF/security.yml" \
+  "      - name: Setup PHP" \
+  "      - name: Fetch a thing
+        run: curl -fsSL -o /tmp/x https://example.invalid/test
+      - name: Setup PHP"
+control "29. bare download curl added to security.yml" "download.no_bare_curl" "$r"
+
+# 30 — the Composer bound removed.
+r="$(fixture t30)"
+mutate "$r/$WF/ci-api.yml" \
+  '      COMPOSER_PROCESS_TIMEOUT: "300"
+      # Explicit rather than inherited from phpunit.xml. An exported' \
+  '      # Explicit rather than inherited from phpunit.xml. An exported'
+control "30. COMPOSER_PROCESS_TIMEOUT removed from ci-api.yml" "network.composer_install" "$r"
+
+# 31 — the Flutter step bound removed.
+r="$(fixture t31)"
+mutate "$r/$WF/ci-mobile.yml" \
+  "        timeout-minutes: 10
+        run: flutter pub get" \
+  "        run: flutter pub get"
+control "31. flutter pub get step timeout removed" "network.flutter_pub_get" "$r"
+
+# 32 — the apt bounds removed.
+r="$(fixture t32)"
+mutate "$r/$WF/performance-certification.yml" \
+  "          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update \\
+            && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y k6
+      - name: Run soak" \
+  "          sudo apt-get update && sudo apt-get install -y k6
+      - name: Run soak"
+control "32. apt-get retry/timeout options removed" "network.apt_get_install" "$r"
+
+# 33 — the ci-docker concurrency group removed.
+r="$(fixture t33)"
+mutate "$r/$WF/ci-docker.yml" \
+  "concurrency:
+  group: ci-docker-\${{ github.ref }}
+  cancel-in-progress: true
+
+" \
+  ""
+control "33. ci-docker.yml concurrency group removed" "concurrency.group" "$r"
+
+# 34 — cancel-in-progress: false with no recorded reason.
+r="$(fixture t34)"
+mutate "$r/$WF/contracts.yml" \
+  "  cancel-in-progress: true" \
+  "  cancel-in-progress: false"
+control "34. undeclared cancel-in-progress: false" "concurrency.cancel_declared" "$r"
+
+# 35 — a deferred defect quietly deleted from the record while the mask stays.
+#      The defect must keep being reported, not disappear because the entry did.
+r="$(fixture t35)"
+mutate "$r/$WF/ci-docker.yml" \
+  "docker compose exec -T api php artisan db:seed --force || true" \
+  "docker compose exec -T api php artisan db:seed --force"
+control "35. a recorded deferred defect silently resolved without updating policy" \
+  "masking.deferred_defect_present" "$r"
+
+# 36 — the M50-13 masks restored elsewhere, where no record covers them.
+r="$(fixture t36)"
+mutate "$r/$WF/ci-web.yml" \
+  "        run: npm run build" \
+  "        run: npm run build || true"
+control "36. db:seed-style masking reintroduced somewhere unrecorded" "masking.workflows" "$r"
+
+# 37 — positive control. Without it, a validator that rejects everything would
 #      make all twenty-one controls above pass while enforcing nothing.
 r="$(fixture t22)"
 if python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" >/dev/null 2>&1; then
-  ok "22. positive control: an unmutated fixture passes"
+  ok "37. positive control: an unmutated fixture passes"
 else
-  bad "22. positive control: an UNMUTATED fixture failed — every control above proves nothing"
+  bad "37. positive control: an UNMUTATED fixture failed — every control above proves nothing"
   python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" 2>&1 | grep -E "^  FAIL" | head -12 | sed 's/^/      /'
 fi
 
-# 23 — integrity.
+# 38 — integrity.
 echo
 after="$(fingerprint)"
 if [[ "$before" == "$after" ]]; then
-  ok "23. sha256 integrity: the real repository is unchanged"
+  ok "38. sha256 integrity: the real repository is unchanged"
 else
-  bad "23. THE REAL REPOSITORY CHANGED during this run"
+  bad "38. THE REAL REPOSITORY CHANGED during this run"
 fi
 echo
 echo "Protected-file fingerprint (after):  $after"

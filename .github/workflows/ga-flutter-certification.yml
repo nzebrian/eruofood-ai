@@ -74,9 +74,18 @@ jobs:
         run: flutter doctor -v
 
       - name: Prepare env asset
-        run: cp .env.example .env || true
+        # Unmasked in M50 Phase 1. `apps/mobile/.env.example` is tracked, and
+        # `ci-mobile.yml` already copies it without a mask — so the `|| true`
+        # here was hiding a step that cannot legitimately fail. If the asset
+        # ever goes missing, the certification job should say so rather than
+        # analysing and testing against whatever `.env` happened to be there.
+        run: cp .env.example .env
 
       - name: flutter pub get
+        # M50 Phase 1: pub has no network-timeout knob, so the bound is
+        # explicit at the step. A stalled pub.dev fetch fails here rather
+        # than consuming the job's whole budget.
+        timeout-minutes: 10
         run: flutter pub get
 
       - name: flutter analyze — MANDATORY (fails on any issue)
@@ -107,8 +116,17 @@ jobs:
       - name: flutter doctor
         run: flutter doctor -v
       - name: Prepare env asset
-        run: cp .env.example .env || true
+        # Unmasked in M50 Phase 1. `apps/mobile/.env.example` is tracked, and
+        # `ci-mobile.yml` already copies it without a mask — so the `|| true`
+        # here was hiding a step that cannot legitimately fail. If the asset
+        # ever goes missing, the certification job should say so rather than
+        # analysing and testing against whatever `.env` happened to be there.
+        run: cp .env.example .env
       - name: flutter pub get
+        # M50 Phase 1: pub has no network-timeout knob, so the bound is
+        # explicit at the step. A stalled pub.dev fetch fails here rather
+        # than consuming the job's whole budget.
+        timeout-minutes: 10
         run: flutter pub get
       - name: flutter analyze — MANDATORY
         run: flutter analyze --fatal-infos --fatal-warnings

@@ -60,6 +60,11 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
     env:
+      # M50 Phase 1 network bound. `shivammathur/setup-php` exports
+      # COMPOSER_PROCESS_TIMEOUT=0 into the runner — zero meaning UNLIMITED —
+      # so every `composer install` here inherited no upper bound at all.
+      # 300s is generous for a cached install and finite for a stalled one.
+      COMPOSER_PROCESS_TIMEOUT: "300"
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
       DB_DATABASE: eruofood_test

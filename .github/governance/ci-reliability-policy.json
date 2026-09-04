@@ -3,15 +3,13 @@
     "artifact": "ci-reliability-policy",
     "purpose": "The bounds this repository's CI runs under: how long each job may take, how many times a network operation may be retried, which HTTP statuses and socket errors are retryable, which dependency-audit commands must go through a governed wrapper, and which controls must report a completion record. Prepared by Phase 1 of the CI Reliability & Failure-Prevention work.",
     "prepared_against_main_sha": "449ea30556eba3f58d62ce417390c8b296ac0b46",
-    "why_this_file_exists": "Every control in this repository before Phase 1 protected what a gate SAYS and none protected what it COSTS. A gate can be perfectly fail-closed and still be useless if it never runs, and on 2026-09-04 that is exactly what happened twice: `Dependency audit` spent 7m01s inside one `npm audit` against a lockfile with zero advisories, and `CI · Workflow Integrity` was CANCELLED at its ten-minute cap mid-control, silently taking four later controls with it. Neither failure was a security failure. Both were duration failures, and nothing in the repository was looking at duration.",
+    "why_this_file_exists": "Every control in this repository before Phase 1 protected what a gate SAYS and none protected what it COSTS. A gate can be perfectly fail-closed and still be useless if it never runs, and on 2026-09-04 that is exactly what happened twice: `Dependency audit` spent 7m01s inside one `npm audit` against a lockfile with zero advisories, and `CI \u00b7 Workflow Integrity` was CANCELLED at its ten-minute cap mid-control, silently taking four later controls with it. Neither failure was a security failure. Both were duration failures, and nothing in the repository was looking at duration.",
     "this_is_a_bound_not_a_target": "None of the timeouts below is an expectation of how long a job takes. They are the point past which a job is presumed hung. `measured_seconds` records the real observed duration so the headroom is visible and a future reader can tell a deliberate bound from a guess.",
-    "validated_by": ".github/scripts/verify_ci_reliability.py, enforced inside the required `CI · Workflow Integrity` context.",
+    "validated_by": ".github/scripts/verify_ci_reliability.py, enforced inside the required `CI \u00b7 Workflow Integrity` context.",
     "mutation_tested_by": ".github/scripts/m49_ci_reliability_control.sh (policy/validator) and .github/scripts/m49_reliability_wrappers_control.sh (runtime behaviour)."
   },
-
   "schema": 1,
   "repository": "nzebrian/eruofood-ai",
-
   "job_timeout_classes": {
     "_note": "A job's declared timeout-minutes must be > 0 and <= its class maximum. There is no minimum band: a bound tighter than the class ceiling is always permitted, and a job that finishes faster than expected is not a governance problem. What is forbidden is an ABSENT bound, a zero or non-integer bound, or one above the ceiling, because those are the three routes back to GitHub's 360-minute default.",
     "fast-validation": {
@@ -24,7 +22,7 @@
     },
     "governance-integrity": {
       "max_minutes": 20,
-      "description": "The required workflow-integrity job. Bounded separately because its worst case is COMPUTED from this file rather than estimated — see workflow_integrity_budget."
+      "description": "The required workflow-integrity job. Bounded separately because its worst case is COMPUTED from this file rather than estimated \u2014 see workflow_integrity_budget."
     },
     "container-build": {
       "max_minutes": 40,
@@ -47,49 +45,129 @@
       "description": "k6 scenarios including the optional 2h soak profile."
     }
   },
-
   "jobs": {
-    "_note": "Every job in every workflow appears here exactly once, keyed `<workflow file>:<job id>`. A job present in a workflow but absent here fails the validator, and so does the reverse — an unlisted new job is the precise way a 360-minute default gets reintroduced. `measured_seconds` is null where the job has no observed successful run in the evidence used to prepare this file; those jobs are dispatch- or tag-triggered only.",
-
-    "ci-api.yml:sqlite":                          { "class": "application-tests",    "measured_seconds": 115 },
-    "ci-api.yml:quality":                         { "class": "application-tests",    "measured_seconds": 572 },
-    "ci-web.yml:quality":                         { "class": "application-tests",    "measured_seconds": 43 },
-    "ci-mobile.yml:quality":                      { "class": "application-tests",    "measured_seconds": null },
-    "ci-docker.yml:boot":                         { "class": "container-build",      "measured_seconds": 195 },
-    "contracts.yml:validate":                     { "class": "fast-validation",      "measured_seconds": 26 },
-
-    "security.yml:secret-scan":                   { "class": "fast-validation",      "measured_seconds": 10 },
-    "security.yml:dependency-audit":              { "class": "fast-validation",      "measured_seconds": 12 },
-
-    "workflow-integrity.yml:actionlint":          { "class": "governance-integrity", "measured_seconds": 104 },
-    "governance-advisory.yml:governance":         { "class": "fast-validation",      "measured_seconds": 23 },
-
-    "ga-flutter-certification.yml:android":       { "class": "mobile-certification", "measured_seconds": 311 },
-    "ga-flutter-certification.yml:ios":           { "class": "mobile-certification", "measured_seconds": 280 },
-    "ga-flutter-certification.yml:mobile-certification": { "class": "fast-validation", "measured_seconds": 3 },
-    "ga-docker-certification.yml:certify":        { "class": "container-build",      "measured_seconds": null },
-
-    "ga-release-certification.yml:backend":       { "class": "release-certification", "measured_seconds": null },
-    "ga-release-certification.yml:web":           { "class": "release-certification", "measured_seconds": null },
-    "ga-release-certification.yml:openapi":       { "class": "fast-validation",       "measured_seconds": null },
-    "ga-release-certification.yml:security-scan": { "class": "fast-validation",       "measured_seconds": null },
-    "ga-release-certification.yml:certified":     { "class": "fast-validation",       "measured_seconds": null },
-
-    "release.yml:api":                            { "class": "release-certification", "measured_seconds": null },
-    "release.yml:web":                            { "class": "release-certification", "measured_seconds": null },
-    "release.yml:mobile":                         { "class": "release-certification", "measured_seconds": null },
-    "release.yml:contract":                       { "class": "fast-validation",       "measured_seconds": null },
-    "release.yml:security":                       { "class": "release-certification", "measured_seconds": null },
-    "release.yml:images":                         { "class": "container-build",       "measured_seconds": null },
-    "release.yml:release-gate":                   { "class": "fast-validation",       "measured_seconds": null },
-
-    "staging-deploy.yml:build-images":            { "class": "deployment",            "measured_seconds": null },
-    "staging-deploy.yml:deploy":                  { "class": "deployment",            "measured_seconds": null },
-
-    "performance-certification.yml:k6":           { "class": "performance",           "measured_seconds": null },
-    "performance-certification.yml:soak":         { "class": "performance",           "measured_seconds": null }
+    "_note": "Every job in every workflow appears here exactly once, keyed `<workflow file>:<job id>`. A job present in a workflow but absent here fails the validator, and so does the reverse \u2014 an unlisted new job is the precise way a 360-minute default gets reintroduced. `measured_seconds` is null where the job has no observed successful run in the evidence used to prepare this file; those jobs are dispatch- or tag-triggered only.",
+    "ci-api.yml:sqlite": {
+      "class": "application-tests",
+      "measured_seconds": 115
+    },
+    "ci-api.yml:quality": {
+      "class": "application-tests",
+      "measured_seconds": 572
+    },
+    "ci-web.yml:quality": {
+      "class": "application-tests",
+      "measured_seconds": 43
+    },
+    "ci-mobile.yml:quality": {
+      "class": "application-tests",
+      "measured_seconds": null
+    },
+    "ci-docker.yml:boot": {
+      "class": "container-build",
+      "measured_seconds": 195
+    },
+    "contracts.yml:validate": {
+      "class": "fast-validation",
+      "measured_seconds": 26
+    },
+    "security.yml:secret-scan": {
+      "class": "fast-validation",
+      "measured_seconds": 10
+    },
+    "security.yml:dependency-audit": {
+      "class": "fast-validation",
+      "measured_seconds": 12
+    },
+    "workflow-integrity.yml:actionlint": {
+      "class": "governance-integrity",
+      "measured_seconds": 104
+    },
+    "governance-advisory.yml:governance": {
+      "class": "fast-validation",
+      "measured_seconds": 23
+    },
+    "ga-flutter-certification.yml:android": {
+      "class": "mobile-certification",
+      "measured_seconds": 311
+    },
+    "ga-flutter-certification.yml:ios": {
+      "class": "mobile-certification",
+      "measured_seconds": 280
+    },
+    "ga-flutter-certification.yml:mobile-certification": {
+      "class": "fast-validation",
+      "measured_seconds": 3
+    },
+    "ga-docker-certification.yml:certify": {
+      "class": "container-build",
+      "measured_seconds": null
+    },
+    "ga-release-certification.yml:backend": {
+      "class": "release-certification",
+      "measured_seconds": null
+    },
+    "ga-release-certification.yml:web": {
+      "class": "release-certification",
+      "measured_seconds": null
+    },
+    "ga-release-certification.yml:openapi": {
+      "class": "fast-validation",
+      "measured_seconds": null
+    },
+    "ga-release-certification.yml:security-scan": {
+      "class": "fast-validation",
+      "measured_seconds": null
+    },
+    "ga-release-certification.yml:certified": {
+      "class": "fast-validation",
+      "measured_seconds": null
+    },
+    "release.yml:api": {
+      "class": "release-certification",
+      "measured_seconds": null
+    },
+    "release.yml:web": {
+      "class": "release-certification",
+      "measured_seconds": null
+    },
+    "release.yml:mobile": {
+      "class": "release-certification",
+      "measured_seconds": null
+    },
+    "release.yml:contract": {
+      "class": "fast-validation",
+      "measured_seconds": null
+    },
+    "release.yml:security": {
+      "class": "release-certification",
+      "measured_seconds": null
+    },
+    "release.yml:images": {
+      "class": "container-build",
+      "measured_seconds": null
+    },
+    "release.yml:release-gate": {
+      "class": "fast-validation",
+      "measured_seconds": null
+    },
+    "staging-deploy.yml:build-images": {
+      "class": "deployment",
+      "measured_seconds": null
+    },
+    "staging-deploy.yml:deploy": {
+      "class": "deployment",
+      "measured_seconds": null
+    },
+    "performance-certification.yml:k6": {
+      "class": "performance",
+      "measured_seconds": null
+    },
+    "performance-certification.yml:soak": {
+      "class": "performance",
+      "measured_seconds": null
+    }
   },
-
   "reusable_workflow_calls": {
     "_note": "Jobs that are a `uses:` call to another workflow carry no steps of their own and cannot declare timeout-minutes; the callee's jobs are bounded instead. Listed so the validator can tell a legitimately timeout-free job from an unbounded one.",
     "ids": [
@@ -97,28 +175,49 @@
       "ga-release-certification.yml:flutter"
     ]
   },
-
   "retry": {
     "_note": "Applies to every governed network operation. Attempts are TOTAL attempts, not retries-after-the-first.",
     "max_attempts": 3,
     "max_backoff_seconds": 30,
-    "retryable_http_status": [408, 425, 429, 500, 502, 503, 504],
+    "retryable_http_status": [
+      408,
+      425,
+      429,
+      500,
+      502,
+      503,
+      504
+    ],
     "retryable_network_error_tokens": [
-      "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND",
-      "ERR_SOCKET_TIMEOUT", "socket timeout", "network timeout",
-      "Connection timed out", "Could not resolve host", "Operation timed out",
-      "Empty reply from server", "Connection reset by peer"
+      "ETIMEDOUT",
+      "ECONNRESET",
+      "ECONNREFUSED",
+      "EAI_AGAIN",
+      "ENOTFOUND",
+      "ERR_SOCKET_TIMEOUT",
+      "socket timeout",
+      "network timeout",
+      "Connection timed out",
+      "Could not resolve host",
+      "Operation timed out",
+      "Empty reply from server",
+      "Connection reset by peer"
     ],
     "never_retryable": {
       "_note": "Retrying cannot repair any of these, so burning the budget on them delays a verdict that is already known. They fail closed on the first attempt.",
       "tokens": [
-        "Invalid package tree", "Unexpected token", "Unexpected end of JSON",
-        "Invalid response body", "ENOLOCK", "EUSAGE", "EJSONPARSE",
-        "checksum", "does not match"
+        "Invalid package tree",
+        "Unexpected token",
+        "Unexpected end of JSON",
+        "Invalid response body",
+        "ENOLOCK",
+        "EUSAGE",
+        "EJSONPARSE",
+        "checksum",
+        "does not match"
       ]
     }
   },
-
   "verdict_protocol": {
     "_note": "Every governed dependency audit answers with one of exactly three verdicts, in words and in an exit code. npm and composer both exit 1 for a vulnerability AND for a dead endpoint; that ambiguity is what made the 2026-09-04 incident take six minutes of log archaeology, and separating the two is the whole point.",
     "exit_pass": 0,
@@ -126,15 +225,16 @@
     "exit_unavailable": 3,
     "unavailable_must_be_non_zero": true,
     "verdict_checked_before_transient": true,
-    "why_that_ordering": "A run that saw a 503, retried, and then found real advisories prints both the outage banner and the finding. Matching the outage patterns first would downgrade a genuine vulnerability to 'the service was down' — the single misclassification that would turn a reliability wrapper into a security regression."
+    "why_that_ordering": "A run that saw a 503, retried, and then found real advisories prints both the outage banner and the finding. Matching the outage patterns first would downgrade a genuine vulnerability to 'the service was down' \u2014 the single misclassification that would turn a reliability wrapper into a security regression."
   },
-
   "audit_governance": {
     "_note": "Any invocation of a listed command in a workflow `run:` block must be routed through the matching approved wrapper. The audit POLICY (threshold, --locked) stays visible at the call site rather than moving inside a wrapper where it could be lowered out of sight.",
     "governed_commands": {
       "npm audit": {
         "wrapper": ".github/scripts/npm_audit_resilient.sh",
-        "required_arguments": ["--audit-level=high"]
+        "required_arguments": [
+          "--audit-level=high"
+        ]
       },
       "composer audit": {
         "wrapper": ".github/scripts/composer_audit_resilient.sh",
@@ -146,16 +246,42 @@
       ".github/scripts/composer_audit_resilient.sh"
     ]
   },
-
   "download_governance": {
     "_note": "Tool downloads inside a required check are an external dependency like any other. Before Phase 1 these were bare `curl -fsSL` with no timeout and no retry, inside a ten-minute job: a GitHub Releases blip reddened the required integrity context, and a SLOW one consumed the budget and cancelled every control after it.",
     "wrapper": ".github/scripts/bounded_download.sh",
     "checksum_verification_required": true,
     "checksum_mismatch_is_fatal": true,
     "checksum_mismatch_is_never_retried": true,
-    "workflows_requiring_governed_download": [".github/workflows/workflow-integrity.yml"]
+    "workflows_requiring_governed_download": [
+      ".github/workflows/workflow-integrity.yml"
+    ],
+    "_m50_note": "M50 Phase 1 widened this from a single workflow to every workflow. A probe confirmed a bare `curl https://...` added to security.yml was accepted by every validator, because the rule was scoped to workflow-integrity.yml alone.",
+    "governed_paths": [
+      ".github/workflows/*.yml"
+    ],
+    "non_download_curl_exemptions": [
+      {
+        "workflow": "ci-docker.yml",
+        "match": "http://localhost:8080",
+        "reason": "Health and readiness probes against the locally-booted compose stack. No artefact is fetched and no third party is involved; the bounded-download wrapper would be meaningless here. The recovery loop that uses them already carries its own 120s deadline."
+      },
+      {
+        "workflow": "ga-docker-certification.yml",
+        "match": "http://localhost:8080",
+        "reason": "Same locally-booted health, readiness and smoke probes."
+      },
+      {
+        "workflow": "staging-deploy.yml",
+        "match": "${STAGING_URL}",
+        "reason": "Post-deploy smoke probe against the environment just deployed, already bounded with --max-time 30. Not an artefact download."
+      },
+      {
+        "workflow": "governance-advisory.yml",
+        "match": "api.github.com",
+        "reason": "Governance evidence query against the GitHub API, already bounded with --max-time 30 --retry 2 --retry-connrefused. Fetches JSON evidence, not an executable artefact, and has no checksum to verify."
+      }
+    ]
   },
-
   "npm_network_policy": {
     "_note": "npm's defaults are fetch-retries=2 with fetch-retry-maxtimeout=60000, serialised across many requests. That is how one `npm audit` consumed 7m01s on 2026-09-04. Installation and auditing get different budgets because they are different operations: an install legitimately makes hundreds of requests, an audit makes one.",
     "install": {
@@ -164,7 +290,7 @@
       "fetch_retry_mintimeout_ms": 1000,
       "fetch_retry_maxtimeout_ms": 20000,
       "fetch_timeout_ms": 60000,
-      "rationale": "Retry stays enabled — a dropped request mid-install is common and cheap to retry — but the per-retry ceiling drops from 60s to 20s, bounding the tail without changing behaviour on a healthy registry."
+      "rationale": "Retry stays enabled \u2014 a dropped request mid-install is common and cheap to retry \u2014 but the per-retry ceiling drops from 60s to 20s, bounding the tail without changing behaviour on a healthy registry."
     },
     "audit": {
       "_applies_to": "npm audit",
@@ -190,20 +316,18 @@
       "ga-release-certification.yml:web"
     ]
   },
-
   "composer_network_policy": {
-    "_note": "`shivammathur/setup-php` exports COMPOSER_PROCESS_TIMEOUT=0 into the runner environment — zero meaning UNLIMITED. Verified verbatim in the `Dependency audit` and `Governance Advisory` job logs on 4f3f62d. A governed audit path must not inherit that.",
+    "_note": "`shivammathur/setup-php` exports COMPOSER_PROCESS_TIMEOUT=0 into the runner environment \u2014 zero meaning UNLIMITED. Verified verbatim in the `Dependency audit` and `Governance Advisory` job logs on 4f3f62d. A governed audit path must not inherit that.",
     "audit": {
       "process_timeout_seconds": 60,
       "rationale": "The wrapper sets COMPOSER_PROCESS_TIMEOUT explicitly and additionally imposes its own hard per-attempt timeout, so an unlimited inherited value cannot reach a governed audit."
     },
     "exit_code_semantics": {
-      "0": "clean — composer audited and found nothing",
-      "1": "advisories found — a real verdict",
-      "100": "generic composer error — NEVER a verdict; classified UNAVAILABLE"
+      "0": "clean \u2014 composer audited and found nothing",
+      "1": "advisories found \u2014 a real verdict",
+      "100": "generic composer error \u2014 NEVER a verdict; classified UNAVAILABLE"
     }
   },
-
   "workflow_integrity_budget": {
     "_note": "The required integrity job runs more live external operations than any other job in the repository, and is the only one with a tight cap. Before Phase 1 nobody had multiplied these out; the cancellation on 2026-09-04 was the arithmetic asserting itself. The validator now recomputes this sum from the components below and fails if it exceeds the declared timeout.",
     "job": "workflow-integrity.yml:actionlint",
@@ -236,15 +360,19 @@
     },
     "computed_worst_case_seconds": 672,
     "headroom_seconds": 528,
-    "why_not_a_separate_job": "Splitting the live dependency-audit controls into their own job was evaluated and REJECTED. A new job is a new status-check context, and a new context is not in the ruleset, so the live audit controls would silently stop being required — a bypass created by a change made in the name of reliability. Bounding every operation and computing the total achieves the same protection without detaching anything from the required context."
+    "why_not_a_separate_job": "Splitting the live dependency-audit controls into their own job was evaluated and REJECTED. A new job is a new status-check context, and a new context is not in the ruleset, so the live audit controls would silently stop being required \u2014 a bypass created by a change made in the name of reliability. Bounding every operation and computing the total achieves the same protection without detaching anything from the required context."
   },
-
   "control_manifest": {
     "_note": "A job's conclusion tells you whether it finished, never which of its controls ran. When the integrity job was cancelled on 2026-09-04, four controls produced no result and reconstructing which ones required reading step timings by hand. Each enforced control now writes a completion record, and a final step asserts the recorded set is exactly the mandatory set.",
     "directory": ".ci-control-manifest",
     "runner": ".github/scripts/run_control.sh",
     "verifier": ".github/scripts/verify_control_manifest.py",
-    "verdicts": ["PASS", "FAIL", "UNAVAILABLE", "NOT_RUN"],
+    "verdicts": [
+      "PASS",
+      "FAIL",
+      "UNAVAILABLE",
+      "NOT_RUN"
+    ],
     "not_run_fails_the_job": true,
     "mandatory_controls": [
       "workflow_integrity_negative_control",
@@ -265,5 +393,169 @@
       "m48_npm_audit_resilience_control",
       "m36_ci_enforcement_control"
     ]
+  },
+  "masking_governance": {
+    "_note": "M50 Phase 1. Before this, masking was checked in exactly two workflows (security.yml via the audit gate, staging-deploy.yml via deployment safety) and in five reliability scripts. Twelve of fourteen workflows were unchecked, and a probe confirmed that adding `|| true` to a GA certification command was accepted by every validator. The rule is now repository-wide.",
+    "_why_not_a_blanket_ban": "Some `||` constructs are correct and removing them would break working jobs. `grep` exits 1 when it matches nothing, so `grep ... || true` is the idiom for 'collect matches, there may be none'. Teardown must run whether or not the thing being torn down came up. And a reporting step that runs after a gate has already decided cannot change that decision. So the ban is on UNEXPLAINED masking: every exemption below names a workflow, a step and a reason, and a construct that matches none of them fails the check.",
+    "_no_wildcards": "There is deliberately no way to exempt a whole workflow, a whole construct, or a path prefix. An exemption is (workflow, step, construct, reason) or it does not exist. A future maintainer adding a mask must say where and why.",
+    "governed_paths": [
+      ".github/workflows/*.yml"
+    ],
+    "forbidden_constructs": [
+      "|| true",
+      "|| :",
+      "|| echo",
+      "continue-on-error",
+      "set +e",
+      "if: always()"
+    ],
+    "exemptions": [
+      {
+        "workflow": "ci-api.yml",
+        "step": "Upload coverage",
+        "construct": "if: always()",
+        "reason": "Artifact upload after the test gate. Runs so coverage is retrievable from a failed run; cannot change the job's conclusion."
+      },
+      {
+        "workflow": "ci-docker.yml",
+        "step": "Wait for health (postgres, redis, api)",
+        "construct": "|| true",
+        "reason": "grep no-match idiom: `grep -E 'starting|unhealthy' || true` returns empty when every container is healthy, which is the success case."
+      },
+      {
+        "workflow": "ci-docker.yml",
+        "step": "Teardown",
+        "construct": "if: always()",
+        "reason": "`docker compose down -v` after the gate. Must run on failure or the runner leaks volumes; cannot change the conclusion."
+      },
+      {
+        "workflow": "ga-docker-certification.yml",
+        "step": "Ensure NO cached volumes/state (clean env)",
+        "construct": "|| true",
+        "reason": "Pre-flight teardown of a stack that may not exist yet. Failure here means there was nothing to remove, which is the desired starting state."
+      },
+      {
+        "workflow": "ga-docker-certification.yml",
+        "step": "Wait for service health",
+        "construct": "|| true",
+        "reason": "grep no-match idiom, as in ci-docker.yml."
+      },
+      {
+        "workflow": "ga-docker-certification.yml",
+        "step": "Capture container logs on failure",
+        "construct": "|| true",
+        "reason": "Diagnostic log collection on an already-failing run. A container that died may have no logs to collect; failing here would replace the real error with a log-collection error."
+      },
+      {
+        "workflow": "ga-docker-certification.yml",
+        "step": "Clean teardown (remove volumes \u2014 no state persists)",
+        "construct": "if: always()",
+        "reason": "Teardown after the gate, as in ci-docker.yml."
+      },
+      {
+        "workflow": "ga-flutter-certification.yml",
+        "job": "mobile-certification",
+        "construct": "if: always()",
+        "reason": "M33, and load-bearing. A bare `needs:` SKIPS the aggregator when a dependency fails, and GitHub treats a skipped required check as pending rather than failed. `always()` makes it run; the job then compares needs.android.result and needs.ios.result against the literal 'success' and fails on anything else. Removing this would reopen the M29-A pending trap."
+      },
+      {
+        "workflow": "governance-advisory.yml",
+        "step": "Publish the verdict",
+        "construct": "if: always()",
+        "reason": "Reporting step after the ratchet has already decided. Built from JSON the ratchet wrote; scrapes no console text and cannot alter the conclusion."
+      },
+      {
+        "workflow": "governance-advisory.yml",
+        "step": "Upload evidence",
+        "construct": "if: always()",
+        "reason": "Evidence artifact upload after the gate."
+      },
+      {
+        "workflow": "performance-certification.yml",
+        "step": "Human-readable report row",
+        "construct": "if: always()",
+        "reason": "Summary rendered from the k6 summary JSON after the run. Guarded by `if [ -f ... ]`; reports, gates nothing."
+      },
+      {
+        "workflow": "performance-certification.yml",
+        "step": "Upload machine-readable results",
+        "construct": "if: always()",
+        "reason": "k6 result artifact upload after the run."
+      },
+      {
+        "workflow": "performance-certification.yml",
+        "step": "<unnamed>",
+        "construct": "if: always()",
+        "reason": "Soak-profile result artifact upload after the run. The step is unnamed in the workflow; matched by its position as the upload-artifact step of the soak job."
+      }
+    ],
+    "deferred_defects": [
+      {
+        "workflow": "ci-docker.yml",
+        "step": "Migrate from an empty database + seed bootstrap",
+        "construct": "|| true",
+        "finding": "M50-13",
+        "this_is_not_a_legitimate_idiom": true,
+        "blocked_by": "Unmasking it makes both Docker gates fail deterministically. `apps/api/database/seeders/` contains only .gitkeep, there is no DatabaseSeeder class anywhere outside vendor/, and composer.json maps Database\\Seeders\\ to that empty directory \u2014 so bare `php artisan db:seed --force` raises 'Target class [DatabaseSeeder] does not exist' on every run. The mask is hiding a command that has never once succeeded.",
+        "why_not_fixed_here": "Every candidate remedy leaves M50 Phase 1's authorised scope: creating a DatabaseSeeder touches apps/**, which this phase is forbidden to modify; pointing db:seed at one of the three module seeders changes what the certification gate asserts and is a product decision; deleting the command drops a stated certification intent. Phase 1 was told to stop and report rather than invent a workaround.",
+        "remedy": "Owner decision required. Either add a DatabaseSeeder under apps/api/database/seeders/ (M50 Phase 2, which already owns apps/** and infra/** work), or delete the seed command and rename the step to describe what it actually does."
+      },
+      {
+        "workflow": "ga-docker-certification.yml",
+        "step": "Migrate from ZERO + bootstrap",
+        "construct": "|| echo",
+        "finding": "M50-13",
+        "this_is_not_a_legitimate_idiom": true,
+        "blocked_by": "Same missing DatabaseSeeder as above.",
+        "why_not_fixed_here": "Same scope conflict as above.",
+        "remedy": "Same owner decision as above."
+      }
+    ]
+  },
+  "concurrency_governance": {
+    "_note": "M50 Phase 1. ci-docker.yml was the only workflow of fourteen with no concurrency group, so a superseded run kept building images and booting a compose stack nobody was waiting for. Every workflow's concurrency behaviour is now stated here, so the next one to go missing is a policy violation rather than something nobody notices.",
+    "group_required": true,
+    "cancel_in_progress_default": true,
+    "cancel_in_progress_exemptions": [
+      {
+        "workflow": "release.yml",
+        "reason": "Tag-triggered production release. Cancelling a half-finished release run would leave images built and a release gate un-evaluated; two tags are independent releases and must both complete."
+      },
+      {
+        "workflow": "staging-deploy.yml",
+        "reason": "Deploys to a live staging environment. Cancelling mid-rollout leaves the cluster in a partially-updated state; the single `staging-deploy` group serialises deployments instead."
+      },
+      {
+        "workflow": "performance-certification.yml",
+        "reason": "Long-running k6 scenarios including a 2h soak. A superseding run must not discard hours of in-flight measurement."
+      }
+    ]
+  },
+  "network_policies": {
+    "_note": "M50 Phase 1. npm was the only ecosystem with a network policy; composer, flutter and apt had none, and setup-php exports COMPOSER_PROCESS_TIMEOUT=0 (unlimited) into every job. Each entry names how the bound is expressed, because the mechanisms genuinely differ: composer has an env var, apt has command options, and pub has neither \u2014 so its bound is a step timeout.",
+    "composer_install": {
+      "mechanism": "job_env",
+      "required_env": {
+        "COMPOSER_PROCESS_TIMEOUT": "300"
+      },
+      "detect": "composer install",
+      "rationale": "setup-php exports COMPOSER_PROCESS_TIMEOUT=0 \u2014 zero meaning UNLIMITED, verified verbatim in the Dependency audit and Governance Advisory job logs. 300s is generous for a cached install and finite for a stalled one."
+    },
+    "flutter_pub_get": {
+      "mechanism": "step_timeout_minutes",
+      "required_step_timeout_minutes_max": 10,
+      "detect": "flutter pub get",
+      "rationale": "Dart's pub exposes no network-timeout or retry environment variable, so an env-based bound would be theatre. The honest bound is a step-level timeout: native to Actions, explicit, and verifiable."
+    },
+    "apt_get_install": {
+      "mechanism": "command_options",
+      "required_options": [
+        "Acquire::Retries=3",
+        "Acquire::http::Timeout=30"
+      ],
+      "detect_regex": "apt-get\\b[^\\n]*\\binstall\\b",
+      "rationale": "apt has native retry and timeout options. Note the detector is a regex, not a substring: once the options are inserted, `apt-get install` is no longer contiguous text."
+    },
+    "_docker_deferred": "Docker registry pull/push bounds and the production Dockerfiles' own retry logic are M50 Phase 2. Phase 1 is forbidden to modify infra/**."
   }
 }

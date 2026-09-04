@@ -45,6 +45,14 @@ on:
 permissions:
   contents: read
 
+# M50 Phase 1. This was the only workflow of fourteen with no concurrency group.
+# A superseded run kept building images and booting a compose stack nobody was
+# waiting for any more — wasteful rather than unsafe, but it also meant two
+# runs of the same ref could contend for the same Docker resources.
+concurrency:
+  group: ci-docker-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   boot:
     name: Build · Boot · Migrate · Healthcheck
