@@ -60,6 +60,18 @@ jobs:
   quality:
     name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # npm network policy (Phase 1). npm's defaults are fetch-retries=2 with
+      # fetch-retry-maxtimeout=60000, serialised across every request an install
+      # makes — which is how one `npm audit` burned 7m01s on 2026-09-04. Retry
+      # stays ON here, because a dropped request mid-install is common and cheap
+      # to retry; what changes is the per-retry ceiling, from 60s to 20s. A
+      # healthy install is unaffected; the tail is bounded.
+      npm_config_fetch_retries: "2"
+      npm_config_fetch_retry_mintimeout: "1000"
+      npm_config_fetch_retry_maxtimeout: "20000"
+      npm_config_fetch_timeout: "60000"
     steps:
       - uses: actions/checkout@v4
 

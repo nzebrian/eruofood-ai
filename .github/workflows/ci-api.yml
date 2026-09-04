@@ -84,6 +84,7 @@ jobs:
   sqlite:
     name: Tests · SQLite
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # SQLite replaces the *database*, not every backing service. The readiness
     # endpoint reports on each dependency it can reach, and Redis is one of
@@ -149,6 +150,7 @@ jobs:
     # does. The engine is enforced by the guard step below, not by the label.
     name: Lint · Analyse · Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     # Production-representative backing services.
     services:

@@ -1,0 +1,269 @@
+{
+  "_meta": {
+    "artifact": "ci-reliability-policy",
+    "purpose": "The bounds this repository's CI runs under: how long each job may take, how many times a network operation may be retried, which HTTP statuses and socket errors are retryable, which dependency-audit commands must go through a governed wrapper, and which controls must report a completion record. Prepared by Phase 1 of the CI Reliability & Failure-Prevention work.",
+    "prepared_against_main_sha": "449ea30556eba3f58d62ce417390c8b296ac0b46",
+    "why_this_file_exists": "Every control in this repository before Phase 1 protected what a gate SAYS and none protected what it COSTS. A gate can be perfectly fail-closed and still be useless if it never runs, and on 2026-09-04 that is exactly what happened twice: `Dependency audit` spent 7m01s inside one `npm audit` against a lockfile with zero advisories, and `CI · Workflow Integrity` was CANCELLED at its ten-minute cap mid-control, silently taking four later controls with it. Neither failure was a security failure. Both were duration failures, and nothing in the repository was looking at duration.",
+    "this_is_a_bound_not_a_target": "None of the timeouts below is an expectation of how long a job takes. They are the point past which a job is presumed hung. `measured_seconds` records the real observed duration so the headroom is visible and a future reader can tell a deliberate bound from a guess.",
+    "validated_by": ".github/scripts/verify_ci_reliability.py, enforced inside the required `CI · Workflow Integrity` context.",
+    "mutation_tested_by": ".github/scripts/m49_ci_reliability_control.sh (policy/validator) and .github/scripts/m49_reliability_wrappers_control.sh (runtime behaviour)."
+  },
+
+  "schema": 1,
+  "repository": "nzebrian/eruofood-ai",
+
+  "job_timeout_classes": {
+    "_note": "A job's declared timeout-minutes must be > 0 and <= its class maximum. There is no minimum band: a bound tighter than the class ceiling is always permitted, and a job that finishes faster than expected is not a governance problem. What is forbidden is an ABSENT bound, a zero or non-integer bound, or one above the ceiling, because those are the three routes back to GitHub's 360-minute default.",
+    "fast-validation": {
+      "max_minutes": 10,
+      "description": "Linting, spec validation, secret scanning, dependency auditing, aggregators. Seconds of real work; the bound exists only to catch a hang."
+    },
+    "application-tests": {
+      "max_minutes": 30,
+      "description": "Language test suites with service containers. The slowest measured member is CI API quality at 9m32s."
+    },
+    "governance-integrity": {
+      "max_minutes": 20,
+      "description": "The required workflow-integrity job. Bounded separately because its worst case is COMPUTED from this file rather than estimated — see workflow_integrity_budget."
+    },
+    "container-build": {
+      "max_minutes": 40,
+      "description": "Compose build, boot, migrate, healthcheck. Image pulls and layer builds dominate and vary with registry weather."
+    },
+    "mobile-certification": {
+      "max_minutes": 45,
+      "description": "Flutter/Android/iOS toolchain provisioning plus analyze, test and build. Xcode and Gradle setup dominate."
+    },
+    "release-certification": {
+      "max_minutes": 60,
+      "description": "Tag- and dispatch-triggered release gates. Never run on a pull request, so a generous bound costs nothing routinely; it still must not be unbounded."
+    },
+    "deployment": {
+      "max_minutes": 30,
+      "description": "Image build/push and staging rollout."
+    },
+    "performance": {
+      "max_minutes": 240,
+      "description": "k6 scenarios including the optional 2h soak profile."
+    }
+  },
+
+  "jobs": {
+    "_note": "Every job in every workflow appears here exactly once, keyed `<workflow file>:<job id>`. A job present in a workflow but absent here fails the validator, and so does the reverse — an unlisted new job is the precise way a 360-minute default gets reintroduced. `measured_seconds` is null where the job has no observed successful run in the evidence used to prepare this file; those jobs are dispatch- or tag-triggered only.",
+
+    "ci-api.yml:sqlite":                          { "class": "application-tests",    "measured_seconds": 115 },
+    "ci-api.yml:quality":                         { "class": "application-tests",    "measured_seconds": 572 },
+    "ci-web.yml:quality":                         { "class": "application-tests",    "measured_seconds": 43 },
+    "ci-mobile.yml:quality":                      { "class": "application-tests",    "measured_seconds": null },
+    "ci-docker.yml:boot":                         { "class": "container-build",      "measured_seconds": 195 },
+    "contracts.yml:validate":                     { "class": "fast-validation",      "measured_seconds": 26 },
+
+    "security.yml:secret-scan":                   { "class": "fast-validation",      "measured_seconds": 10 },
+    "security.yml:dependency-audit":              { "class": "fast-validation",      "measured_seconds": 12 },
+
+    "workflow-integrity.yml:actionlint":          { "class": "governance-integrity", "measured_seconds": 104 },
+    "governance-advisory.yml:governance":         { "class": "fast-validation",      "measured_seconds": 23 },
+
+    "ga-flutter-certification.yml:android":       { "class": "mobile-certification", "measured_seconds": 311 },
+    "ga-flutter-certification.yml:ios":           { "class": "mobile-certification", "measured_seconds": 280 },
+    "ga-flutter-certification.yml:mobile-certification": { "class": "fast-validation", "measured_seconds": 3 },
+    "ga-docker-certification.yml:certify":        { "class": "container-build",      "measured_seconds": null },
+
+    "ga-release-certification.yml:backend":       { "class": "release-certification", "measured_seconds": null },
+    "ga-release-certification.yml:web":           { "class": "release-certification", "measured_seconds": null },
+    "ga-release-certification.yml:openapi":       { "class": "fast-validation",       "measured_seconds": null },
+    "ga-release-certification.yml:security-scan": { "class": "fast-validation",       "measured_seconds": null },
+    "ga-release-certification.yml:certified":     { "class": "fast-validation",       "measured_seconds": null },
+
+    "release.yml:api":                            { "class": "release-certification", "measured_seconds": null },
+    "release.yml:web":                            { "class": "release-certification", "measured_seconds": null },
+    "release.yml:mobile":                         { "class": "release-certification", "measured_seconds": null },
+    "release.yml:contract":                       { "class": "fast-validation",       "measured_seconds": null },
+    "release.yml:security":                       { "class": "release-certification", "measured_seconds": null },
+    "release.yml:images":                         { "class": "container-build",       "measured_seconds": null },
+    "release.yml:release-gate":                   { "class": "fast-validation",       "measured_seconds": null },
+
+    "staging-deploy.yml:build-images":            { "class": "deployment",            "measured_seconds": null },
+    "staging-deploy.yml:deploy":                  { "class": "deployment",            "measured_seconds": null },
+
+    "performance-certification.yml:k6":           { "class": "performance",           "measured_seconds": null },
+    "performance-certification.yml:soak":         { "class": "performance",           "measured_seconds": null }
+  },
+
+  "reusable_workflow_calls": {
+    "_note": "Jobs that are a `uses:` call to another workflow carry no steps of their own and cannot declare timeout-minutes; the callee's jobs are bounded instead. Listed so the validator can tell a legitimately timeout-free job from an unbounded one.",
+    "ids": [
+      "ga-release-certification.yml:docker-clean-boot",
+      "ga-release-certification.yml:flutter"
+    ]
+  },
+
+  "retry": {
+    "_note": "Applies to every governed network operation. Attempts are TOTAL attempts, not retries-after-the-first.",
+    "max_attempts": 3,
+    "max_backoff_seconds": 30,
+    "retryable_http_status": [408, 425, 429, 500, 502, 503, 504],
+    "retryable_network_error_tokens": [
+      "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND",
+      "ERR_SOCKET_TIMEOUT", "socket timeout", "network timeout",
+      "Connection timed out", "Could not resolve host", "Operation timed out",
+      "Empty reply from server", "Connection reset by peer"
+    ],
+    "never_retryable": {
+      "_note": "Retrying cannot repair any of these, so burning the budget on them delays a verdict that is already known. They fail closed on the first attempt.",
+      "tokens": [
+        "Invalid package tree", "Unexpected token", "Unexpected end of JSON",
+        "Invalid response body", "ENOLOCK", "EUSAGE", "EJSONPARSE",
+        "checksum", "does not match"
+      ]
+    }
+  },
+
+  "verdict_protocol": {
+    "_note": "Every governed dependency audit answers with one of exactly three verdicts, in words and in an exit code. npm and composer both exit 1 for a vulnerability AND for a dead endpoint; that ambiguity is what made the 2026-09-04 incident take six minutes of log archaeology, and separating the two is the whole point.",
+    "exit_pass": 0,
+    "exit_vulnerable": 1,
+    "exit_unavailable": 3,
+    "unavailable_must_be_non_zero": true,
+    "verdict_checked_before_transient": true,
+    "why_that_ordering": "A run that saw a 503, retried, and then found real advisories prints both the outage banner and the finding. Matching the outage patterns first would downgrade a genuine vulnerability to 'the service was down' — the single misclassification that would turn a reliability wrapper into a security regression."
+  },
+
+  "audit_governance": {
+    "_note": "Any invocation of a listed command in a workflow `run:` block must be routed through the matching approved wrapper. The audit POLICY (threshold, --locked) stays visible at the call site rather than moving inside a wrapper where it could be lowered out of sight.",
+    "governed_commands": {
+      "npm audit": {
+        "wrapper": ".github/scripts/npm_audit_resilient.sh",
+        "required_arguments": ["--audit-level=high"]
+      },
+      "composer audit": {
+        "wrapper": ".github/scripts/composer_audit_resilient.sh",
+        "required_arguments": []
+      }
+    },
+    "approved_wrappers": [
+      ".github/scripts/npm_audit_resilient.sh",
+      ".github/scripts/composer_audit_resilient.sh"
+    ]
+  },
+
+  "download_governance": {
+    "_note": "Tool downloads inside a required check are an external dependency like any other. Before Phase 1 these were bare `curl -fsSL` with no timeout and no retry, inside a ten-minute job: a GitHub Releases blip reddened the required integrity context, and a SLOW one consumed the budget and cancelled every control after it.",
+    "wrapper": ".github/scripts/bounded_download.sh",
+    "checksum_verification_required": true,
+    "checksum_mismatch_is_fatal": true,
+    "checksum_mismatch_is_never_retried": true,
+    "workflows_requiring_governed_download": [".github/workflows/workflow-integrity.yml"]
+  },
+
+  "npm_network_policy": {
+    "_note": "npm's defaults are fetch-retries=2 with fetch-retry-maxtimeout=60000, serialised across many requests. That is how one `npm audit` consumed 7m01s on 2026-09-04. Installation and auditing get different budgets because they are different operations: an install legitimately makes hundreds of requests, an audit makes one.",
+    "install": {
+      "_applies_to": "npm ci, npm install",
+      "fetch_retries": 2,
+      "fetch_retry_mintimeout_ms": 1000,
+      "fetch_retry_maxtimeout_ms": 20000,
+      "fetch_timeout_ms": 60000,
+      "rationale": "Retry stays enabled — a dropped request mid-install is common and cheap to retry — but the per-retry ceiling drops from 60s to 20s, bounding the tail without changing behaviour on a healthy registry."
+    },
+    "audit": {
+      "_applies_to": "npm audit",
+      "fetch_retries": 0,
+      "rationale": "npm's internal retry is disabled entirely and replaced by the wrapper's own bounded, classified, observable retry. Two retry layers stacked would multiply, not add."
+    },
+    "publish": {
+      "_applies_to": "npm publish",
+      "present_in_repository": false,
+      "rationale": "No workflow publishes an npm package. Recorded so that adding one is a deliberate act that must extend this policy."
+    },
+    "env_var_names": {
+      "fetch_retries": "npm_config_fetch_retries",
+      "fetch_retry_mintimeout_ms": "npm_config_fetch_retry_mintimeout",
+      "fetch_retry_maxtimeout_ms": "npm_config_fetch_retry_maxtimeout",
+      "fetch_timeout_ms": "npm_config_fetch_timeout"
+    },
+    "jobs_running_npm_install": [
+      "ci-web.yml:quality",
+      "contracts.yml:validate",
+      "release.yml:web",
+      "release.yml:security",
+      "ga-release-certification.yml:web"
+    ]
+  },
+
+  "composer_network_policy": {
+    "_note": "`shivammathur/setup-php` exports COMPOSER_PROCESS_TIMEOUT=0 into the runner environment — zero meaning UNLIMITED. Verified verbatim in the `Dependency audit` and `Governance Advisory` job logs on 4f3f62d. A governed audit path must not inherit that.",
+    "audit": {
+      "process_timeout_seconds": 60,
+      "rationale": "The wrapper sets COMPOSER_PROCESS_TIMEOUT explicitly and additionally imposes its own hard per-attempt timeout, so an unlimited inherited value cannot reach a governed audit."
+    },
+    "exit_code_semantics": {
+      "0": "clean — composer audited and found nothing",
+      "1": "advisories found — a real verdict",
+      "100": "generic composer error — NEVER a verdict; classified UNAVAILABLE"
+    }
+  },
+
+  "workflow_integrity_budget": {
+    "_note": "The required integrity job runs more live external operations than any other job in the repository, and is the only one with a tight cap. Before Phase 1 nobody had multiplied these out; the cancellation on 2026-09-04 was the arithmetic asserting itself. The validator now recomputes this sum from the components below and fails if it exceeds the declared timeout.",
+    "job": "workflow-integrity.yml:actionlint",
+    "timeout_minutes": 20,
+    "components_seconds": {
+      "fixed_overhead": {
+        "value": 150,
+        "note": "Checkout, two extractions, actionlint over 14 files, and every structural control that makes no network call. Measured healthy total for the whole job was 104s on run 33879626208; 150 carries headroom."
+      },
+      "governed_downloads": {
+        "count": 2,
+        "worst_case_each": 51,
+        "note": "3 attempts x 15s + (2s + 4s) backoff. actionlint and shellcheck."
+      },
+      "live_npm_audits": {
+        "count": 4,
+        "worst_case_each": 54,
+        "note": "2 attempts x 25s + 4s backoff. M45 Part B runs two; M47 case C re-executes the entire M45 control, so it runs two more."
+      },
+      "live_composer_audits": {
+        "count": 4,
+        "worst_case_each": 34,
+        "note": "2 attempts x 15s + 4s backoff. Same doubling as npm."
+      },
+      "baseline_git_fetch": {
+        "count": 2,
+        "worst_case_each": 34,
+        "note": "2 attempts x 15s + 4s backoff, once per M45 control execution."
+      }
+    },
+    "computed_worst_case_seconds": 672,
+    "headroom_seconds": 528,
+    "why_not_a_separate_job": "Splitting the live dependency-audit controls into their own job was evaluated and REJECTED. A new job is a new status-check context, and a new context is not in the ruleset, so the live audit controls would silently stop being required — a bypass created by a change made in the name of reliability. Bounding every operation and computing the total achieves the same protection without detaching anything from the required context."
+  },
+
+  "control_manifest": {
+    "_note": "A job's conclusion tells you whether it finished, never which of its controls ran. When the integrity job was cancelled on 2026-09-04, four controls produced no result and reconstructing which ones required reading step timings by hand. Each enforced control now writes a completion record, and a final step asserts the recorded set is exactly the mandatory set.",
+    "directory": ".ci-control-manifest",
+    "runner": ".github/scripts/run_control.sh",
+    "verifier": ".github/scripts/verify_control_manifest.py",
+    "verdicts": ["PASS", "FAIL", "UNAVAILABLE", "NOT_RUN"],
+    "not_run_fails_the_job": true,
+    "mandatory_controls": [
+      "workflow_integrity_negative_control",
+      "m35_docker_certification_guard",
+      "m35_docker_certification_negative_control",
+      "m31_platform_negative_control",
+      "m37_governance_advisory_control",
+      "verify_deployment_safety",
+      "m44_deployment_safety_control",
+      "verify_dependency_audit_gate",
+      "verify_ci_reliability",
+      "m49_ci_reliability_control",
+      "m49_reliability_wrappers_control",
+      "verify_workflow_privilege",
+      "m46_workflow_privilege_control",
+      "m45_dependency_audit_control",
+      "m47_control_integrity_control",
+      "m48_npm_audit_resilience_control",
+      "m36_ci_enforcement_control"
+    ]
+  }
+}

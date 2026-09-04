@@ -81,7 +81,22 @@ jobs:
     # roughly fifteen times the expected total — ample headroom for a slow
     # runner or a cold download, and short enough that a hung validator cannot
     # hold a REQUIRED context for the six hours GitHub would otherwise allow.
-    timeout-minutes: 10
+    # 20 minutes, and the number is now COMPUTED rather than guessed.
+    #
+    # This was 10, and on 2026-09-04 the job was CANCELLED at that cap mid-step:
+    # npm's own retry behaviour spent nine minutes inside one live audit and
+    # steps 16-19 never ran, taking four controls with them. Nobody had ever
+    # multiplied out what this job actually does — it performs more live
+    # external operations than any other job in the repository (four npm
+    # audits, four composer audits and two baseline fetches, because M47 case C
+    # re-executes the whole M45 control) plus two tool downloads.
+    #
+    # `.github/governance/ci-reliability-policy.json` now carries those
+    # components and `verify_ci_reliability.py` recomputes the sum on every
+    # run: worst case 672s against this 1200s cap. Raising the number without
+    # bounding the operations would have been the wrong fix; both were done.
+    # A healthy run is still ~104s, because nothing sleeps on success.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -90,11 +105,23 @@ jobs:
         run: |
           set -euo pipefail
           archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSL -o "$archive" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+
+          # Bounded since Phase 1. This was a bare `curl -fsSL` with no
+          # --max-time, no --connect-timeout and no --retry, as step 3 of a
+          # capped job: a GitHub Releases blip reddened the required context,
+          # and a slow one consumed the budget and cancelled every control
+          # after it. The wrapper retries only transient transport failures,
+          # within a hard bound, and refuses a checksum mismatch outright.
+          .github/scripts/bounded_download.sh \
+            --url "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            --output "$archive" \
+            --sha256 "${ACTIONLINT_SHA256}"
 
           # Verify before extracting, not after. An archive that fails this
-          # check is never unpacked, so nothing from it can run.
+          # check is never unpacked, so nothing from it can run. The wrapper
+          # already verified it; this is deliberately kept as an independent
+          # assertion so the property survives any future change to the
+          # wrapper, and so `verify_ci_reliability.py` can see it here.
           echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --strict
 
           tar -xzf "$archive" actionlint
@@ -108,8 +135,12 @@ jobs:
         run: |
           set -euo pipefail
           archive="shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-          curl -fsSL -o "$archive" \
-            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${archive}"
+
+          # Bounded since Phase 1, for the same reason as actionlint above.
+          .github/scripts/bounded_download.sh \
+            --url "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${archive}" \
+            --output "$archive" \
+            --sha256 "${SHELLCHECK_SHA256}"
 
           echo "${SHELLCHECK_SHA256}  ${archive}" | sha256sum --check --strict
 
@@ -146,7 +177,40 @@ jobs:
         # rejected by name, and requires a well-formed workflow to be accepted.
         env:
           ACTIONLINT: ${{ github.workspace }}/actionlint
-        run: .github/scripts/workflow_integrity_negative_control.sh
+        run: .github/scripts/run_control.sh workflow_integrity_negative_control -- .github/scripts/workflow_integrity_negative_control.sh
+
+      - name: Enforce — CI reliability policy
+        # Phase 1. Every control before this one protected what a gate SAYS.
+        # None protected what it COSTS, and on 2026-09-04 that gap cost two red
+        # runs in one morning: `Dependency audit` spent 7m01s inside a single
+        # `npm audit` against a clean lockfile, and this job was CANCELLED at
+        # its cap mid-control, silently taking four later controls with it.
+        # Neither was a security failure. Both were duration failures, and
+        # nothing in the repository was looking at duration.
+        #
+        # This reads .github/governance/ci-reliability-policy.json and asserts
+        # every job is bounded, every dependency audit is wrapped, every tool
+        # download is bounded and still checksum-verified, both failure
+        # classifiers cover the policy, and — the check that would have caught
+        # the cancellation in advance — that this job's worst case, recomputed
+        # from the policy's own components, still fits inside its own timeout.
+        run: .github/scripts/run_control.sh verify_ci_reliability -- .github/scripts/verify_ci_reliability.py
+
+      - name: Enforce — CI reliability negative controls
+        # And the control on that validator. Fourteen mutations, each removing
+        # or weakening one reliability property in a disposable fixture, each
+        # required to fail the check that owns it — because a validator that
+        # reports twelve passes is telling you either that the policy holds or
+        # that it checks nothing, and those look identical from outside.
+        run: .github/scripts/run_control.sh m49_ci_reliability_control -- .github/scripts/m49_ci_reliability_control.sh
+
+      - name: Enforce — reliability wrapper outage simulations
+        # The runtime half: composer audit, the bounded downloader and the
+        # baseline fetch driven against stubs rather than the real Packagist,
+        # GitHub Releases and git. A control that needs an external service to
+        # be UP cannot describe what happens when it is DOWN, which is exactly
+        # the question these wrappers exist to answer.
+        run: .github/scripts/run_control.sh m49_reliability_wrappers_control -- .github/scripts/m49_reliability_wrappers_control.sh
 
       # ---------------------------------------------------------------------
       # M36 — enforcement.
@@ -173,13 +237,13 @@ jobs:
       # ---------------------------------------------------------------------
 
       - name: Enforce — M35 Docker certification guard
-        run: .github/scripts/m35_docker_certification_guard.sh
+        run: .github/scripts/run_control.sh m35_docker_certification_guard -- .github/scripts/m35_docker_certification_guard.sh
 
       - name: Enforce — M35 Docker certification negative controls
-        run: .github/scripts/m35_docker_certification_negative_control.sh
+        run: .github/scripts/run_control.sh m35_docker_certification_negative_control -- .github/scripts/m35_docker_certification_negative_control.sh
 
       - name: Enforce — M31/M32 mobile platform negative controls
-        run: apps/mobile/scripts/m31_platform_negative_control.sh
+        run: .github/scripts/run_control.sh m31_platform_negative_control -- apps/mobile/scripts/m31_platform_negative_control.sh
 
       - name: Enforce — M37 Governance Advisory wiring controls
         # M37 Phase 4A found that the control above reads only THIS file, so it
@@ -192,7 +256,7 @@ jobs:
         # Shell and Python only. No PHP, no Composer, no network: the advisory
         # job owns those, and a packagist outage must not be able to fail a
         # required gate.
-        run: .github/scripts/m37_governance_advisory_control.sh
+        run: .github/scripts/run_control.sh m37_governance_advisory_control -- .github/scripts/m37_governance_advisory_control.sh
 
       - name: Enforce — M44 deployment safety validator
         # M44. Everything above guards the workflows that TEST; nothing guarded
@@ -206,13 +270,13 @@ jobs:
         # Placed in this job because this job's name is the required status
         # context. A new job would create a context nothing requires, which
         # enforces nothing while looking like it does — the M36 lesson.
-        run: .github/scripts/verify_deployment_safety.py
+        run: .github/scripts/run_control.sh verify_deployment_safety -- .github/scripts/verify_deployment_safety.py
 
       - name: Enforce — M44 deployment safety negative controls
         # And the control on that validator: eleven historical defects
         # reinstated one at a time in a mktemp fixture, each required to fail
         # the check that owns it.
-        run: .github/scripts/m44_deployment_safety_control.sh
+        run: .github/scripts/run_control.sh m44_deployment_safety_control -- .github/scripts/m44_deployment_safety_control.sh
 
       - name: Enforce — M45 dependency audit gate validator
         # M45. `security.yml`'s audit steps carried `|| true` from the day they
@@ -230,7 +294,7 @@ jobs:
         # Placed in this job because this job's name is the required status
         # context — the M36 lesson. A new job would create a context nothing
         # requires, which enforces nothing while looking like it does.
-        run: .github/scripts/verify_dependency_audit_gate.py
+        run: .github/scripts/run_control.sh verify_dependency_audit_gate -- .github/scripts/verify_dependency_audit_gate.py
 
       - name: Enforce — M45 dependency audit negative controls
         # And the control on that validator: twelve ways to neuter the gate,
@@ -239,7 +303,7 @@ jobs:
         # audit commands against the pre- and post-M45 lockfiles, because every
         # other check here reads YAML and YAML cannot tell you whether a
         # command gates on anything.
-        run: .github/scripts/m45_dependency_audit_control.sh
+        run: .github/scripts/run_control.sh m45_dependency_audit_control -- .github/scripts/m45_dependency_audit_control.sh
 
       - name: Enforce — M47 control-integrity checks on the M45 control
         # M47. The step above ran in this job for the whole of M45 and M46 and
@@ -254,7 +318,7 @@ jobs:
         # evidence. This step is the guard on that repair: it proves an
         # unresolvable baseline fails, that four evidenceless live controls
         # cannot exit 0, and that the old arithmetic has not come back.
-        run: .github/scripts/m47_control_integrity_control.sh
+        run: .github/scripts/run_control.sh m47_control_integrity_control -- .github/scripts/m47_control_integrity_control.sh
 
       - name: Enforce — M48 npm audit resilience controls
         # M48. `Dependency audit` now runs `npm audit` through a bounded-retry
@@ -270,7 +334,7 @@ jobs:
         # drives a stub `npm` from a scenario file rather than the real
         # registry: a control that needs npm's advisory service to be up cannot
         # describe what happens when it is down.
-        run: .github/scripts/m48_npm_audit_resilience_control.sh
+        run: .github/scripts/run_control.sh m48_npm_audit_resilience_control -- .github/scripts/m48_npm_audit_resilience_control.sh
 
       - name: Enforce — M46 workflow privilege & injection validator
         # M46. Two gaps, and the first is the one this repository keeps
@@ -292,7 +356,7 @@ jobs:
         # reads only that file — which is precisely why it survived here.
         #
         # In this job because this job's name is the required status context.
-        run: .github/scripts/verify_workflow_privilege.py
+        run: .github/scripts/run_control.sh verify_workflow_privilege -- .github/scripts/verify_workflow_privilege.py
 
       - name: Enforce — M46 workflow privilege negative controls
         # And the control on that validator: twelve properties broken one at a
@@ -301,7 +365,7 @@ jobs:
         # widened to write, an unnecessary scope, write-all, a job-level
         # override, all three tainted expression shapes, and the expected
         # workflow set losing, gaining and renaming a member.
-        run: .github/scripts/m46_workflow_privilege_control.sh
+        run: .github/scripts/run_control.sh m46_workflow_privilege_control -- .github/scripts/m46_workflow_privilege_control.sh
 
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
@@ -309,4 +373,18 @@ jobs:
         # a real invariant inside a throwaway fixture and requires the
         # corresponding validator to reject it. A green gate that has been
         # neutered by a stray `|| true` fails here.
-        run: .github/scripts/m36_ci_enforcement_control.sh
+        run: .github/scripts/run_control.sh m36_ci_enforcement_control -- .github/scripts/m36_ci_enforcement_control.sh
+
+      - name: Verify every mandatory control actually ran
+        # A job conclusion tells you whether the job finished; it never tells
+        # you which of its controls ran. When this job was cancelled on
+        # 2026-09-04, four controls produced no result and reconstructing which
+        # ones required reading step timestamps by hand out of the API.
+        #
+        # Each control above now writes a completion record, and this asserts
+        # the recorded set is exactly the mandatory set in the reliability
+        # policy: no control missing, none unexpected, no duplicate, no verdict
+        # that contradicts its own exit code, and a gapless sequence so a
+        # record cannot be appended after the fact. A mandatory control that
+        # did not run is NOT_RUN, and NOT_RUN fails.
+        run: .github/scripts/verify_control_manifest.py
