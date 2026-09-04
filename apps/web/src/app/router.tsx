@@ -1,4 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom';
+import type { RouteObject } from 'react-router-dom';
 import { LoginPage } from '@features/auth/pages/LoginPage';
 import { RegisterPage } from '@features/auth/pages/RegisterPage';
 import { ForgotPasswordPage } from '@features/auth/pages/ForgotPasswordPage';
@@ -50,332 +51,362 @@ import { ModerationQueuePage } from '@features/reviews/pages/ModerationQueuePage
 import { LoyaltyPage } from '@features/loyalty/pages/LoyaltyPage';
 import { DeveloperPortalPage } from '@features/developer/pages/DeveloperPortalPage';
 import { ProtectedRoute } from './ProtectedRoute';
+import { NotFoundPage } from './NotFound';
+import { RouteErrorBoundary } from './RouteErrorBoundary';
 
-export const router = createBrowserRouter([
-  // Public catalogue
-  { path: '/', element: <FoodCataloguePage /> },
-  { path: '/foods/:slug', element: <FoodDetailPage /> },
-  { path: '/recipes', element: <RecipesPage /> },
-  { path: '/recipes/:slug', element: <RecipeDetailPage /> },
+/**
+ * The route table, exported separately from the browser router so tests can
+ * mount it under `createMemoryRouter` without touching `window.history`.
+ *
+ * ## Shape (M48)
+ *
+ * Every screen is nested under one pathless route. A pathless route needs no
+ * `element` — React Router renders an `<Outlet />` by default — and it lets
+ * the children keep the absolute paths they already had, so adding an
+ * application-wide `errorElement` moved no existing route.
+ *
+ * The trailing `path: '*'` entry is what stops an unknown address reaching
+ * React Router's built-in error screen. The two mechanisms are not
+ * interchangeable and both are needed: the catch-all answers addresses that
+ * match nothing, while `errorElement` answers a route that matched and then
+ * threw.
+ */
+export const routes: RouteObject[] = [
+  {
+    errorElement: <RouteErrorBoundary />,
+    children: [
+      // Public catalogue
+      { path: '/', element: <FoodCataloguePage /> },
+      { path: '/foods/:slug', element: <FoodDetailPage /> },
+      { path: '/recipes', element: <RecipesPage /> },
+      { path: '/recipes/:slug', element: <RecipeDetailPage /> },
 
-  // Search, Discovery & Recommendation (public)
-  { path: '/search', element: <SearchPage /> },
+      // Search, Discovery & Recommendation (public)
+      { path: '/search', element: <SearchPage /> },
 
-  // Customer Support, Helpdesk & CRM
-  { path: '/help', element: <KnowledgeBasePage /> },
-  {
-    path: '/support',
-    element: (
-      <ProtectedRoute>
-        <SupportPortalPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/support/agent',
-    element: (
-      <ProtectedRoute>
-        <AgentWorkspacePage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/support/crm',
-    element: (
-      <ProtectedRoute>
-        <CrmDashboardPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Customer Support, Helpdesk & CRM
+      { path: '/help', element: <KnowledgeBasePage /> },
+      {
+        path: '/support',
+        element: (
+          <ProtectedRoute>
+            <SupportPortalPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/support/agent',
+        element: (
+          <ProtectedRoute>
+            <AgentWorkspacePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/support/crm',
+        element: (
+          <ProtectedRoute>
+            <CrmDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Reviews & Ratings
-  { path: '/reviews', element: <SubjectReviewsPage /> },
-  {
-    path: '/reviews/moderation',
-    element: (
-      <ProtectedRoute>
-        <ModerationQueuePage />
-      </ProtectedRoute>
-    ),
-  },
+      // Reviews & Ratings
+      { path: '/reviews', element: <SubjectReviewsPage /> },
+      {
+        path: '/reviews/moderation',
+        element: (
+          <ProtectedRoute>
+            <ModerationQueuePage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Loyalty, Rewards & Referrals
-  {
-    path: '/rewards',
-    element: (
-      <ProtectedRoute>
-        <LoyaltyPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Loyalty, Rewards & Referrals
+      {
+        path: '/rewards',
+        element: (
+          <ProtectedRoute>
+            <LoyaltyPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Developer Platform (Public API)
-  {
-    path: '/developer',
-    element: (
-      <ProtectedRoute>
-        <DeveloperPortalPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Developer Platform (Public API)
+      {
+        path: '/developer',
+        element: (
+          <ProtectedRoute>
+            <DeveloperPortalPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Auth
-  { path: '/login', element: <LoginPage /> },
-  { path: '/register', element: <RegisterPage /> },
-  { path: '/forgot-password', element: <ForgotPasswordPage /> },
-  { path: '/reset-password', element: <ResetPasswordPage /> },
+      // Auth
+      { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
+      { path: '/forgot-password', element: <ForgotPasswordPage /> },
+      { path: '/reset-password', element: <ResetPasswordPage /> },
 
-  // Authenticated
-  {
-    path: '/favourites',
-    element: (
-      <ProtectedRoute>
-        <FavouritesPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/account',
-    element: (
-      <ProtectedRoute>
-        <ProfilePage />
-      </ProtectedRoute>
-    ),
-  },
+      // Authenticated
+      {
+        path: '/favourites',
+        element: (
+          <ProtectedRoute>
+            <FavouritesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/account',
+        element: (
+          <ProtectedRoute>
+            <ProfilePage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // AI Engine
-  {
-    path: '/ai/recipe-generator',
-    element: (
-      <ProtectedRoute>
-        <AiRecipeGeneratorPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/ai/assistant',
-    element: (
-      <ProtectedRoute>
-        <CookingAssistantPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/ai/history',
-    element: (
-      <ProtectedRoute>
-        <ChatHistoryPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/ai/settings',
-    element: (
-      <ProtectedRoute>
-        <AiSettingsPage />
-      </ProtectedRoute>
-    ),
-  },
+      // AI Engine
+      {
+        path: '/ai/recipe-generator',
+        element: (
+          <ProtectedRoute>
+            <AiRecipeGeneratorPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/ai/assistant',
+        element: (
+          <ProtectedRoute>
+            <CookingAssistantPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/ai/history',
+        element: (
+          <ProtectedRoute>
+            <ChatHistoryPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/ai/settings',
+        element: (
+          <ProtectedRoute>
+            <AiSettingsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Marketplace
-  { path: '/vendors', element: <VendorsPage /> },
-  { path: '/vendors/:slug', element: <VendorStorefrontPage /> },
-  {
-    path: '/cart',
-    element: (
-      <ProtectedRoute>
-        <CartPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/orders',
-    element: (
-      <ProtectedRoute>
-        <OrdersPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/vendor-dashboard',
-    element: (
-      <ProtectedRoute>
-        <VendorDashboardPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Marketplace
+      { path: '/vendors', element: <VendorsPage /> },
+      { path: '/vendors/:slug', element: <VendorStorefrontPage /> },
+      {
+        path: '/cart',
+        element: (
+          <ProtectedRoute>
+            <CartPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/orders',
+        element: (
+          <ProtectedRoute>
+            <OrdersPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/vendor-dashboard',
+        element: (
+          <ProtectedRoute>
+            <VendorDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Marketplace, Grocery & Commerce (public shop; cart/wishlist need auth)
-  { path: '/shop', element: <ShopPage /> },
-  { path: '/shop/:slug', element: <ProductDetailPage /> },
-  {
-    path: '/shop-cart',
-    element: (
-      <ProtectedRoute>
-        <ShoppingCartPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/wishlist',
-    element: (
-      <ProtectedRoute>
-        <WishlistPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Marketplace, Grocery & Commerce (public shop; cart/wishlist need auth)
+      { path: '/shop', element: <ShopPage /> },
+      { path: '/shop/:slug', element: <ProductDetailPage /> },
+      {
+        path: '/shop-cart',
+        element: (
+          <ProtectedRoute>
+            <ShoppingCartPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/wishlist',
+        element: (
+          <ProtectedRoute>
+            <WishlistPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Payments, Wallet & Financial Services
-  {
-    path: '/wallet-account',
-    element: (
-      <ProtectedRoute>
-        <WalletPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/transactions',
-    element: (
-      <ProtectedRoute>
-        <TransactionsPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/payment-settings',
-    element: (
-      <ProtectedRoute>
-        <PaymentSettingsPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Payments, Wallet & Financial Services
+      {
+        path: '/wallet-account',
+        element: (
+          <ProtectedRoute>
+            <WalletPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/transactions',
+        element: (
+          <ProtectedRoute>
+            <TransactionsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/payment-settings',
+        element: (
+          <ProtectedRoute>
+            <PaymentSettingsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Notifications, Messaging & Real-Time Communication
-  {
-    path: '/notifications',
-    element: (
-      <ProtectedRoute>
-        <NotificationCentrePage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/messages',
-    element: (
-      <ProtectedRoute>
-        <MessagesPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/notification-settings',
-    element: (
-      <ProtectedRoute>
-        <NotificationSettingsPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Notifications, Messaging & Real-Time Communication
+      {
+        path: '/notifications',
+        element: (
+          <ProtectedRoute>
+            <NotificationCentrePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/messages',
+        element: (
+          <ProtectedRoute>
+            <MessagesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/notification-settings',
+        element: (
+          <ProtectedRoute>
+            <NotificationSettingsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Analytics, Business Intelligence & Reporting (admin)
-  {
-    path: '/analytics',
-    element: (
-      <ProtectedRoute>
-        <AnalyticsDashboardPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/reports',
-    element: (
-      <ProtectedRoute>
-        <ReportsPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Analytics, Business Intelligence & Reporting (admin)
+      {
+        path: '/analytics',
+        element: (
+          <ProtectedRoute>
+            <AnalyticsDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/reports',
+        element: (
+          <ProtectedRoute>
+            <ReportsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Nutrition, Health & Personalisation
-  {
-    path: '/nutrition',
-    element: (
-      <ProtectedRoute>
-        <NutritionDashboardPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/nutrition/profile',
-    element: (
-      <ProtectedRoute>
-        <HealthProfilePage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/nutrition/meal-planner',
-    element: (
-      <ProtectedRoute>
-        <MealPlannerPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/nutrition/progress',
-    element: (
-      <ProtectedRoute>
-        <ProgressDashboardPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/admin/foods',
-    element: (
-      <ProtectedRoute>
-        <AdminFoodsPage />
-      </ProtectedRoute>
-    ),
-  },
+      // Nutrition, Health & Personalisation
+      {
+        path: '/nutrition',
+        element: (
+          <ProtectedRoute>
+            <NutritionDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/nutrition/profile',
+        element: (
+          <ProtectedRoute>
+            <HealthProfilePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/nutrition/meal-planner',
+        element: (
+          <ProtectedRoute>
+            <MealPlannerPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/nutrition/progress',
+        element: (
+          <ProtectedRoute>
+            <ProgressDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/admin/foods',
+        element: (
+          <ProtectedRoute>
+            <AdminFoodsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-  // Platform Administration, CMS & Operations
-  {
-    path: '/admin',
-    element: (
-      <ProtectedRoute>
-        <AdminDashboardPage />
-      </ProtectedRoute>
-    ),
+      // Platform Administration, CMS & Operations
+      {
+        path: '/admin',
+        element: (
+          <ProtectedRoute>
+            <AdminDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/admin/users',
+        element: (
+          <ProtectedRoute>
+            <UserManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/admin/content',
+        element: (
+          <ProtectedRoute>
+            <ContentManagerPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/admin/config',
+        element: (
+          <ProtectedRoute>
+            <SystemConfigPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/admin/support',
+        element: (
+          <ProtectedRoute>
+            <SupportDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // Anything else. Must stay last: React Router matches in order, and a
+      // catch-all placed earlier would shadow every route below it.
+      { path: '*', element: <NotFoundPage /> },
+    ],
   },
-  {
-    path: '/admin/users',
-    element: (
-      <ProtectedRoute>
-        <UserManagementPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/admin/content',
-    element: (
-      <ProtectedRoute>
-        <ContentManagerPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/admin/config',
-    element: (
-      <ProtectedRoute>
-        <SystemConfigPage />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/admin/support',
-    element: (
-      <ProtectedRoute>
-        <SupportDashboardPage />
-      </ProtectedRoute>
-    ),
-  },
-]);
+];
+
+export const router = createBrowserRouter(routes);

@@ -1,83 +1,75 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Layout } from '@shared/components/Layout';
 import { Button } from '@shared/components/Button';
-import { ApiRequestError } from '@lib/apiClient';
+import { AsyncView } from '@shared/components/StateViews';
+import { describeError, useAsyncData } from '@shared/hooks/useAsyncData';
 import { commerceApi } from '../commerceApi';
-import { formatMoney, type Product, type ProductVariant } from '../types';
+import { formatMoney, type Product } from '../types';
 
 /** Product detail with variant selection, add-to-cart, wishlist and cross-sell. */
 export function ProductDetailPage(): React.JSX.Element {
   const { slug = '' } = useParams();
-  const [product, setProduct] = useState<Product | null>(null);
-  const [variant, setVariant] = useState<ProductVariant | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    commerceApi
-      .product(slug)
-      .then((p) => {
-        setProduct(p);
-        setVariant(p.variants[0] ?? null);
-      })
-      .catch(() => setProduct(null));
-  }, [slug]);
-
-  async function addToCart(): Promise<void> {
-    if (!product) return;
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await commerceApi.addToCart(product.id, 1, variant?.sku);
-      setMessage('Added to cart.');
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.error.message : 'Could not add to cart.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveForLater(): Promise<void> {
-    if (!product) return;
-    try {
-      await commerceApi.addToWishlist(product.id);
-      setMessage('Saved to your wishlist.');
-    } catch {
-      setError('Could not update your wishlist.');
-    }
-  }
-
-  if (!product) {
-    return (
-      <Layout>
-        <p className="muted">Loading product…</p>
-      </Layout>
-    );
-  }
-
-  const priceMinor = product.base_price_minor + (variant?.price_delta_minor ?? 0);
+  // `.catch(() => setProduct(null))` was also the loading condition, so a
+  // failed product read left "Loading product…" on screen for good.
+  const product = useAsyncData(() => commerceApi.product(slug), `commerce|product|${slug}`);
 
   return (
     <Layout>
       <p>
         <Link to="/shop">← Back to shop</Link>
       </p>
+
+      <AsyncView
+        state={product.state}
+        loadingLabel="Loading product…"
+        errorTitle="We could not load this product"
+        onRetry={product.reload}
+      >
+        {(item) => <ProductDetail key={item.id} product={item} />}
+      </AsyncView>
+    </Layout>
+  );
+}
+
+function ProductDetail({ product }: { product: Product }): React.JSX.Element {
+  const [variantSku, setVariantSku] = useState(product.variants[0]?.sku ?? '');
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const variant = product.variants.find((v) => v.sku === variantSku) ?? null;
+  const priceMinor = product.base_price_minor + (variant?.price_delta_minor ?? 0);
+
+  async function run(action: () => Promise<unknown>, ok: string, failure: string): Promise<void> {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await action();
+      setMessage(ok);
+    } catch (err) {
+      setError(describeError(err, failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
       <h1>{product.name}</h1>
       {product.brand && <p className="muted">{product.brand}</p>}
-      <p className="commerce-price commerce-price--lg">{formatMoney(priceMinor, product.currency)}</p>
+      <p className="commerce-price commerce-price--lg">
+        {formatMoney(priceMinor, product.currency)}
+      </p>
 
       {product.description && <p>{product.description}</p>}
 
       {product.variants.length > 0 && (
         <label className="commerce-field">
-          Variant
-          <select
-            value={variant?.sku ?? ''}
-            onChange={(e) => setVariant(product.variants.find((v) => v.sku === e.target.value) ?? null)}
-          >
+          <span>Variant</span>
+          <select value={variantSku} onChange={(e) => setVariantSku(e.target.value)}>
             {product.variants.map((v) => (
               <option key={v.sku} value={v.sku}>
                 {v.name}
@@ -88,16 +80,43 @@ export function ProductDetailPage(): React.JSX.Element {
       )}
 
       <div className="commerce-actions">
-        <Button onClick={() => void addToCart()} disabled={busy}>
+        <Button
+          busy={busy}
+          onClick={() =>
+            void run(
+              () => commerceApi.addToCart(product.id, 1, variant?.sku),
+              'Added to cart.',
+              'Could not add to cart.',
+            )
+          }
+        >
           Add to cart
         </Button>
-        <Button className="button--secondary" onClick={() => void saveForLater()}>
+        <Button
+          className="button--secondary"
+          busy={busy}
+          onClick={() =>
+            void run(
+              () => commerceApi.addToWishlist(product.id),
+              'Saved to your wishlist.',
+              'Could not update your wishlist.',
+            )
+          }
+        >
           ♡ Save
         </Button>
       </div>
 
-      {message && <p className="commerce-ok">{message}</p>}
-      {error && <p className="commerce-error">{error}</p>}
+      {message !== null && (
+        <p className="commerce-ok" role="status">
+          {message}
+        </p>
+      )}
+      {error !== null && (
+        <p className="commerce-error" role="alert">
+          {error}
+        </p>
+      )}
 
       {product.related && product.related.length > 0 && (
         <section className="commerce-recs">
@@ -107,13 +126,15 @@ export function ProductDetailPage(): React.JSX.Element {
               <Link key={p.id} to={`/shop/${p.slug}`} className="commerce-card">
                 <div className="commerce-card__body">
                   <strong>{p.name}</strong>
-                  <span className="commerce-price">{formatMoney(p.base_price_minor, p.currency)}</span>
+                  <span className="commerce-price">
+                    {formatMoney(p.base_price_minor, p.currency)}
+                  </span>
                 </div>
               </Link>
             ))}
           </div>
         </section>
       )}
-    </Layout>
+    </>
   );
 }

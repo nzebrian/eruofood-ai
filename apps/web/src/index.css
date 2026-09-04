@@ -6,7 +6,12 @@
   --border: #d1d5db;
   --bg: #f8fafc;
   --error: #b91c1c;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
   color: var(--text);
 }
 
@@ -1714,4 +1719,267 @@ body {
   .dev-layout {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---- Shared async states: loading / error / empty (M48) ---------------- */
+/*
+ * One visual language for the three answers a data screen can give. Before
+ * M48 each page invented its own — "Loading…", "Loading product…", a bare
+ * `.muted` list item, or nothing at all — and an outright failure was
+ * routinely rendered as an empty list.
+ */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 2rem 1rem;
+  margin: 1rem 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
+  /* Reserve height so swapping loading -> content does not jump the page. */
+  min-height: 8rem;
+}
+
+.state__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.state__message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  max-width: 42ch;
+}
+
+.state__action {
+  margin-top: 0.4rem;
+  width: auto;
+}
+
+/* The retry control is a `.button.button--secondary`; keep it from stretching
+   to the full width the base class asks for inside a centred column. */
+.state__action.button {
+  width: auto;
+  padding: 0.5rem 1.1rem;
+}
+
+.state--error {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.state--error .state__title {
+  color: var(--error);
+}
+
+.state--empty {
+  background: #fff;
+  border-style: dashed;
+}
+
+.state__spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: state-spin 0.8s linear infinite;
+}
+
+@keyframes state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Honour a reduced-motion preference: keep the affordance, drop the spin. */
+@media (prefers-reduced-motion: reduce) {
+  .state__spinner {
+    animation: none;
+    border-top-color: var(--border);
+  }
+}
+
+/* An inline variant for states rendered inside an existing panel or column,
+   where the full bordered block would be too heavy. */
+.state--inline {
+  padding: 1rem 0.5rem;
+  margin: 0.5rem 0;
+  border: none;
+  background: transparent;
+  min-height: 0;
+}
+
+/* ---- Route-level error and not-found (M48) ----------------------------- */
+.route-error {
+  max-width: 560px;
+  margin: 4rem auto;
+  padding: 2rem 1.25rem;
+  text-align: center;
+}
+
+.route-error__code {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--brand);
+}
+
+.route-error__title {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 1.4rem;
+}
+
+.route-error__message {
+  margin: 0 0 1.5rem;
+  color: var(--muted);
+}
+
+.route-error__actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.route-error__actions .button {
+  width: auto;
+  padding: 0.6rem 1.25rem;
+}
+
+.route-error__detail {
+  margin-top: 2rem;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.route-error__detail pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 600px) {
+  .route-error {
+    margin: 2rem auto;
+  }
+
+  .route-error__actions .button {
+    width: 100%;
+  }
+}
+
+/* Visible to assistive technology only. Used where an icon or a repeated
+   control label ("Delete") needs the context a sighted user gets from the
+   surrounding row (M48). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Responsive, focus and overflow corrections (M48) ------------------ */
+
+/*
+ * Visible focus, everywhere. The stylesheet had no `:focus` or
+ * `:focus-visible` rule of any kind, so keyboard users navigated 50 pages on
+ * whatever the browser's default happened to be — which several browsers
+ * suppress entirely once a stylesheet touches `outline`.
+ */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Brand green on the brand-green header is invisible; switch to white there. */
+.nav :where(a, button):focus-visible {
+  outline-color: #fff;
+}
+
+/*
+ * The header holds up to twenty links for a signed-in administrator, in a
+ * flex row that could not wrap. Below roughly a tablet that overflowed the
+ * viewport and scrolled the whole page sideways.
+ */
+.nav {
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.nav__links {
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+/* A larger touch target than a bare inline link, without moving anything. */
+.nav__links a {
+  display: inline-block;
+  padding: 0.3rem 0;
+}
+
+@media (max-width: 720px) {
+  .nav {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.75rem 1rem;
+  }
+
+  .container {
+    margin: 1rem auto;
+    padding: 0 1rem;
+  }
+}
+
+/*
+ * Wide content scrolls inside its own box rather than widening the page.
+ * Tables are the usual offender: four columns of references and amounts do
+ * not fit a phone, and without this the entire layout stretches to match.
+ */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll table {
+  min-width: 34rem;
+}
+
+/* Row-level action clusters wrap instead of pushing the row wide. */
+.pay-row__actions,
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Long identifiers — references, keys, emails — break rather than overflow. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+}
+
+/* Preserve the newlines in AI-generated prose. Replaces three inline
+   `style={{ whiteSpace: 'pre-wrap' }}` attributes (M48). */
+.prewrap {
+  white-space: pre-wrap;
 }

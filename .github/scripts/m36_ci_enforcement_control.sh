@@ -56,6 +56,7 @@ ENFORCED=(
     ".github/scripts/verify_dependency_audit_gate.py"
     ".github/scripts/m45_dependency_audit_control.sh"
     ".github/scripts/m47_control_integrity_control.sh"
+    ".github/scripts/m48_npm_audit_resilience_control.sh"
     ".github/scripts/verify_workflow_privilege.py"
     ".github/scripts/m46_workflow_privilege_control.sh"
 )

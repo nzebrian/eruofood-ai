@@ -102,7 +102,11 @@ export function AiRecipeGeneratorPage(): React.JSX.Element {
         </Button>
       </form>
 
-      {error ? <p className="error">{error}</p> : null}
+      {error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       {recipe ? (
         <article className="ai-result">

@@ -1,59 +1,70 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layout } from '@shared/components/Layout';
 import { Button } from '@shared/components/Button';
+import { AsyncView, EmptyState, ErrorState } from '@shared/components/StateViews';
+import { describeError, useAsyncData } from '@shared/hooks/useAsyncData';
 import { adminApi } from '../adminApi';
 import { TICKET_STATUSES, type Ticket } from '../types';
 
 /** Support Centre: the live ticket queue with reply and resolve. */
 export function SupportDashboardPage(): React.JSX.Element {
   const [status, setStatus] = useState('open');
-  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [active, setActive] = useState<Ticket | null>(null);
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const refresh = useCallback((): void => {
-    adminApi
-      .tickets(status, 1)
-      .then((page) => {
-        setTickets(page.data);
-        const first = page.data[0];
-        setActive((current) => current ?? first ?? null);
-      })
-      .catch(() => setTickets([]));
-  }, [status]);
+  const tickets = useAsyncData(() => adminApi.tickets(status, 1), `admin|tickets|${status}`);
 
-  useEffect(refresh, [refresh]);
+  // Select the first ticket once a queue arrives, without overriding a choice
+  // the agent has already made.
+  const firstTicket =
+    tickets.state.status === 'ready' ? (tickets.state.data.data[0] ?? null) : null;
+  useEffect(() => {
+    if (active === null && firstTicket !== null) setActive(firstTicket);
+  }, [firstTicket, active]);
 
   const open = (ticket: Ticket): void => {
+    setActionError(null);
     adminApi
       .ticket(ticket.id)
       .then(setActive)
-      .catch(() => setActive(ticket));
+      .catch((err: unknown) => {
+        // The summary from the queue is a reasonable fallback, but the reader
+        // must be told they are looking at it rather than the full ticket.
+        setActive(ticket);
+        setActionError(
+          describeError(err, 'Could not load the full ticket \u2014 showing the summary only.'),
+        );
+      });
   };
 
   const send = (): void => {
     if (active === null || reply.trim() === '') return;
     setBusy(true);
+    setActionError(null);
     adminApi
       .replyTicket(active.id, reply)
       .then((t) => {
         setActive(t);
         setReply('');
       })
-      .catch(() => undefined)
+      .catch((err: unknown) => setActionError(describeError(err, 'Your reply was not sent.')))
       .finally(() => setBusy(false));
   };
 
   const resolve = (): void => {
     if (active === null) return;
+    setBusy(true);
+    setActionError(null);
     adminApi
       .resolveTicket(active.id)
       .then((t) => {
         setActive(t);
-        refresh();
+        tickets.reload();
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => setActionError(describeError(err, 'Could not resolve that ticket.')))
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -64,7 +75,9 @@ export function SupportDashboardPage(): React.JSX.Element {
         {TICKET_STATUSES.map((s) => (
           <button
             key={s}
+            type="button"
             className={`bi-tab${s === status ? ' bi-tab--active' : ''}`}
+            aria-pressed={s === status}
             onClick={() => setStatus(s)}
           >
             {s}
@@ -72,28 +85,41 @@ export function SupportDashboardPage(): React.JSX.Element {
         ))}
       </div>
 
+      {actionError !== null ? <ErrorState message={actionError} title="That did not work" /> : null}
+
       <div className="support-layout">
-        <ul className="support-queue">
-          {tickets.length === 0 ? (
-            <li className="muted">No tickets.</li>
-          ) : (
-            tickets.map((t) => (
-              <li key={t.id}>
-                <button
-                  className={`support-queue__item${active?.id === t.id ? ' is-active' : ''}`}
-                  onClick={() => open(t)}
-                >
-                  <span className="support-queue__subject">{t.subject}</span>
-                  <span className={`badge badge--${t.priority}`}>{t.priority}</span>
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
+        <AsyncView
+          state={tickets.state}
+          loadingLabel="Loading the ticket queue\u2026"
+          errorTitle="We could not load the ticket queue"
+          onRetry={tickets.reload}
+        >
+          {(page) =>
+            page.data.length === 0 ? (
+              <EmptyState title="No tickets" description={`Nothing is currently ${status}.`} />
+            ) : (
+              <ul className="support-queue">
+                {page.data.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      className={`support-queue__item${active?.id === t.id ? ' is-active' : ''}`}
+                      aria-current={active?.id === t.id ? 'true' : undefined}
+                      onClick={() => open(t)}
+                    >
+                      <span className="support-queue__subject">{t.subject}</span>
+                      <span className={`badge badge--${t.priority}`}>{t.priority}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          }
+        </AsyncView>
 
         <section className="support-detail">
           {active === null ? (
-            <p className="muted">Select a ticket.</p>
+            <EmptyState title="Select a ticket to read it" />
           ) : (
             <>
               <h2>{active.subject}</h2>
@@ -112,20 +138,23 @@ export function SupportDashboardPage(): React.JSX.Element {
                 ))}
               </ol>
 
-              <textarea
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                placeholder="Write a reply…"
-                aria-label="Reply"
-                rows={3}
-              />
-              <div className="support-actions">
+              <label className="field">
+                <span className="field__label">Reply</span>
+                <textarea
+                  className="field__input"
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  placeholder="Write a reply…"
+                  rows={3}
+                />
+              </label>
+              <div className="support-actions row-actions">
                 <Button onClick={send} busy={busy}>
                   Reply
                 </Button>
-                <button className="button button--secondary" onClick={resolve}>
+                <Button className="button--secondary" busy={busy} onClick={resolve}>
                   Resolve
-                </button>
+                </Button>
               </div>
             </>
           )}

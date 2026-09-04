@@ -55,7 +55,11 @@ export function CookingAssistantPage(): React.JSX.Element {
         )}
       </div>
 
-      {error ? <p className="error">{error}</p> : null}
+      {error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <form onSubmit={(e) => void send(e)} className="chat__form">
         <input

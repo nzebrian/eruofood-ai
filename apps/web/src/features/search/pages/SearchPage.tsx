@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Layout } from '@shared/components/Layout';
 import { Button } from '@shared/components/Button';
+import { EmptyState, ErrorState, Loading } from '@shared/components/StateViews';
+import { describeError } from '@shared/hooks/useAsyncData';
 import { searchApi } from '../searchApi';
 import {
   formatPrice,
@@ -24,26 +26,44 @@ export function SearchPage(): React.JSX.Element {
   const [trending, setTrending] = useState<string[]>([]);
   const [recommended, setRecommended] = useState<SearchDocument[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [lastTerm, setLastTerm] = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     searchApi
       .trending()
       .then((r) => setTrending(r.trending))
+      // Deliberately silent, unlike the search itself: trending terms are a
+      // suggestion strip. Not showing it costs the user nothing, and an error
+      // banner for it would be noise on a page that has not been used yet.
       .catch(() => setTrending([]));
     searchApi
       .recommendations('trending', 'food', undefined, 6)
       .then((r) => setRecommended(r.items))
+      // Same reasoning as `trending` above: a merchandising strip, not an
+      // answer the user asked for.
       .catch(() => setRecommended([]));
   }, []);
 
   const runSearch = useCallback(
     (searchTerm: string): void => {
       setLoading(true);
+      setSearchError(null);
+      setLastTerm(searchTerm);
       searchApi
         .search(searchTerm, type, sort, filters, 1)
-        .then(setResults)
-        .catch(() => setResults(null))
+        .then((found) => {
+          setResults(found);
+          setSearchError(null);
+        })
+        .catch((err: unknown) => {
+          // `.catch(() => setResults(null))` returned the page to its
+          // pre-search landing state, so a failed search looked exactly like
+          // a search nobody had run yet.
+          setResults(null);
+          setSearchError(describeError(err, 'The search could not be completed.'));
+        })
         .finally(() => setLoading(false));
     },
     [type, sort, filters],
@@ -60,6 +80,9 @@ export function SearchPage(): React.JSX.Element {
       searchApi
         .autocomplete(value, type)
         .then((r) => setSuggestions(r.suggestions))
+        // Autocomplete is a convenience over a request the user has not yet
+        // made. Failing quietly leaves them typing; surfacing it would put an
+        // alert under the cursor on every keystroke.
         .catch(() => setSuggestions([]));
     }, 150);
   };
@@ -123,7 +146,12 @@ export function SearchPage(): React.JSX.Element {
         <Button type="submit" busy={loading}>
           Search
         </Button>
-        <button type="button" className="button button--secondary" onClick={() => setShowFilters((v) => !v)}>
+        <button
+          type="button"
+          className="button button--secondary"
+          aria-expanded={showFilters}
+          onClick={() => setShowFilters((v) => !v)}
+        >
           Filters
         </button>
       </form>
@@ -142,15 +170,24 @@ export function SearchPage(): React.JSX.Element {
           </label>
           <label>
             Region
-            <input value={filters.region ?? ''} onChange={(e) => setFilter('region', e.target.value)} />
+            <input
+              value={filters.region ?? ''}
+              onChange={(e) => setFilter('region', e.target.value)}
+            />
           </label>
           <label>
             Cuisine
-            <input value={filters.cuisine ?? ''} onChange={(e) => setFilter('cuisine', e.target.value)} />
+            <input
+              value={filters.cuisine ?? ''}
+              onChange={(e) => setFilter('cuisine', e.target.value)}
+            />
           </label>
           <label>
             Difficulty
-            <select value={filters.difficulty ?? ''} onChange={(e) => setFilter('difficulty', e.target.value)}>
+            <select
+              value={filters.difficulty ?? ''}
+              onChange={(e) => setFilter('difficulty', e.target.value)}
+            >
               <option value="">Any</option>
               <option value="easy">Easy</option>
               <option value="medium">Medium</option>
@@ -179,7 +216,15 @@ export function SearchPage(): React.JSX.Element {
         </div>
       )}
 
-      {results === null ? (
+      {loading ? (
+        <Loading label="Searching…" />
+      ) : searchError !== null ? (
+        <ErrorState
+          title="We could not run that search"
+          message={searchError}
+          onRetry={() => runSearch(lastTerm ?? term)}
+        />
+      ) : results === null ? (
         <>
           {trending.length > 0 && (
             <section className="search-trending">
@@ -188,6 +233,7 @@ export function SearchPage(): React.JSX.Element {
                 {trending.map((t) => (
                   <button
                     key={t}
+                    type="button"
                     className="chip"
                     onClick={() => {
                       setTerm(t);
@@ -208,7 +254,7 @@ export function SearchPage(): React.JSX.Element {
             <aside className="search-facets">
               {Object.entries(results.facets).map(([name, values]) => (
                 <div key={name} className="search-facet">
-                  <h3>{name}</h3>
+                  <h2 className="search-facet__title">{name}</h2>
                   <ul>
                     {Object.entries(values).map(([value, count]) => (
                       <li key={value}>
@@ -224,21 +270,36 @@ export function SearchPage(): React.JSX.Element {
           <section className="search-results">
             <p className="muted">{results.total} result(s)</p>
             {results.hits.length === 0 ? (
-              <p className="muted">No matches. Try broadening your filters.</p>
+              <EmptyState
+                title={lastTerm ? `No matches for \u201C${lastTerm}\u201D` : 'No matches'}
+                description="Try a shorter term, a different type, or fewer filters."
+              />
             ) : (
               <ul className="search-hit-list">
                 {results.hits.map((hit, index) => (
                   <li key={hit.document.id}>
-                    <button className="search-hit" onClick={() => openHit(hit.document.id, index, hit.document.url)}>
+                    <button
+                      type="button"
+                      className="search-hit"
+                      onClick={() => openHit(hit.document.id, index, hit.document.url)}
+                    >
                       <div className="search-hit__body">
                         <span className="search-hit__title">{hit.document.title}</span>
                         <span className="search-hit__meta">
-                          <span className={`badge badge--${hit.document.type}`}>{hit.document.type}</span>
+                          <span className={`badge badge--${hit.document.type}`}>
+                            {hit.document.type}
+                          </span>
                           {hit.document.region ? <span> · {hit.document.region}</span> : null}
-                          {hit.document.rating > 0 ? <span> · ★ {hit.document.rating.toFixed(1)}</span> : null}
-                          {hit.document.price_minor !== null ? <span> · {formatPrice(hit.document.price_minor)}</span> : null}
+                          {hit.document.rating > 0 ? (
+                            <span> · ★ {hit.document.rating.toFixed(1)}</span>
+                          ) : null}
+                          {hit.document.price_minor !== null ? (
+                            <span> · {formatPrice(hit.document.price_minor)}</span>
+                          ) : null}
                         </span>
-                        {hit.highlight ? <span className="search-hit__snippet">{hit.highlight}</span> : null}
+                        {hit.highlight ? (
+                          <span className="search-hit__snippet">{hit.highlight}</span>
+                        ) : null}
                       </div>
                     </button>
                   </li>
