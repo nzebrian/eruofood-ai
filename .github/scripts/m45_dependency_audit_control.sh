@@ -29,8 +29,18 @@
 # rather than asserted.
 #
 # Part B needs the npm and Packagist advisory endpoints. Where they are
-# unreachable it says so and skips, rather than reporting a pass it has not
-# earned.
+# unreachable — or reachable but unable to answer — it says so and counts the
+# control as UNAVAILABLE, which makes Part B incomplete and fails this suite,
+# rather than reporting a pass it has not earned.
+#
+# "Exactly as security.yml runs them" now includes the working directory. Part
+# B originally ran `npm audit --prefix DIR`, and `--prefix` does not re-root
+# the tree that `npm audit` builds — npm resolved the project from the caller's
+# cwd instead. The malformed tree that produced was accepted by npm's legacy
+# audit endpoint until 2026-09-04, at which point it started returning 400 and
+# the defect surfaced: B3 could never pass, and B1 had been passing on an
+# endpoint error rather than on the 11 advisories it claimed to measure. See
+# the note in `live()`.
 #
 # ## Why the real repository is never touched
 #
@@ -391,15 +401,45 @@ else
   done
 fi
 
+# Show what the audit actually said whenever the result is not a clean pass.
+# Without this the only thing an unexpected result printed was its exit code,
+# which is how a broken invocation went unnoticed: `npm audit` exiting 1 for a
+# vulnerability and `npm audit` exiting 1 because the endpoint rejected the
+# request look identical from the outside.
+show_output() {
+  local output="$1"
+  [[ -z "$output" ]] && return 0
+  echo "      --- command output (last 20 lines) ---"
+  tail -n 20 <<<"$output" | sed 's/^/      /'
+  echo "      --------------------------------------"
+}
+
 live() {
-  local name="$1" expected="$2"
-  shift 2
+  local name="$1" expected="$2" workdir="$3"
+  shift 3
 
   printf '%-68s' "${name:0:68}"
 
   set +e
   local output exit_code
-  output="$("$@" 2>&1)"
+  # Run from inside the fixture, which is how `security.yml` runs both audits
+  # (`working-directory:`). This used to pass `npm audit --prefix DIR` instead,
+  # and `--prefix` does not re-root the tree `npm audit` builds: npm resolved
+  # the project from the caller's cwd — the repository root, which has no
+  # package.json — and posted the resulting empty tree to the legacy
+  # `/-/npm/v1/security/audits/quick` endpoint. That endpoint used to tolerate
+  # it; on 2026-09-04 it began answering `400 Bad Request — Invalid package
+  # tree`, so npm exited 1 with `audit endpoint returned an error`.
+  #
+  # B3 expects 0 and could therefore never pass. Worse, B1 expects 1 and had
+  # been passing on that same error for the wrong reason — the pre-M45
+  # lockfile's 11 advisories were never actually what it measured. `cd` gives
+  # the real answers: 11 vulnerabilities (exit 1) before, 0 (exit 0) after.
+  #
+  # The `cd` runs inside a command substitution, so it is a subshell and cannot
+  # move the caller. Composer keeps `--working-dir=`, which does re-root
+  # correctly and which B2/B4 have always exercised properly.
+  output="$(cd "$workdir" && "$@" 2>&1)"
   exit_code=$?
   set -e
 
@@ -407,9 +447,26 @@ live() {
   # correction is that "not evidence either way" is not a pass. It is counted
   # as UNAVAILABLE, and any unavailable control makes Part B incomplete, which
   # fails this suite. Absent evidence must never satisfy a required check.
-  if grep -qiE "ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|could not be fully loaded|SSL connection timeout" <<<"$output"; then
+  #
+  # The audit *infrastructure* failing is the same thing as the network
+  # failing, and is now matched too. This is not leniency: without it, an
+  # endpoint error makes every `must FAIL` control exit 1 and be recorded as
+  # `ok`, which is precisely the false green found on 2026-09-04. Real
+  # advisory output contains none of these strings, so a genuine finding
+  # cannot be reclassified by it.
+  # Composer reserves exit 100 for a generic failure. `composer audit` answers
+  # 0 (clean) or 1 (advisories found) whenever it actually audited, so 100 is
+  # never a verdict — it is Packagist not answering. Observed on 2026-09-04 in
+  # a sandbox with flaky egress, where it was recorded as a FALSE POSITIVE.
+  # Both labels fail this suite, so this changes only which one is true.
+  if [[ "$exit_code" == "100" ]] \
+     || grep -qiE "ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ERR_SOCKET_TIMEOUT|socket timeout|network|could not be fully loaded|SSL connection timeout|audit endpoint returned an error|Invalid package tree|audit (400|401|403|408|409|429|500|502|503|504) " <<<"$output"; then
     live_unavailable=$((live_unavailable + 1))
+    # The wording is load-bearing: m47_control_integrity_control.sh greps for
+    # "UNAVAILABLE (advisory endpoint unreachable" to recognise this state.
+    # Rewording it here would silently detach that control's case C.
     echo " UNAVAILABLE (advisory endpoint unreachable — evidence missing)"
+    show_output "$output"
     return 0
   fi
 
@@ -419,6 +476,7 @@ live() {
   else
     false_positives+=("$name (exit $exit_code, expected $expected)")
     echo " FAILED (exit $exit_code, expected $expected)"
+    show_output "$output"
   fi
 }
 
@@ -431,12 +489,16 @@ if [[ "$extract_ok" -ne 1 ]]; then
   live_unavailable=$live_total
 else
   live "B1. pre-M45 lockfile: npm audit --audit-level=high must FAIL" 1 \
-    npm audit --prefix "$live_fixture/before/web" --audit-level=high
+    "$live_fixture/before/web" \
+    npm audit --audit-level=high
   live "B2. pre-M45 lockfile: composer audit --locked must FAIL" 1 \
+    "$REPO_ROOT" \
     composer audit --locked --no-interaction --working-dir="$live_fixture/before/api"
   live "B3. post-M45 lockfile: npm audit --audit-level=high must PASS" 0 \
-    npm audit --prefix "$live_fixture/after/web" --audit-level=high
+    "$live_fixture/after/web" \
+    npm audit --audit-level=high
   live "B4. post-M45 lockfile: composer audit --locked must PASS" 0 \
+    "$REPO_ROOT" \
     composer audit --locked --no-interaction --working-dir="$live_fixture/after/api"
 fi
 
