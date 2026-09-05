@@ -27,6 +27,7 @@ COMPOSER_WRAPPER=".github/scripts/composer_audit_resilient.sh"
 DOWNLOAD_WRAPPER=".github/scripts/bounded_download.sh"
 RUNNER=".github/scripts/run_control.sh"
 MANIFEST_VERIFIER=".github/scripts/verify_control_manifest.py"
+OSV_WRAPPER=".github/scripts/osv_scan_resilient.sh"
 
 EXIT_PASS=0
 EXIT_VULNERABLE=1
@@ -39,7 +40,7 @@ ok()  { printf '  PASS  %s\n' "$1"; passed=$((passed + 1)); }
 bad() { printf '  FAIL  %s\n' "$1"; failed=$((failed + 1)); failures+=("$1"); }
 
 fingerprint() {
-  { sha256sum "$COMPOSER_WRAPPER" "$DOWNLOAD_WRAPPER" "$RUNNER" \
+  { sha256sum "$COMPOSER_WRAPPER" "$DOWNLOAD_WRAPPER" "$RUNNER" "$OSV_WRAPPER" \
       ".github/scripts/lib/reliability_classify.sh"; } | sha256sum | cut -d' ' -f1
 }
 before="$(fingerprint)"
@@ -366,6 +367,82 @@ if CONTROL_MANIFEST_DIR="$MDIR" "$REPO_ROOT/$RUNNER" alpha -- true >/dev/null 2>
   bad "34. a duplicate control id silently overwrote the first record"
 else
   ok "34. a duplicate control id is refused at record time"
+fi
+
+# ---------------------------------------------------------------------------
+# M50-10 — the Dart scanner wrapper, driven by a stub, never the real OSV API.
+#
+# The same reason every outage simulation in this file drives a stub: a control
+# that needs a service to be UP cannot describe what happens when it is DOWN,
+# and "what happens when it is down" is the entire question.
+# ---------------------------------------------------------------------------
+echo
+echo "C2) osv_scan_resilient.sh — three verdicts over a stubbed scanner"
+
+cat > "$sandbox/bin/osv-scanner" <<'STUB'
+#!/usr/bin/env bash
+count_file="$STUB_COUNT"
+n=$(( $(cat "$count_file" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$count_file"
+line="$(sed -n "${n}p" "$STUB_SCENARIO")"
+[[ -z "$line" ]] && line="$(tail -n 1 "$STUB_SCENARIO")"
+code="${line%%|*}"; text="${line#*|}"
+printf '%b\n' "$text"
+exit "$code"
+STUB
+chmod +x "$sandbox/bin/osv-scanner"
+
+: > "$sandbox/project/pubspec.lock"
+
+run_osv() {
+  printf '%s\n' "$1" > "$sandbox/scenario"
+  : > "$sandbox/count"
+  STUB_SCENARIO="$sandbox/scenario" STUB_COUNT="$sandbox/count" \
+  OSV_SCANNER_BIN="$sandbox/bin/osv-scanner" \
+  OSV_SCAN_ATTEMPTS=3 OSV_SCAN_TIMEOUT=2 OSV_SCAN_BACKOFF="0 0" \
+    "$REPO_ROOT/$OSV_WRAPPER" --lockfile "$sandbox/project/pubspec.lock" 2>&1
+}
+
+# Same shape as expect_composer above: one helper, so an assertion cannot be
+# written as `A && ok || bad`, where C runs when A is true.
+expect_osv() {
+  local label="$1" want_exit="$2" want_text="$3" want_attempts="${4:-}" scenario="$5"
+  local out code problems=""
+  out="$(run_osv "$scenario")"; code=$?
+  [[ "$code" -eq "$want_exit" ]] || problems+="exit $code, wanted $want_exit; "
+  grep -qF "$want_text" <<<"$out" || problems+="output lacked '$want_text'; "
+  if [[ -n "$want_attempts" ]]; then
+    local made; made="$(attempts_made)"
+    [[ "$made" -eq "$want_attempts" ]] || problems+="scanner called $made times, wanted $want_attempts; "
+  fi
+  if [[ -z "$problems" ]]; then ok "$label"; else bad "$label — ${problems}"; fi
+}
+
+expect_osv "1. a clean scan is PASS and exits 0" \
+  "$EXIT_PASS" "SECURITY AUDIT: PASS" 1 '0|Scanned file and found 100 packages\nNo issues found'
+expect_osv "2. a finding is VULNERABLE, and is asked exactly once" \
+  "$EXIT_VULNERABLE" "SECURITY AUDIT: VULNERABLE" 1 '1|GHSA-abcd-1234-wxyz in package foo'
+
+# The one that matters most, and the one the first live run got wrong.
+# osv-scanner prints "Total 0 packages affected by 0 known vulnerabilities" on
+# EVERY run including failed ones, so a verdict pattern matching that phrase
+# turned a blocked endpoint into a manufactured security finding.
+expect_osv "3. a blocked OSV endpoint is UNAVAILABLE, not a manufactured finding" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" "" \
+  '127|Error during extraction: request failed: Post "https://api.osv.dev/v1/querybatch": Forbidden\nTotal 0 packages affected by 0 known vulnerabilities (0 Critical, 0 High).'
+
+expect_osv "4. zero findings over zero packages is UNAVAILABLE, never PASS" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 '0|Scanned file and found 0 packages'
+expect_osv "5. exit 128 (nothing scanned) is UNAVAILABLE" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 '128|no packages found'
+expect_osv "6. an exhausted transient failure ends UNAVAILABLE, retried to the bound" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 3 '52|Connection reset by peer'
+
+out="$("$REPO_ROOT/$OSV_WRAPPER" --lockfile "$sandbox/definitely-absent.lock" 2>&1)"; code=$?
+if [[ $code -eq $EXIT_UNAVAILABLE ]] && grep -qF "UNAVAILABLE" <<<"$out"; then
+  ok "7. a missing lockfile is UNAVAILABLE, not a clean scan"
+else
+  bad "7. a missing lockfile returned $code, expected $EXIT_UNAVAILABLE"
 fi
 
 # ---------------------------------------------------------------------------

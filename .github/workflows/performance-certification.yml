@@ -55,7 +55,7 @@ jobs:
         script: [public-api, critical-flows]
         scenario: [baseline, load, stress, spike]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install k6
         run: |
@@ -110,7 +110,7 @@ jobs:
 
       - name: Upload machine-readable results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: perf-${{ matrix.script }}-${{ matrix.scenario }}
           path: perf-results/
@@ -122,7 +122,7 @@ jobs:
     environment: staging
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install k6
         run: |
           sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
@@ -138,6 +138,6 @@ jobs:
         run: |
           mkdir -p perf-results
           k6 run --summary-export perf-results/public-api-soak.summary.json load/public-api.k6.js
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with: { name: perf-soak, path: perf-results/ }

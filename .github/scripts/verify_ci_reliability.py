@@ -215,10 +215,26 @@ def main() -> int:
         for jid, _i, sname, run in all_run_blocks(wf):
             body = strip_comments(run)
             for command, spec in governed.items():
-                verb = command.split()[0]
                 # Match the audit command as a command, not as a substring of a
                 # path: `npm_audit_resilient.sh` must not count as `npm audit`.
-                pattern = re.compile(rf"(?<![\w./-]){re.escape(verb)}\s+{re.escape(command.split()[1])}\b")
+                #
+                # Two shapes since M50-10. `npm audit` and `composer audit` are a
+                # verb and a subcommand; `osv-scanner` is a single binary, and
+                # splitting on a subcommand that is not there used to raise
+                # IndexError here — a validator crash, which is a fail-closed but
+                # unhelpful way to report a one-word entry.
+                parts = command.split()
+                if len(parts) >= 2:
+                    pattern = re.compile(rf"(?<![\w./-]){re.escape(parts[0])}\s+{re.escape(parts[1])}\b")
+                else:
+                    # A single-binary command must be matched in COMMAND
+                    # POSITION — the start of a line or of a pipeline segment.
+                    # `osv-scanner` also appears as an output filename
+                    # (`--output osv-scanner`), inside a checksum line, and as an
+                    # argument to chmod; treating those as audit call sites made
+                    # the provisioning steps look like three ungoverned audits.
+                    pattern = re.compile(
+                        rf"(?:^|[|;&]\s*|\)\s*)\s*(?:\./|\$\{{[^}}]*\}}/)?{re.escape(parts[0])}\b")
                 for line in body.splitlines():
                     if not pattern.search(line):
                         continue
@@ -671,6 +687,223 @@ def main() -> int:
         rep.check("concurrency.cancel_declared", True,
                   f"cancel-in-progress accounted for everywhere "
                   f"({len(cancel_exempt)} justified exemption(s))")
+
+    # -------------------------------------------------------------------- M --
+    print("\nM) Every external action is pinned to an immutable commit")
+
+    ap = policy.get("action_pinning") or {}
+    pinned = ap.get("pinned_actions") or {}
+    uses_re = re.compile(r'^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#\s*(.*))?$')
+    mutable, unlisted, wrong_sha, no_comment = [], [], [], []
+    seen_actions, external_count, local_count = set(), 0, 0
+
+    for fname in sorted(workflows):
+        wf_text = (root / ".github/workflows" / fname).read_text()
+        for i, raw in enumerate(wf_text.splitlines(), 1):
+            m = uses_re.match(raw)
+            if not m:
+                continue
+            ref, comment = m.group(1), (m.group(2) or "").strip()
+            if ref.startswith("./"):
+                # A local reusable-workflow call has no SHA to pin; it is this
+                # repository's own file at this repository's own commit.
+                local_count += 1
+                if not (root / ref.removeprefix("./")).exists():
+                    rep.check("pinning.local_call_resolves", False,
+                              f"{fname}:{i} calls {ref}, which does not exist")
+                continue
+            external_count += 1
+            if "@" not in ref:
+                mutable.append(f"{fname}:{i} {ref} (no ref at all)")
+                continue
+            action, at = ref.rsplit("@", 1)
+            seen_actions.add(action)
+            if not re.fullmatch(r"[0-9a-f]{40}", at):
+                mutable.append(f"{fname}:{i} {ref} — mutable ref, expected a 40-character commit SHA")
+                continue
+            if action not in pinned:
+                unlisted.append(f"{fname}:{i} {action} is pinned but absent from action_pinning policy")
+                continue
+            if pinned[action]["sha"] != at:
+                wrong_sha.append(f"{fname}:{i} {action}@{at} does not match policy {pinned[action]['sha']}")
+            if comment != pinned[action]["version"]:
+                no_comment.append(f"{fname}:{i} {action} comment is {comment!r}, policy says {pinned[action]['version']!r}")
+
+    for bad, cid, label in ((mutable, "pinning.no_mutable_action", "mutable action reference"),
+                            (unlisted, "pinning.policy_covers_all", "action missing from policy"),
+                            (wrong_sha, "pinning.sha_matches_policy", "SHA disagrees with policy"),
+                            (no_comment, "pinning.version_comment", "version comment drift")):
+        if bad:
+            for b in bad:
+                rep.check(cid, False, f"{label} — {b}")
+        else:
+            ok = {
+                "pinning.no_mutable_action":
+                    f"all {external_count} external action reference(s) are pinned to a 40-character commit SHA",
+                "pinning.policy_covers_all":
+                    f"all {len(seen_actions)} distinct external action(s) are declared in policy",
+                "pinning.sha_matches_policy":
+                    "every pinned SHA matches the one the policy records",
+                "pinning.version_comment":
+                    "every pin carries the policy's version comment, so a bump is readable in the diff",
+            }[cid]
+            rep.check(cid, True, ok)
+
+    # A policy entry for an action nobody uses is a policy that has stopped
+    # describing the repository — the same staleness rule the masking exemptions
+    # are held to.
+    stale_pins = sorted(set(pinned) - seen_actions)
+    rep.check("pinning.no_stale_entry", not stale_pins,
+              "every policy entry corresponds to an action actually used"
+              if not stale_pins else f"policy pins actions nothing uses: {', '.join(stale_pins)}")
+
+    # -------------------------------------------------------------------- N --
+    print("\nN) No mutable image tag in a governed Docker or Compose file")
+
+    itp = policy.get("image_tag_policy") or {}
+    forbidden_tags = itp.get("forbidden_tag_suffixes") or []
+    bad_tags, scanned_files = [], 0
+
+    for rel in itp.get("governed_files") or []:
+        f = root / rel
+        if not f.exists():
+            rep.check("image_tag.file_exists", False, f"governed file {rel} does not exist")
+            continue
+        scanned_files += 1
+        for i, raw in enumerate(f.read_text().splitlines(), 1):
+            line = raw.split("#", 1)[0]
+            if not re.search(r"^\s*(image:|FROM\s)", line):
+                continue
+            for suffix in forbidden_tags:
+                if suffix in line:
+                    bad_tags.append(f"{rel}:{i} {line.strip()[:80]} — {suffix} is not reproducible")
+
+    if bad_tags:
+        for b in bad_tags:
+            rep.check("image_tag.no_mutable", False, b)
+    else:
+        rep.check("image_tag.no_mutable", True,
+                  f"{scanned_files} governed file(s) scanned; none references "
+                  f"{' or '.join(forbidden_tags)}")
+
+    # -------------------------------------------------------------------- O --
+    print("\nO) Production build files cannot fall back to an unlocked install")
+
+    bfg = policy.get("build_file_governance") or {}
+    build_violations, build_files = [], 0
+    bf_exemptions = bfg.get("exemptions") or []
+    used_bf: set[int] = set()
+
+    for rel in bfg.get("governed_paths") or []:
+        f = root / rel
+        if not f.exists():
+            rep.check("build_file.exists", False, f"governed build file {rel} does not exist")
+            continue
+        build_files += 1
+        for i, raw in enumerate(f.read_text().splitlines(), 1):
+            line = raw.split("#", 1)[0]
+            if not line.strip():
+                continue
+            for rule in bfg.get("forbidden_constructs") or []:
+                if not re.search(rule["pattern"], line):
+                    continue
+                # Named exemption, or nothing. Same shape as the workflow
+                # masking rule: (file, construct, a substring identifying the
+                # exact line, a written reason) or it does not exist. There is
+                # deliberately no way to exempt a whole file or a whole
+                # construct.
+                ex = next((e for e in bf_exemptions
+                           if e.get("file") == rel
+                           and e.get("construct") == rule["pattern"]
+                           and e.get("line_contains", "") in line), None)
+                if ex is not None:
+                    used_bf.add(id(ex))
+                    continue
+                build_violations.append(
+                    f"{rel}:{i} {line.strip()[:70]} — {rule['reason']}")
+
+    if build_violations:
+        for b in build_violations:
+            rep.check("build_file.no_unlocked_fallback", False, b)
+    else:
+        rep.check("build_file.no_unlocked_fallback", True,
+                  f"{build_files} production build file(s) install deterministically; every "
+                  f"remaining construct is one of {len(bf_exemptions)} named exemption(s)")
+
+    stale_bf = [f'{e.get("file")} · {e.get("line_contains")}'
+                for e in bf_exemptions if id(e) not in used_bf]
+    if stale_bf:
+        for s in stale_bf:
+            rep.check("build_file.no_stale_exemption", False,
+                      f"build-file exemption matches nothing: {s}")
+    else:
+        rep.check("build_file.no_stale_exemption", True,
+                  f"all {len(bf_exemptions)} build-file exemption(s) correspond to a real line")
+
+    unreasoned_bf = [f'{e.get("file")} · {e.get("line_contains")}'
+                     for e in bf_exemptions if not str(e.get("reason", "")).strip()]
+    if unreasoned_bf:
+        for u in unreasoned_bf:
+            rep.check("build_file.exemption_has_reason", False, f"exemption with no reason: {u}")
+    else:
+        rep.check("build_file.exemption_has_reason", True,
+                  "every build-file exemption states a written reason")
+
+    # -------------------------------------------------------------------- P --
+    print("\nP) Every governed package installs from a committed lockfile")
+
+    lg = policy.get("lockfile_governance") or {}
+    missing_locks, wrong_install = [], []
+    forbidden_installs = lg.get("forbidden_install_commands") or []
+
+    for entry in lg.get("required_lockfiles") or []:
+        lock = root / entry["lockfile"]
+        if not lock.exists():
+            missing_locks.append(f"{entry['directory']} has no {entry['lockfile']}")
+            continue
+        for wf_name in entry.get("workflows") or []:
+            if wf_name not in workflows:
+                continue
+            for jid, _i, sname, run in all_run_blocks(workflows[wf_name]):
+                body = strip_comments(run)
+                for line in logical_lines(body):
+                    for forbidden in forbidden_installs:
+                        # `npm install --package-lock-only` writes a lockfile and
+                        # installs nothing; it is how the lockfile is produced.
+                        if re.search(rf"(?<![\w./-]){re.escape(forbidden)}\b", line) \
+                                and "--package-lock-only" not in line:
+                            wrong_install.append(
+                                f"{wf_name}:{jid} · {sname} · {line.strip()[:70]} — "
+                                f"use {entry['install_command']}")
+
+    if missing_locks:
+        for m in missing_locks:
+            rep.check("lockfile.present", False, m)
+    else:
+        rep.check("lockfile.present", True,
+                  f"all {len(lg.get('required_lockfiles') or [])} governed package(s) commit a lockfile")
+
+    if wrong_install:
+        for w in wrong_install:
+            rep.check("lockfile.deterministic_install", False, w)
+    else:
+        rep.check("lockfile.deterministic_install", True,
+                  "no governed workflow installs with a range-resolving command")
+
+    # The Dart scan is asserted positively: the governed-command rule in section
+    # C can only catch an UNGOVERNED invocation, and the workflow never names
+    # osv-scanner directly — the wrapper does. Without this, deleting the step
+    # entirely would pass every other check in this file.
+    osv_wrapper = "osv_scan_resilient.sh"
+    osv_sites = [f"{fn}:{jid} · {sname}"
+                 for fn in sorted(workflows)
+                 for jid, _i, sname, run in all_run_blocks(workflows[fn])
+                 if osv_wrapper in strip_comments(run)
+                 and "pubspec.lock" in strip_comments(run)]
+    rep.check("audit.dart_covered", bool(osv_sites),
+              f"apps/mobile/pubspec.lock is scanned through {osv_wrapper} ({len(osv_sites)} site)"
+              if osv_sites else
+              f"NO governed Dart advisory scan: no step routes pubspec.lock through {osv_wrapper}")
 
     # -------------------------------------------------------------------------
     total_checks = len(rep.checks)

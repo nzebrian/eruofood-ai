@@ -73,8 +73,8 @@ jobs:
       REDIS_HOST: 127.0.0.1
       CACHE_STORE: redis
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with: { php-version: "8.4", extensions: "pdo_pgsql, redis, intl, zip, bcmath, pcntl", tools: "composer:v2" }
       - name: Composer validate — MANDATORY
         run: composer validate --strict --no-check-publish
@@ -116,8 +116,8 @@ jobs:
       npm_config_fetch_timeout: "60000"
     defaults: { run: { working-directory: apps/web } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: "22", cache: "npm", cache-dependency-path: apps/web/package-lock.json }
       - run: npm ci
       - run: npm run typecheck
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: npx --yes @redocly/cli@1 lint packages/api-contracts/openapi.yaml
 
   security-scan:
@@ -137,9 +137,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { fetch-depth: 0 }
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ github.token }}
 

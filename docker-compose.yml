@@ -126,7 +126,17 @@ services:
 
   # ---- MinIO (S3-compatible object storage) --------------------------------
   minio:
-    image: minio/minio:latest
+    # M50-18(b). This was `:latest`, and it is pulled by both Docker certification
+    # gates on every run — so an upstream MinIO release could turn a green
+    # certification red with no change to this repository, which is the failure
+    # class M49 exists to eliminate. MinIO never re-pushes a RELEASE.* tag, so a
+    # named release is immutable in practice.
+    #
+    # This exact release is what `:latest` already resolved to when it was pinned:
+    # both tags carried digest sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e,
+    # so the substitution changed nothing about what runs — it only stopped it
+    # changing by itself. Bumped by Dependabot's docker ecosystem.
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-eruofood}
