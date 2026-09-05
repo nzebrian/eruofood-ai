@@ -55,7 +55,7 @@ jobs:
         script: [public-api, critical-flows]
         scenario: [baseline, load, stress, spike]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install k6
         run: |
@@ -122,7 +122,7 @@ jobs:
     environment: staging
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install k6
         run: |
           sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \

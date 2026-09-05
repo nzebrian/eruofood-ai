@@ -55,7 +55,7 @@ jobs:
       # overlay, so no host .env and no in-container key:generate are needed.
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show Docker + Compose versions
         run: docker version && docker compose version
