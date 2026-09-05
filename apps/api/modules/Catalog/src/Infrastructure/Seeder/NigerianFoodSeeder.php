@@ -9,7 +9,11 @@ use EruoFood\Catalog\Application\Input\RecipeInput;
 use EruoFood\Catalog\Application\Service\CategoryService;
 use EruoFood\Catalog\Application\Service\FoodService;
 use EruoFood\Catalog\Application\Service\RecipeService;
+use EruoFood\Catalog\Domain\Category\CategoryRepository;
 use EruoFood\Catalog\Domain\Enum\CategoryType;
+use EruoFood\Catalog\Domain\Food\FoodRepository;
+use EruoFood\Catalog\Domain\Recipe\RecipeRepository;
+use EruoFood\Shared\Domain\ValueObject\Slug;
 use Illuminate\Database\Seeder;
 
 /**
@@ -21,6 +25,8 @@ final class NigerianFoodSeeder extends Seeder
 {
     private const SYSTEM_AUTHOR = '00000000-0000-4000-8000-000000000001';
 
+    private const JOLLOF_RECIPE_TITLE = 'Classic Nigerian Jollof Rice';
+
     public function run(): void
     {
         /** @var CategoryService $categories */
@@ -29,14 +35,20 @@ final class NigerianFoodSeeder extends Seeder
         $foods = $this->container->make(FoodService::class);
         /** @var RecipeService $recipes */
         $recipes = $this->container->make(RecipeService::class);
+        /** @var CategoryRepository $categoryRepo */
+        $categoryRepo = $this->container->make(CategoryRepository::class);
+        /** @var FoodRepository $foodRepo */
+        $foodRepo = $this->container->make(FoodRepository::class);
+        /** @var RecipeRepository $recipeRepo */
+        $recipeRepo = $this->container->make(RecipeRepository::class);
 
         $cat = [
-            'rice' => $categories->create('Rice', CategoryType::Rice, 'Rice-based dishes', 1)->id(),
-            'soup' => $categories->create('Soups', CategoryType::Soup, 'Nigerian soups', 2)->id(),
-            'swallow' => $categories->create('Swallows', CategoryType::Swallow, 'Fufu, pounded yam, eba…', 3)->id(),
-            'snack' => $categories->create('Snacks', CategoryType::Snack, 'Snacks & small chops', 4)->id(),
-            'street' => $categories->create('Street Food', CategoryType::StreetFood, 'Roadside favourites', 5)->id(),
-            'drink' => $categories->create('Drinks', CategoryType::Drink, 'Local beverages', 6)->id(),
+            'rice' => $this->ensureCategory($categories, $categoryRepo, 'Rice', CategoryType::Rice, 'Rice-based dishes', 1),
+            'soup' => $this->ensureCategory($categories, $categoryRepo, 'Soups', CategoryType::Soup, 'Nigerian soups', 2),
+            'swallow' => $this->ensureCategory($categories, $categoryRepo, 'Swallows', CategoryType::Swallow, 'Fufu, pounded yam, eba…', 3),
+            'snack' => $this->ensureCategory($categories, $categoryRepo, 'Snacks', CategoryType::Snack, 'Snacks & small chops', 4),
+            'street' => $this->ensureCategory($categories, $categoryRepo, 'Street Food', CategoryType::StreetFood, 'Roadside favourites', 5),
+            'drink' => $this->ensureCategory($categories, $categoryRepo, 'Drinks', CategoryType::Drink, 'Local beverages', 6),
         ];
 
         $dishes = [
@@ -60,6 +72,19 @@ final class NigerianFoodSeeder extends Seeder
 
         $jollofId = null;
         foreach ($dishes as [$name, $categoryId, $region, $states, $localNames, $nutrition, $tags]) {
+            // `FoodService::create()` de-duplicates the slug by appending a
+            // counter, so a second run would not fail here — it would quietly
+            // grow a "jollof-rice-2". Skipping what is already seeded keeps the
+            // starter catalogue the same set however many times this runs.
+            $existing = $foodRepo->findBySlug(Slug::fromTitle($name)->value);
+            if ($existing !== null) {
+                if ($name === 'Jollof Rice') {
+                    $jollofId = $existing->id();
+                }
+
+                continue;
+            }
+
             $food = $foods->create(FoodInput::fromArray([
                 'name' => $name,
                 'category_id' => $categoryId,
@@ -75,10 +100,10 @@ final class NigerianFoodSeeder extends Seeder
             }
         }
 
-        if ($jollofId !== null) {
+        if ($jollofId !== null && ! $recipeRepo->existsBySlug(Slug::fromTitle(self::JOLLOF_RECIPE_TITLE)->value)) {
             $recipe = $recipes->create(self::SYSTEM_AUTHOR, RecipeInput::fromArray([
                 'food_id' => $jollofId,
-                'title' => 'Classic Nigerian Jollof Rice',
+                'title' => self::JOLLOF_RECIPE_TITLE,
                 'summary' => 'Smoky party jollof with the signature bottom-pot flavour.',
                 'prep_time_minutes' => 20,
                 'cook_time_minutes' => 45,
@@ -101,5 +126,30 @@ final class NigerianFoodSeeder extends Seeder
             ]));
             $recipes->publish($recipe->id());
         }
+    }
+
+    /**
+     * Return the id of the category with this name's slug, creating it only if
+     * it is not there yet.
+     *
+     * `catalog_categories.slug` is unique and `CategoryService::create()`
+     * derives the slug straight from the name with no de-duplication, so the
+     * previous unconditional create aborted the entire seed with
+     * `catalog_categories_slug_unique` the second time it ran. Looking the slug
+     * up first fixes that without touching the schema, without catching the
+     * duplicate-key exception, and without overwriting a category somebody has
+     * since edited.
+     */
+    private function ensureCategory(
+        CategoryService $categories,
+        CategoryRepository $repository,
+        string $name,
+        CategoryType $type,
+        ?string $description,
+        int $sortOrder,
+    ): string {
+        $existing = $repository->findBySlug(Slug::fromTitle($name)->value);
+
+        return $existing?->id() ?? $categories->create($name, $type, $description, $sortOrder)->id();
     }
 }

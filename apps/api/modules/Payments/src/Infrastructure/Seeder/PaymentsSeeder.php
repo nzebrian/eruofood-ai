@@ -24,7 +24,7 @@ final class PaymentsSeeder extends Seeder
         $wallets = app(WalletRepository::class);
         $now = new DateTimeImmutable();
 
-        $this->openWith($wallets, WalletOwnerType::Platform, 'platform', 0, $now);
+        $this->openWith($wallets, WalletOwnerType::Platform, WalletOwnerType::PLATFORM_OWNER_ID, 0, $now);
         $this->openWith($wallets, WalletOwnerType::Customer, '00000000-0000-0000-0000-0000000000d1', 500000, $now);
         $this->openWith($wallets, WalletOwnerType::Vendor, '00000000-0000-0000-0000-0000000000d2', 1200000, $now);
     }

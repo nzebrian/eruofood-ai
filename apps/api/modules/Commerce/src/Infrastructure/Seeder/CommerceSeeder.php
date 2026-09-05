@@ -31,10 +31,18 @@ use Illuminate\Database\Seeder;
 /**
  * Sample commerce data: a verified Lagos store with grocery and general
  * products, a warehouse, a supplier, tracked stock (one batch with an expiry),
- * and a welcome coupon. Idempotent-ish for local/demo use.
+ * and a welcome coupon.
+ *
+ * Re-runnable. Everything here hangs off one demo store, and that store's slug
+ * is unique in `commerce_stores`, so the store is the identity for the whole
+ * set: if it is already there, this data has already been seeded and there is
+ * nothing to add. Before M50-13 the store was registered unconditionally and a
+ * second run died on `commerce_stores_slug_unique`.
  */
 final class CommerceSeeder extends Seeder
 {
+    private const STORE_NAME = 'Lagos Fresh Market';
+
     public function run(): void
     {
         /** @var StoreRepository $stores */
@@ -55,9 +63,14 @@ final class CommerceSeeder extends Seeder
         $ownerId = '00000000-0000-0000-0000-0000000000c0';
         $now = new DateTimeImmutable();
 
-        $store = Store::register($stores->nextIdentity(), $ownerId, 'Lagos Fresh Market', Slug::fromTitle('Lagos Fresh Market'), $now, autoVerify: true);
+        $storeSlug = Slug::fromTitle(self::STORE_NAME);
+        if ($stores->findBySlug($storeSlug->value) !== null) {
+            return;
+        }
+
+        $store = Store::register($stores->nextIdentity(), $ownerId, self::STORE_NAME, $storeSlug, $now, autoVerify: true);
         $store->updateProfile(
-            'Lagos Fresh Market',
+            self::STORE_NAME,
             'Groceries and everyday essentials delivered across Lagos.',
             null,
             new Address('12 Adeola Odeku St', null, 'Lagos', 'Lagos', '101241', 'NG'),
