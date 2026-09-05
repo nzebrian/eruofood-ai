@@ -59,14 +59,14 @@ jobs:
           username: ${{ secrets.REGISTRY_USER || github.actor }}
           password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Build & push API image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/php/Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api:${{ steps.meta.outputs.tag }}
       - name: Build & push web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/node/Dockerfile
