@@ -110,7 +110,7 @@ jobs:
 
       - name: Upload machine-readable results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: perf-${{ matrix.script }}-${{ matrix.scenario }}
           path: perf-results/
@@ -138,6 +138,6 @@ jobs:
         run: |
           mkdir -p perf-results
           k6 run --summary-export perf-results/public-api-soak.summary.json load/public-api.k6.js
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: perf-soak, path: perf-results/ }
