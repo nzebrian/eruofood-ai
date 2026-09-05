@@ -33,6 +33,7 @@ use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentOrderReposi
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentRiderRepository;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentVendorRepository;
 use EruoFood\Marketplace\Infrastructure\Persistence\Eloquent\EloquentVendorReviewRepository;
+use EruoFood\Marketplace\Infrastructure\Seeder\MarketplaceSeeder;
 use EruoFood\Marketplace\Interface\Http\Controller\MenuManagementController;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Route;
@@ -108,7 +109,7 @@ final class MarketplaceServiceProvider extends ServiceProvider
         // Contextual primitives (currency + verification policy).
         foreach ([EloquentVendorRepository::class, EloquentCartRepository::class, EloquentDeliveryRepository::class,
             VendorService::class, CartService::class, CheckoutService::class, VendorDashboardService::class,
-            MenuManagementController::class] as $needsCurrency) {
+            MenuManagementController::class, MarketplaceSeeder::class] as $needsCurrency) {
             $this->app->when($needsCurrency)->needs('$currency')->give($currency);
         }
         $this->app->when(VendorService::class)->needs('$requireVerification')->give(fn () => $requireVerification);

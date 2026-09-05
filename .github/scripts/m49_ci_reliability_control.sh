@@ -384,13 +384,20 @@ mutate "$r/$WF/contracts.yml" \
   "  cancel-in-progress: false"
 control "34. undeclared cancel-in-progress: false" "concurrency.cancel_declared" "$r"
 
-# 35 — a deferred defect quietly deleted from the record while the mask stays.
-#      The defect must keep being reported, not disappear because the entry did.
+# 35 — a deferred defect recorded for a mask that is not in the repository.
+#
+#      This used to mutate the other way: strip M50-13's `|| true` from
+#      ci-docker.yml and prove the orphaned record failed. M50-13 is fixed, the
+#      masks are gone and `deferred_defects` is empty, so that anchor no longer
+#      exists — but the property still has to hold for the next deferral, so the
+#      control now approaches it from the empty side. A record that describes
+#      nothing is a policy that has stopped describing the repository, which is
+#      how a real mask later slips past a name nobody re-reads.
 r="$(fixture t35)"
-mutate "$r/$WF/ci-docker.yml" \
-  "docker compose exec -T api php artisan db:seed --force || true" \
-  "docker compose exec -T api php artisan db:seed --force"
-control "35. a recorded deferred defect silently resolved without updating policy" \
+mutate "$r/$POLICY" \
+  '    "deferred_defects": [],' \
+  '    "deferred_defects": [{"workflow": "ci-docker.yml", "step": "Migrate from an empty database + seed bootstrap", "construct": "|| true", "finding": "M50-13", "blocked_by": "a mask that is no longer there"}],'
+control "35. a deferred defect recorded for a mask the repository no longer has" \
   "masking.deferred_defect_present" "$r"
 
 # 36 — the M50-13 masks restored elsewhere, where no record covers them.
@@ -400,23 +407,42 @@ mutate "$r/$WF/ci-web.yml" \
   "        run: npm run build || true"
 control "36. db:seed-style masking reintroduced somewhere unrecorded" "masking.workflows" "$r"
 
-# 37 — positive control. Without it, a validator that rejects everything would
-#      make all twenty-one controls above pass while enforcing nothing.
+# 37 — the M50-13 mask put back on the very line it was removed from.
+#
+#      The seed now works, so there is no longer any excuse for masking it. This
+#      is the control that makes the fix stick: re-adding `|| true` to the
+#      certification seed must be rejected outright, not quietly tolerated
+#      because that is how the line used to look for two milestones.
+r="$(fixture t37)"
+mutate "$r/$WF/ci-docker.yml" \
+  "          docker compose exec -T api php artisan db:seed --force" \
+  "          docker compose exec -T api php artisan db:seed --force || true"
+control "37. the db:seed mask restored on the certification seed itself" "masking.workflows" "$r"
+
+# 38 — the same, in the GA certification gate, with its original `|| echo`.
+r="$(fixture t38)"
+mutate "$r/$WF/ga-docker-certification.yml" \
+  "          docker compose exec -T api php artisan db:seed --force" \
+  "          docker compose exec -T api php artisan db:seed --force || echo \"seed optional\""
+control "38. the db:seed mask restored in the GA certification gate" "masking.workflows" "$r"
+
+# 39 — positive control. Without it, a validator that rejects everything would
+#      make all the controls above pass while enforcing nothing.
 r="$(fixture t22)"
 if python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" >/dev/null 2>&1; then
-  ok "37. positive control: an unmutated fixture passes"
+  ok "39. positive control: an unmutated fixture passes"
 else
-  bad "37. positive control: an UNMUTATED fixture failed — every control above proves nothing"
+  bad "39. positive control: an UNMUTATED fixture failed — every control above proves nothing"
   python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" 2>&1 | grep -E "^  FAIL" | head -12 | sed 's/^/      /'
 fi
 
-# 38 — integrity.
+# 40 — integrity.
 echo
 after="$(fingerprint)"
 if [[ "$before" == "$after" ]]; then
-  ok "38. sha256 integrity: the real repository is unchanged"
+  ok "40. sha256 integrity: the real repository is unchanged"
 else
-  bad "38. THE REAL REPOSITORY CHANGED during this run"
+  bad "40. THE REAL REPOSITORY CHANGED during this run"
 fi
 echo
 echo "Protected-file fingerprint (after):  $after"

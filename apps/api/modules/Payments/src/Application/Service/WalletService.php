@@ -171,7 +171,7 @@ final readonly class WalletService
         }
 
         $customer = $this->getOrOpen(WalletOwnerType::Customer, $customerUserId);
-        $platform = $this->getOrOpen(WalletOwnerType::Platform, 'platform');
+        $platform = $this->getOrOpen(WalletOwnerType::Platform, WalletOwnerType::PLATFORM_OWNER_ID);
 
         $events = $this->transactions->atomic(function () use ($customer, $platform, $amountMinor, $orderId): array {
             [$first, $second] = $this->lockPair($customer->id(), $platform->id());

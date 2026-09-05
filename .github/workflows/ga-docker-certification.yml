@@ -87,7 +87,11 @@ jobs:
         run: |
           docker compose exec -T api php artisan migrate --force
           docker compose exec -T api php artisan migrate:status
-          docker compose exec -T api php artisan db:seed --force || echo "seed optional"
+          # Unmasked in M50-13. `|| echo "seed optional"` hid a command that had
+          # never once succeeded: bare `db:seed` resolved a root DatabaseSeeder
+          # that did not exist. It exists now, so a seed failure fails
+          # certification instead of printing a reassuring word.
+          docker compose exec -T api php artisan db:seed --force
 
       - name: Confirm workers + scheduler are running
         run: |

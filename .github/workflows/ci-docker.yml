@@ -87,9 +87,14 @@ jobs:
           done
 
       - name: Migrate from an empty database + seed bootstrap
+        # The seed was masked with `|| true` from the day it was added (M20) until
+        # M50-13, because bare `db:seed` resolved a root DatabaseSeeder this
+        # repository never had and failed on every run. That root seeder now
+        # exists, so the command works and the mask is gone: if seeding breaks,
+        # this job goes red, which is the entire point of certifying a clean boot.
         run: |
           docker compose exec -T api php artisan migrate --force
-          docker compose exec -T api php artisan db:seed --force || true
+          docker compose exec -T api php artisan db:seed --force
 
       - name: Readiness + health endpoints
         run: |

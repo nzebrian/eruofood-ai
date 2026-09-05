@@ -567,9 +567,15 @@ def main() -> int:
             print(f"  NOTE  DEFERRED DEFECT ({d.get('finding')}) — "
                   f"{d.get('workflow')} · {d.get('step')} · {d.get('construct')}")
             print(f"        {str(d.get('blocked_by',''))[:150]}")
-    if deferred:
+    # Emitted whether or not anything is deferred. An empty list is a real
+    # result — it says every recorded defect has been fixed — and a check that
+    # disappears when it has nothing to complain about is a check nobody
+    # notices going missing.
+    if not any(id(d) not in used_deferred for d in deferred):
         rep.check("masking.deferred_defect_present", True,
-                  f"{len(deferred)} deferred defect(s) recorded, each still present and reported above")
+                  f"{len(deferred)} deferred defect(s) recorded, each still present and reported above"
+                  if deferred else
+                  "no deferred defects recorded — every masked defect has been fixed rather than tolerated")
 
     # -------------------------------------------------------------------- K --
     print("\nK) Non-npm network operations are bounded")
