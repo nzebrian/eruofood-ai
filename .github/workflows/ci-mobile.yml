@@ -46,6 +46,10 @@ jobs:
         run: cp .env.example .env
 
       - name: Install dependencies
+        # M50 Phase 1: pub has no network-timeout knob, so the bound is
+        # explicit at the step. A stalled pub.dev fetch fails here rather
+        # than consuming the job's whole budget.
+        timeout-minutes: 10
         run: flutter pub get
 
       - name: Static analysis

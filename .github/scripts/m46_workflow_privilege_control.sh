@@ -279,14 +279,18 @@ concurrency:
 concurrency:
   group: ci-contracts-'
 
+# The anchor stops at the blank line after `contents: read` rather than
+# reaching `jobs:`. M50 Phase 1 inserted ci-docker.yml's concurrency block
+# between the two, and an anchor that spans unrelated content breaks every
+# time anything lands in the gap. The mutation is unchanged: the workflow's
+# `permissions:` block is removed and the validator must notice.
 control "5. permissions removed from a SECOND workflow (ci-docker)" \
   "privilege.ci-docker.declares_permissions" \
   "ci-docker.yml" \
   'permissions:
   contents: read
-
-jobs:' \
-  'jobs:'
+' \
+  ''
 
 # ---------------------------------------------------------------------------
 # 6-8. Injection, in all three tainted shapes.

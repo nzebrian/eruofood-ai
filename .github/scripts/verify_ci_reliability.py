@@ -81,6 +81,24 @@ def load_workflows(root: pathlib.Path) -> dict[str, dict]:
     return wfs
 
 
+def logical_lines(body: str) -> list[str]:
+    """Join backslash continuations so a command that spans several lines is
+    judged as one command. Without this, `curl -sS --max-time 30 \\` and the
+    URL on the next line are two separate strings, and a rule that needs to see
+    both at once silently fails to match either."""
+    out, buf = [], ""
+    for raw in body.splitlines():
+        line = raw.rstrip()
+        if line.endswith("\\"):
+            buf += line[:-1] + " "
+            continue
+        out.append(buf + line)
+        buf = ""
+    if buf:
+        out.append(buf)
+    return out
+
+
 def all_run_blocks(wf: dict):
     """Yield (job_id, step_index, step_name, run_text) for every run: step."""
     for jid, job in (wf.get("jobs") or {}).items():
@@ -232,27 +250,47 @@ def main() -> int:
 
     dl = policy.get("download_governance") or {}
     dl_wrapper = pathlib.Path(dl.get("wrapper", "")).name
+
+    # M50 Phase 1: every workflow, not just the one that happened to have the
+    # incident. A probe confirmed a bare `curl https://...` added to
+    # security.yml was accepted by every validator while this was scoped to
+    # workflow-integrity.yml alone.
+    #
+    # Not every curl is a download. Health probes against a locally-booted
+    # stack fetch no artefact and have nothing to checksum, so they are
+    # exempted BY NAME — workflow plus a required substring — rather than by a
+    # blanket "curl is fine here" rule.
+    exempt = dl.get("non_download_curl_exemptions") or []
+    unbounded = []
+    for fname in sorted(workflows):
+        for jid, _i, sname, run in all_run_blocks(workflows[fname]):
+            for line in logical_lines(strip_comments(run)):
+                if not re.search(r"(?<![\w./-])curl\b", line):
+                    continue
+                if any(e.get("workflow") == fname and e.get("match", "") in line for e in exempt):
+                    continue
+                unbounded.append(f"{fname}:{jid} · {sname} · {line.strip()[:76]}")
+    if unbounded:
+        for u in unbounded:
+            rep.check("download.no_bare_curl", False, f"ungoverned curl — {u}")
+    else:
+        rep.check("download.no_bare_curl", True,
+                  f"no ungoverned curl in any of the {len(workflows)} workflows "
+                  f"({len(exempt)} named non-download exemption(s))")
+
     for wf_rel in dl.get("workflows_requiring_governed_download") or []:
         fname = pathlib.Path(wf_rel).name
         wf = workflows.get(fname)
         if wf is None:
             rep.check("download.workflow_present", False, f"{wf_rel} is named in policy but absent")
             continue
-        bare_curl, wrapped, checksums = [], 0, 0
+        wrapped, checksums = 0, 0
         for jid, _i, sname, run in all_run_blocks(wf):
-            body = strip_comments(run)
-            for line in body.splitlines():
-                if re.search(r"(?<![\w./-])curl\b", line):
-                    bare_curl.append(f"{fname}:{jid} · {sname} · {line.strip()[:80]}")
+            for line in strip_comments(run).splitlines():
                 if dl_wrapper and dl_wrapper in line:
                     wrapped += 1
                 if "sha256sum" in line and "--check" in line:
                     checksums += 1
-        if bare_curl:
-            for b in bare_curl:
-                rep.check("download.no_bare_curl", False, f"unbounded curl — {b}")
-        else:
-            rep.check("download.no_bare_curl", True, f"{fname}: no bare curl remains")
         if wrapped:
             rep.check("download.wrapped", True, f"{fname}: {wrapped} governed download(s)")
         else:
@@ -430,6 +468,203 @@ def main() -> int:
                       "run_control.sh does not provably propagate the control's exit code")
     else:
         rep.check("manifest.runner_propagates", False, "run_control.sh is missing")
+
+    # -------------------------------------------------------------------- J --
+    print("\nJ) No unexplained masking in any workflow")
+
+    mg = policy.get("masking_governance") or {}
+    exemptions = mg.get("exemptions") or []
+    deferred = mg.get("deferred_defects") or []
+
+    def _matches(entry, fname, jid, sname, construct):
+        if entry.get("workflow") != fname:
+            return False
+        if entry.get("construct") != construct:
+            return False
+        if "job" in entry:
+            return entry["job"] == jid
+        return entry.get("step") == sname
+
+    RUN_MASKS = ("|| true", "|| :", "|| echo", "set +e")
+    violations, used, used_deferred = [], set(), set()
+
+    for fname in sorted(workflows):
+        wf = workflows[fname]
+        for jid, job in (wf.get("jobs") or {}).items():
+            # Job-level `if: always()` — the aggregator case.
+            if "always()" in str(job.get("if", "")):
+                hit = ("if: always()", fname, jid, None)
+                ex = next((e for e in exemptions if _matches(e, fname, jid, None, "if: always()")), None)
+                if ex:
+                    used.add(id(ex))
+                else:
+                    violations.append(f"{fname}: JOB {jid} carries if: always() with no exemption")
+
+            for step in job.get("steps") or []:
+                sname = str(step.get("name", "<unnamed>"))
+                found = []
+                if "always()" in str(step.get("if", "")):
+                    found.append("if: always()")
+                if step.get("continue-on-error"):
+                    found.append("continue-on-error")
+                for line in logical_lines(strip_comments(str(step.get("run") or ""))):
+                    for m in RUN_MASKS:
+                        if m in line and m not in found:
+                            found.append(m)
+
+                for construct in found:
+                    ex = next((e for e in exemptions
+                               if _matches(e, fname, jid, sname, construct)), None)
+                    if ex:
+                        used.add(id(ex))
+                        continue
+                    df = next((d for d in deferred
+                               if _matches(d, fname, jid, sname, construct)), None)
+                    if df:
+                        used_deferred.add(id(df))
+                        continue
+                    violations.append(
+                        f"{fname}:{jid} · {sname} · unexplained {construct}")
+
+    if violations:
+        for v in violations:
+            rep.check("masking.workflows", False, v)
+    else:
+        rep.check("masking.workflows", True,
+                  f"{len(workflows)} workflows scanned; every masking construct is either "
+                  f"absent or covered by one of {len(exemptions)} named exemptions")
+
+    # A stale exemption is a policy that has stopped describing the repository.
+    stale = [f'{e.get("workflow")} · {e.get("step", e.get("job"))} · {e.get("construct")}'
+             for e in exemptions if id(e) not in used]
+    if stale:
+        for s in stale:
+            rep.check("masking.no_stale_exemption", False,
+                      f"exemption matches nothing in the repository: {s}")
+    else:
+        rep.check("masking.no_stale_exemption", True,
+                  f"all {len(exemptions)} exemptions correspond to a real construct")
+
+    # Every exemption must carry a reason. An exemption without one is a
+    # wildcard wearing a costume.
+    unreasoned = [f'{e.get("workflow")} · {e.get("step", e.get("job"))}'
+                  for e in exemptions if not str(e.get("reason", "")).strip()]
+    if unreasoned:
+        for u in unreasoned:
+            rep.check("masking.exemption_has_reason", False, f"exemption with no reason: {u}")
+    else:
+        rep.check("masking.exemption_has_reason", True,
+                  "every masking exemption states a written reason")
+
+    # Deferred defects are NOT exemptions. They are reported every run, by name,
+    # so they cannot quietly become the status quo.
+    for d in deferred:
+        if id(d) not in used_deferred:
+            rep.check("masking.deferred_defect_present", False,
+                      f"deferred defect no longer matches anything: "
+                      f'{d.get("workflow")} · {d.get("step")} — remove the record or restore it')
+        else:
+            print(f"  NOTE  DEFERRED DEFECT ({d.get('finding')}) — "
+                  f"{d.get('workflow')} · {d.get('step')} · {d.get('construct')}")
+            print(f"        {str(d.get('blocked_by',''))[:150]}")
+    if deferred:
+        rep.check("masking.deferred_defect_present", True,
+                  f"{len(deferred)} deferred defect(s) recorded, each still present and reported above")
+
+    # -------------------------------------------------------------------- K --
+    print("\nK) Non-npm network operations are bounded")
+
+    nets = {k: v for k, v in (policy.get("network_policies") or {}).items()
+            if not k.startswith("_")}
+
+    for eco, spec in nets.items():
+        mech = spec.get("mechanism")
+        detect = spec.get("detect")
+        detect_re = spec.get("detect_regex")
+        sites, unbounded = 0, []
+
+        for fname in sorted(workflows):
+            wf = workflows[fname]
+            for jid, job in (wf.get("jobs") or {}).items():
+                env = {}
+                env.update(wf.get("env") or {})
+                env.update(job.get("env") or {})
+                for i, step in enumerate(job.get("steps") or []):
+                    body = strip_comments(str(step.get("run") or ""))
+                    hit = (detect and detect in body) or (detect_re and re.search(detect_re, body))
+                    if not hit:
+                        continue
+                    sites += 1
+                    where = f"{fname}:{jid} step[{i}]"
+                    if mech == "job_env":
+                        for k, want in (spec.get("required_env") or {}).items():
+                            if k not in env:
+                                unbounded.append(f"{where} does not set {k}")
+                            elif str(env[k]) != str(want):
+                                unbounded.append(f"{where} sets {k}={env[k]}, policy requires {want}")
+                    elif mech == "step_timeout_minutes":
+                        cap = spec.get("required_step_timeout_minutes_max")
+                        got = step.get("timeout-minutes")
+                        if not isinstance(got, int) or got <= 0:
+                            unbounded.append(f"{where} has no step timeout-minutes")
+                        elif cap and got > cap:
+                            unbounded.append(f"{where} timeout-minutes {got} exceeds the {cap} cap")
+                    elif mech == "command_options":
+                        for opt in spec.get("required_options") or []:
+                            if opt not in body:
+                                unbounded.append(f"{where} missing {opt}")
+                    else:
+                        unbounded.append(f"{where}: policy names unknown mechanism {mech!r}")
+
+        if sites == 0:
+            rep.check(f"network.{eco}", False,
+                      "policy governs this operation but no call site was found — "
+                      "the detector has drifted or the policy is stale")
+        elif unbounded:
+            for u in unbounded:
+                rep.check(f"network.{eco}", False, f"unbounded — {u}")
+        else:
+            rep.check(f"network.{eco}", True,
+                      f"all {sites} call site(s) bounded via {mech}")
+
+    # -------------------------------------------------------------------- L --
+    print("\nL) Every workflow declares its concurrency behaviour")
+
+    cg = policy.get("concurrency_governance") or {}
+    cancel_exempt = {e["workflow"]: e.get("reason", "")
+                     for e in (cg.get("cancel_in_progress_exemptions") or [])}
+    missing_group, wrong_cancel = [], []
+
+    for fname in sorted(workflows):
+        conc = workflows[fname].get("concurrency")
+        if cg.get("group_required") and not (isinstance(conc, dict) and conc.get("group")):
+            missing_group.append(fname)
+            continue
+        if not isinstance(conc, dict):
+            continue
+        cancels = bool(conc.get("cancel-in-progress"))
+        if cancels:
+            if fname in cancel_exempt:
+                wrong_cancel.append(
+                    f"{fname} is recorded as a cancel-in-progress exemption but cancels anyway")
+        else:
+            if fname not in cancel_exempt:
+                wrong_cancel.append(
+                    f"{fname} sets cancel-in-progress: false with no recorded reason")
+
+    if missing_group:
+        for m in missing_group:
+            rep.check("concurrency.group", False, f"{m} declares no concurrency group")
+    else:
+        rep.check("concurrency.group", True,
+                  f"all {len(workflows)} workflows declare a concurrency group")
+    if wrong_cancel:
+        for w in wrong_cancel:
+            rep.check("concurrency.cancel_declared", False, w)
+    else:
+        rep.check("concurrency.cancel_declared", True,
+                  f"cancel-in-progress accounted for everywhere "
+                  f"({len(cancel_exempt)} justified exemption(s))")
 
     # -------------------------------------------------------------------------
     total_checks = len(rep.checks)
