@@ -73,7 +73,7 @@ jobs:
       npm_config_fetch_retry_maxtimeout: "20000"
       npm_config_fetch_timeout: "60000"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v4

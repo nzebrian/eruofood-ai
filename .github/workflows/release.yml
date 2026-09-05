@@ -69,7 +69,7 @@ jobs:
       REDIS_PORT: 6379
       CACHE_STORE: redis
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
@@ -117,7 +117,7 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: "22", cache: "npm", cache-dependency-path: apps/web/package-lock.json }
       - run: npm ci
@@ -133,7 +133,7 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
       - run: cp .env.example .env
@@ -154,7 +154,7 @@ jobs:
       run:
         working-directory: packages/api-contracts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - run: npx --yes @redocly/cli@1 lint openapi.yaml
@@ -180,7 +180,7 @@ jobs:
       npm_config_fetch_retry_maxtimeout: "20000"
       npm_config_fetch_timeout: "60000"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -219,7 +219,7 @@ jobs:
     # Images are only built once ALL quality/security gates pass.
     needs: [api, web, mobile, contract, security]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - name: Build API image
         uses: docker/build-push-action@v6
