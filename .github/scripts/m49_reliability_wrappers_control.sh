@@ -418,31 +418,79 @@ expect_osv() {
   if [[ -z "$problems" ]]; then ok "$label"; else bad "$label — ${problems}"; fi
 }
 
-expect_osv "1. a clean scan is PASS and exits 0" \
-  "$EXIT_PASS" "SECURITY AUDIT: PASS" 1 '0|Scanned file and found 100 packages\nNo issues found'
-expect_osv "2. a finding is VULNERABLE, and is asked exactly once" \
-  "$EXIT_VULNERABLE" "SECURITY AUDIT: VULNERABLE" 1 '1|GHSA-abcd-1234-wxyz in package foo'
+# A — a completed clean scan is the only thing that may be PASS.
+expect_osv "1. a completed clean scan is PASS" \
+  "$EXIT_PASS" "SECURITY AUDIT: PASS" 1 \
+  '0|Scanned /x/pubspec.lock file and found 100 packages\nNo issues found'
 
-# The one that matters most, and the one the first live run got wrong.
-# osv-scanner prints "Total 0 packages affected by 0 known vulnerabilities" on
-# EVERY run including failed ones, so a verdict pattern matching that phrase
-# turned a blocked endpoint into a manufactured security finding.
-expect_osv "3. a blocked OSV endpoint is UNAVAILABLE, not a manufactured finding" \
+# B — a completed scan carrying a real advisory identifier is VULNERABLE, once.
+expect_osv "2. a completed scan with an advisory id is VULNERABLE, asked once" \
+  "$EXIT_VULNERABLE" "SECURITY AUDIT: VULNERABLE" 1 \
+  '1|Scanned /x/pubspec.lock file and found 100 packages\nGHSA-abcd-1234-wxyz in package foo'
+
+# C — the blocked endpoint, printed exactly as osv-scanner prints it, summary
+# line and all. This is the case the first draft of the wrapper got wrong.
+expect_osv "3. a blocked OSV endpoint is UNAVAILABLE, never a manufactured finding" \
   "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" "" \
-  '127|Error during extraction: request failed: Post "https://api.osv.dev/v1/querybatch": Forbidden\nTotal 0 packages affected by 0 known vulnerabilities (0 Critical, 0 High).'
+  '127|Error during extraction: (extracting as vulnmatch/osvdev) max retries exceeded: request failed: Post "https://api.osv.dev/v1/querybatch": Forbidden\nTotal 0 packages affected by 0 known vulnerabilities (0 Critical, 0 High, 0 Medium, 0 Low, 0 Unknown) from 0 ecosystems.'
 
-expect_osv "4. zero findings over zero packages is UNAVAILABLE, never PASS" \
-  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 '0|Scanned file and found 0 packages'
-expect_osv "5. exit 128 (nothing scanned) is UNAVAILABLE" \
+# D — malformed output. Structurally wrong, so retrying cannot repair it, and a
+# zero exit does not make it readable.
+expect_osv "4. malformed output with a zero exit is UNAVAILABLE, never PASS" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 \
+  '0|{"results": [ TRUNCATED'
+
+# E — a non-zero failure carrying no advisory evidence at all.
+expect_osv "5. a panic on exit 1 is UNAVAILABLE, not a finding" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 \
+  '1|panic: runtime error: invalid memory address'
+
+# F, both directions. The SAME sentence — "Total 0 packages affected by 0 known
+# vulnerabilities" — decides differently depending on whether the run completed,
+# which is the whole correction: the phrase is not evidence, the completed scan
+# is.
+expect_osv "6. the zero-vulnerability summary IS PASS when the scan completed" \
+  "$EXIT_PASS" "SECURITY AUDIT: PASS" 1 \
+  '0|Scanned /x/pubspec.lock file and found 100 packages\nTotal 0 packages affected by 0 known vulnerabilities (0 Critical, 0 High).'
+expect_osv "7. the same summary is UNAVAILABLE when the run errored" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" "" \
+  '127|Error during extraction: request failed: Forbidden\nTotal 0 packages affected by 0 known vulnerabilities (0 Critical, 0 High).'
+
+# The summary line is usable as evidence in one direction only: a NON-ZERO
+# count. That is what makes it safe to read at all.
+expect_osv "8. a non-zero vulnerability count in the summary is VULNERABLE" \
+  "$EXIT_VULNERABLE" "SECURITY AUDIT: VULNERABLE" 1 \
+  '1|Scanned /x/pubspec.lock file and found 100 packages\nTotal 3 packages affected by 4 known vulnerabilities (1 Critical, 3 High).'
+
+# An error banner voids the run whatever the exit code claims — the composer
+# "No packages - skipping audit." trap, in another ecosystem.
+expect_osv "9. exit 0 alongside an error banner is refused, not read as clean" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 \
+  '0|Error during extraction: request failed: Forbidden'
+
+# A bare exit code is not evidence that anything was scanned.
+expect_osv "10. exit 0 with no output at all is UNAVAILABLE, never PASS" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 '0|'
+
+expect_osv "11. zero findings over zero packages is UNAVAILABLE, never PASS" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 \
+  '0|Scanned /x/pubspec.lock file and found 0 packages'
+expect_osv "12. exit 128 (nothing scanned) is UNAVAILABLE" \
   "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 1 '128|no packages found'
-expect_osv "6. an exhausted transient failure ends UNAVAILABLE, retried to the bound" \
+expect_osv "13. an exhausted transient failure ends UNAVAILABLE, retried to the bound" \
   "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" 3 '52|Connection reset by peer'
+
+# An unrecognised exit code can never be a verdict, even carrying advisory text:
+# findings arrive on exit 0 or 1, and both are handled above.
+expect_osv "14. an advisory id on an unrecognised exit code is UNAVAILABLE, not VULNERABLE" \
+  "$EXIT_UNAVAILABLE" "SECURITY AUDIT: UNAVAILABLE" "" \
+  '77|GHSA-abcd-1234-wxyz\nsomething nobody has seen before'
 
 out="$("$REPO_ROOT/$OSV_WRAPPER" --lockfile "$sandbox/definitely-absent.lock" 2>&1)"; code=$?
 if [[ $code -eq $EXIT_UNAVAILABLE ]] && grep -qF "UNAVAILABLE" <<<"$out"; then
-  ok "7. a missing lockfile is UNAVAILABLE, not a clean scan"
+  ok "15. a missing lockfile is UNAVAILABLE, not a clean scan"
 else
-  bad "7. a missing lockfile returned $code, expected $EXIT_UNAVAILABLE"
+  bad "15. a missing lockfile returned $code, expected $EXIT_UNAVAILABLE"
 fi
 
 # ---------------------------------------------------------------------------

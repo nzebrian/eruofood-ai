@@ -84,23 +84,40 @@ if [[ ! -f "$LOCKFILE" ]]; then
   exit "$EXIT_UNAVAILABLE"
 fi
 
-# Advisory IDENTIFIERS only — never prose.
+# ---- The three questions asked of every attempt, in this order --------------
 #
-# This first read `known vulnerabilit(y|ies)|...`, and the first live test
-# against a blocked OSV endpoint reported VULNERABLE for an outage. The reason
-# is worth keeping: osv-scanner prints a summary line on EVERY run, including
-# failed ones —
+# An exit code alone is not evidence. This wrapper first read the code and
+# decided, and that was wrong in three ways at once: exit 0 beside an error
+# banner became PASS, exit 0 with no output at all became PASS, and exit 1
+# carrying nothing but a panic became VULNERABLE. All three were verdicts
+# asserted about a scan that had not demonstrably happened, and two of them
+# pointed at green.
 #
-#     Total 0 packages affected by 0 known vulnerabilities ...
+# So a verdict now requires POSITIVE PROOF that the scan ran, and the proof is
+# checked before the code is trusted.
 #
-# — so a pattern matching the phrase matched the sentence that says there are
-# none. The failure was in the safe direction, but a gate that manufactures a
-# security finding out of a network error is still lying about what it saw.
+# COMPLETED — osv-scanner prints this line on every real run and on no failed
+# one. Without it there is no evidence any lockfile was read, so there is
+# nothing to have a verdict about.
+COMPLETED='Scanned .*(file|lockfile).* and found [0-9]+ packages'
+
+# ERRORED — any of these voids the run whatever the exit code says. A scan that
+# printed an error did not complete, and "it exited 0 anyway" is not a defence:
+# that is the composer `No packages - skipping audit.` trap in another
+# ecosystem, and composer_audit_resilient.sh has refused it since Phase 1.
+ERRORED='Error during extraction|max retries exceeded|request failed|panic:|failed to (open|read|parse)|permission denied|no such file or directory|unable to determine'
+
+# FOUND — a real finding. Advisory identifiers, or the summary line with a
+# NON-ZERO count parsed out of it.
 #
-# An advisory identifier cannot appear in a connection error, so the identifiers
-# are the pattern. osv-scanner's exit 1 already carries the normal finding path;
-# this only catches a finding arriving with an unexpected code.
-VERDICT='GHSA-[0-9a-zA-Z]{4}|CVE-[0-9]{4}-|OSV-[0-9]{4}-|PUB-[0-9]{4}-'
+# The count is the point. `Total 0 packages affected by 0 known vulnerabilities`
+# is printed on every run including failed ones, so matching the phrase matches
+# the sentence that says there are none — which is exactly how an earlier draft
+# of this file reported a blocked endpoint as VULNERABLE. Requiring `[1-9]`
+# makes the summary line usable as evidence instead of a trap.
+FOUND='GHSA-[0-9a-zA-Z]{4}|CVE-[0-9]{4}-|OSV-[0-9]{4}-|PUB-[0-9]{4}-|affected by [1-9][0-9]* known vulnerabilit'
+
+has() { grep -qiE "$1" <<<"$2"; }
 
 attempt=0
 last_code=0
@@ -117,23 +134,51 @@ while :; do
 
   printf '%s\n' "$output"
 
-  # ---- 0 is clean, unless it scanned nothing ------------------------------
+  # ---- An error banner voids the run, whatever the exit code claims -------
+  if has "$ERRORED" "$output"; then
+    say "SECURITY AUDIT: UNAVAILABLE — osv-scanner reported an error (exit ${code})."
+    say "  A run that printed an error did not complete, so it has no verdict to"
+    say "  give. Exiting 0 alongside an error banner does not make it clean."
+    exit "$EXIT_UNAVAILABLE"
+  fi
+
+  # ---- No proof the scan ran means no verdict ------------------------------
+  if [[ $code -eq 0 || $code -eq 1 ]] && ! has "$COMPLETED" "$output"; then
+    say "SECURITY AUDIT: UNAVAILABLE — nothing in the output shows a lockfile was scanned."
+    say "  Exit ${code} on its own is not evidence. Absent evidence is not clean"
+    say "  evidence, and it is not a finding either."
+    exit "$EXIT_UNAVAILABLE"
+  fi
+
+  # ---- 0: a completed scan with no finding is the only PASS ---------------
   if [[ $code -eq 0 ]]; then
-    if printf '%s' "$output" | grep -qiE 'found 0 packages|no packages'; then
+    if has 'found 0 packages|no packages' "$output"; then
       say "SECURITY AUDIT: UNAVAILABLE — the scanner found no packages in '$LOCKFILE'."
       say "  Zero findings over zero packages is not a clean audit; it is an audit"
       say "  that did not happen. Treated as a failure, deliberately."
       exit "$EXIT_UNAVAILABLE"
     fi
+    if has "$FOUND" "$output"; then
+      # Contradictory — osv-scanner exits 1 for findings. Report the finding,
+      # never the zero. Of the two ways to be wrong here, only one is safe.
+      say "SECURITY AUDIT: VULNERABLE — advisory content present despite a zero exit."
+      exit "$EXIT_VULNERABLE"
+    fi
     say "SECURITY AUDIT: PASS — no known vulnerabilities in '$LOCKFILE'."
     exit "$EXIT_PASS"
   fi
 
-  # ---- 1 is the one real verdict ------------------------------------------
+  # ---- 1: a verdict only when the finding is actually there ---------------
   if [[ $code -eq 1 ]]; then
-    say "SECURITY AUDIT: VULNERABLE — osv-scanner reported known vulnerabilities."
-    say "  This is a finding, not an outage. Fix or update the dependency."
-    exit "$EXIT_VULNERABLE"
+    if has "$FOUND" "$output"; then
+      say "SECURITY AUDIT: VULNERABLE — osv-scanner reported known vulnerabilities."
+      say "  This is a finding, not an outage. Fix or update the dependency."
+      exit "$EXIT_VULNERABLE"
+    fi
+    say "SECURITY AUDIT: UNAVAILABLE — exit 1 with no advisory identifier and no"
+    say "  non-zero vulnerability count. That is an unexplained failure, not a"
+    say "  finding, and calling it one would be inventing a security result."
+    exit "$EXIT_UNAVAILABLE"
   fi
 
   # ---- 128 means nothing was scanned --------------------------------------
@@ -142,14 +187,15 @@ while :; do
     exit "$EXIT_UNAVAILABLE"
   fi
 
-  # ---- everything else goes through the shared classifier ------------------
-  class="$(rl_classify "$output" "$code" "$VERDICT")"
+  # ---- everything else: transient or not, but never a verdict -------------
+  #
+  # The verdict argument is deliberately EMPTY. `rl_classify` skips the verdict
+  # check when it is, and an exit code this script does not recognise cannot be
+  # evidence of a vulnerability no matter what text accompanies it. Findings
+  # arrive on exit 0 or 1, both handled above.
+  class="$(rl_classify "$output" "$code" "")"
 
   case "$class" in
-    verdict)
-      say "SECURITY AUDIT: VULNERABLE — advisory content present in the scanner output."
-      exit "$EXIT_VULNERABLE"
-      ;;
     malformed)
       say "SECURITY AUDIT: UNAVAILABLE — the OSV response was malformed (exit ${code})."
       say "  Retrying cannot repair a structurally wrong exchange, so this fails now."
