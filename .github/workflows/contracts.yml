@@ -73,15 +73,26 @@ jobs:
       npm_config_fetch_retry_maxtimeout: "20000"
       npm_config_fetch_timeout: "60000"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        # M50-09. This was `npm install --no-audit --no-fund` against a package
+        # with no lockfile, so every run re-resolved `@redocly/cli: ^1.25.0` and
+        # `openapi-typescript: ^7.4.1` from the registry. The next two steps lint
+        # the spec and regenerate the TypeScript contract as a DRIFT CHECK behind
+        # a required context — so the generator could change between two runs of
+        # the same commit, and a drift failure would say nothing about the spec.
+        #
+        # `package-lock.json` is committed now, so `npm ci` installs exactly that
+        # tree and fails if it and package.json ever disagree. No `--no-audit`:
+        # there is nothing to suppress once the install is deterministic, and
+        # silencing an advisory notice is not something to do by default.
+        run: npm ci --no-fund
 
       - name: Lint OpenAPI specification
         run: npm run lint

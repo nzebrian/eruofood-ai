@@ -239,12 +239,20 @@
       "composer audit": {
         "wrapper": ".github/scripts/composer_audit_resilient.sh",
         "required_arguments": []
+      },
+      "osv-scanner": {
+        "wrapper": ".github/scripts/osv_scan_resilient.sh",
+        "required_arguments": [
+          "--lockfile"
+        ]
       }
     },
     "approved_wrappers": [
       ".github/scripts/npm_audit_resilient.sh",
-      ".github/scripts/composer_audit_resilient.sh"
-    ]
+      ".github/scripts/composer_audit_resilient.sh",
+      ".github/scripts/osv_scan_resilient.sh"
+    ],
+    "_m50_10": "osv-scanner joins npm audit and composer audit under the same three-verdict contract. `dart pub outdated` was rejected as the mechanism: it reports version currency, not advisories, and a dependency can be perfectly current and still carry a CVE."
   },
   "download_governance": {
     "_note": "Tool downloads inside a required check are an external dependency like any other. Before Phase 1 these were bare `curl -fsSL` with no timeout and no retry, inside a ten-minute job: a GitHub Releases blip reddened the required integrity context, and a SLOW one consumed the budget and cancelled every control after it.",
@@ -537,5 +545,173 @@
       "rationale": "apt has native retry and timeout options. Note the detector is a regex, not a substring: once the options are inserted, `apt-get install` is no longer contiguous text."
     },
     "_docker_deferred": "Docker registry pull/push bounds and the production Dockerfiles' own retry logic are M50 Phase 2. Phase 1 is forbidden to modify infra/**."
+  },
+  "action_pinning": {
+    "_note": "M50-01. Every external action was referenced by a mutable tag \u2014 62 of 62, none pinned. A tag is a pointer the action's owner can move, so `actions/checkout@v4` is a promise to run whatever that repository decides v4 means on the morning CI happens to run. Twenty of the sixty-two were third-party, and four of those sit in staging-deploy.yml, the one workflow holding a registry token and a kubeconfig. Pinning does not make a supply-chain compromise impossible; it makes it an event somebody has to commit rather than one that arrives on its own.",
+    "_refresh": "Dependabot's github-actions ecosystem is already configured for / on a weekly interval, and it understands SHA pins: it bumps the SHA and rewrites the trailing version comment. Pinning is therefore not a maintenance dead end \u2014 it is the same weekly pull request, carrying a SHA instead of nothing.",
+    "_comment_contract": "Every pinned reference carries a trailing `# <version>` so a human reading the diff can see what moved.",
+    "pinned_actions": {
+      "actions/checkout": {
+        "sha": "11d5960a326750d5838078e36cf38b85af677262",
+        "version": "v4.4.0"
+      },
+      "actions/setup-node": {
+        "sha": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+        "version": "v4.4.0"
+      },
+      "actions/setup-java": {
+        "sha": "cf277c60eb25467037889841efdb72551f06f6c3",
+        "version": "v4.9.1"
+      },
+      "actions/upload-artifact": {
+        "sha": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "version": "v4.6.2"
+      },
+      "actions/cache": {
+        "sha": "0057852bfaa89a56745cba8c7296529d2fc39830",
+        "version": "v4.3.0"
+      },
+      "shivammathur/setup-php": {
+        "sha": "f3e473d116dcccaddc5834248c87452386958240",
+        "version": "2.37.2"
+      },
+      "subosito/flutter-action": {
+        "sha": "1a449444c387b1966244ae4d4f8c696479add0b2",
+        "version": "v2.23.0"
+      },
+      "gitleaks/gitleaks-action": {
+        "sha": "ff98106e4c7b2bc287b24eaf42907196329070c7",
+        "version": "v2.3.9"
+      },
+      "docker/setup-buildx-action": {
+        "sha": "8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+        "version": "v3.12.0"
+      },
+      "docker/login-action": {
+        "sha": "c94ce9fb468520275223c153574b00df6fe4bcc9",
+        "version": "v3.7.0"
+      },
+      "docker/build-push-action": {
+        "sha": "10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+        "version": "v6.19.2"
+      }
+    }
+  },
+  "image_tag_policy": {
+    "_note": "M50-18(b). `minio/minio:latest` sat in docker-compose.yml, which both Docker certification gates load on every run \u2014 so an upstream MinIO release could turn a green certification red with no change to this repository. That is the same third-party-uptime coupling M48 removed from npm audit, arriving through a different door.",
+    "_why_not_digests_here": "Digest-pinning every base image is M50-18(a) and is deliberately NOT done here. MinIO never re-pushes a RELEASE.* tag and mailpit never re-pushes a vX.Y.Z tag, so a named release is already immutable in practice for these two, and a digest would add a refresh burden without adding a guarantee.",
+    "governed_files": [
+      "docker-compose.yml",
+      "docker-compose.ci.yml",
+      "docker-compose.override.yml",
+      "docker-compose.staging.yml",
+      "infra/docker/node/Dockerfile",
+      "infra/docker/php/Dockerfile"
+    ],
+    "forbidden_tag_suffixes": [
+      ":latest",
+      ":edge",
+      ":main",
+      ":master"
+    ],
+    "_forbidden_rationale": "A tag whose meaning is 'whatever is newest' cannot be reproduced, so a build that used it cannot be explained afterwards.",
+    "deferred": [
+      {
+        "finding": "M50-18(a)",
+        "subject": "digest-pinning the seven floating base-image tags",
+        "images": [
+          "node:22-alpine",
+          "nginx:1.27-alpine",
+          "php:8.4-fpm-alpine",
+          "pgvector/pgvector:pg16",
+          "redis:7",
+          "redis:7-alpine",
+          "postgres:16"
+        ],
+        "status": "DEFERRED \u2014 no verified refresh mechanism",
+        "reason": "The authorisation was explicit: digest-pin only if a maintainable refresh mechanism is established SAFELY, and do not force it otherwise. .github/dependabot.yml configures the docker ecosystem for /infra/docker/php only \u2014 not /infra/docker/node, and not the compose files at the repository root, which is where four of these seven live. Whether Dependabot's docker ecosystem would track compose services at `directory: \"/\"` could not be verified from the implementation environment, and a pinned digest nobody bumps is WORSE than a floating minor tag: the floating tag at least receives upstream security patches, while a stale digest silently freezes them. Pinning without a proven bump path would trade a small reproducibility problem for a real patch-latency one.",
+        "what_would_unblock_it": "Extend .github/dependabot.yml to /infra/docker/node and to the compose files, merge that alone, and observe one Dependabot cycle actually opening a digest bump. Then pin, with evidence.",
+        "not_deferred": "M50-18(b) \u2014 the two `:latest` references \u2014 is FIXED here, and is enforced by image_tag.no_mutable."
+      }
+    ]
+  },
+  "build_file_governance": {
+    "_note": "M50-02. Masking governance stopped at `.github/workflows/*.yml`, and that boundary is exactly why `npm ci || npm install` survived in the production web image for as long as it did. `npm ci` installs the locked tree and fails when the lock and package.json disagree; `npm install` resolves the ranges afresh and rewrites the lock. The fallback turned 'this lockfile is stale, stop' into 'ship whatever the registry has today', in an image staging-deploy.yml pushes and deploys \u2014 while the required Dependency audit gate went on auditing the lockfile the image might not have used.",
+    "governed_paths": [
+      "infra/docker/node/Dockerfile",
+      "infra/docker/php/Dockerfile"
+    ],
+    "forbidden_constructs": [
+      {
+        "pattern": "npm ci\\s*\\|\\|",
+        "reason": "an unlocked fallback behind a locked install"
+      },
+      {
+        "pattern": "npm install(?!.*--package-lock-only)",
+        "reason": "range-resolving install in an image build; use npm ci"
+      },
+      {
+        "pattern": "composer install.*\\|\\|\\s*true",
+        "reason": "a masked dependency install"
+      },
+      {
+        "pattern": "\\|\\|\\s*true",
+        "reason": "failure masking in a build file"
+      }
+    ],
+    "_exemptions_note": "There are none, and adding one should be hard: an image build has no equivalent of a report step whose failure cannot change a verdict.",
+    "exemptions": [
+      {
+        "file": "infra/docker/php/Dockerfile",
+        "construct": "\\|\\|\\s*true",
+        "line_contains": "addgroup -g ${GID} app",
+        "reason": "Create-if-absent, not failure masking. `addgroup` exits non-zero when the group already exists \u2014 which it does on any base image that ships a matching GID \u2014 and the next line depends on the group existing, not on this command having created it. A failure that actually matters still surfaces there."
+      },
+      {
+        "file": "infra/docker/php/Dockerfile",
+        "construct": "\\|\\|\\s*true",
+        "line_contains": "adduser -D -u ${UID} -G app app",
+        "reason": "Same create-if-absent case for the user. If the user genuinely could not be created, the `chown -R app:app` later in the same image fails and the build fails with it, so this masks nothing that is not caught downstream."
+      }
+    ]
+  },
+  "lockfile_governance": {
+    "_note": "M50-09. packages/api-contracts had no lockfile at all and installed with `npm install --no-audit`, so every run re-resolved `@redocly/cli: ^1.25.0` and `openapi-typescript: ^7.4.1` from the registry \u2014 behind a required context whose job is to detect DRIFT in generated types. The generator could change between two runs of the same commit, and the drift it reported would say nothing about the spec.",
+    "required_lockfiles": [
+      {
+        "directory": "apps/web",
+        "lockfile": "apps/web/package-lock.json",
+        "install_command": "npm ci",
+        "workflows": [
+          "ci-web.yml",
+          "release.yml",
+          "ga-release-certification.yml"
+        ]
+      },
+      {
+        "directory": "packages/api-contracts",
+        "lockfile": "packages/api-contracts/package-lock.json",
+        "install_command": "npm ci",
+        "workflows": [
+          "contracts.yml"
+        ]
+      },
+      {
+        "directory": "apps/api",
+        "lockfile": "apps/api/composer.lock",
+        "install_command": "composer install",
+        "workflows": []
+      },
+      {
+        "directory": "apps/mobile",
+        "lockfile": "apps/mobile/pubspec.lock",
+        "install_command": "flutter pub get",
+        "workflows": []
+      }
+    ],
+    "forbidden_install_commands": [
+      "npm install"
+    ],
+    "_forbidden_note": "In a workflow. `npm install --package-lock-only` is how a lockfile is generated locally and is not an install."
   }
 }

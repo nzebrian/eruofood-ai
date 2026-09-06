@@ -39,7 +39,13 @@ declare -a failures=()
 ok()  { printf '  %-68s ok\n' "${1:0:68}"; passed=$((passed + 1)); }
 bad() { printf '  %-68s FAILED\n' "${1:0:68}"; failed=$((failed + 1)); failures+=("$1"); }
 
-PROTECTED=(".github/workflows" ".github/scripts" "$POLICY")
+# M50 Phase 2: the governed surface now extends past `.github/**`, so the
+# integrity fingerprint does too. A mutation that escaped into the real
+# Dockerfiles or compose files would otherwise leave no trace here.
+PROTECTED=(".github/workflows" ".github/scripts" "$POLICY"
+           "infra/docker/node/Dockerfile" "infra/docker/php/Dockerfile"
+           "docker-compose.yml" "docker-compose.ci.yml" "docker-compose.override.yml"
+           "packages/api-contracts/package-lock.json")
 fingerprint() {
   local p
   for p in "${PROTECTED[@]}"; do
@@ -66,6 +72,26 @@ fixture() {
   cp -a "$REPO_ROOT/.github/workflows"   "$root/.github/"
   cp -a "$REPO_ROOT/.github/scripts"     "$root/.github/"
   cp -a "$REPO_ROOT/.github/governance"  "$root/.github/"
+
+  # M50 Phase 2 widened the validator past `.github/**`: it now reads the
+  # production Dockerfiles, the compose files and the governed lockfiles. A
+  # fixture missing those would fail sections N, O and P for a reason that has
+  # nothing to do with the property under test — and, worse, every control above
+  # would then "pass" on a fixture that was already failing, which is how a
+  # mutation suite quietly stops testing anything.
+  mkdir -p "$root/infra/docker" "$root/packages/api-contracts" "$root/apps/mobile"
+  cp -a "$REPO_ROOT/infra/docker/node" "$root/infra/docker/"
+  cp -a "$REPO_ROOT/infra/docker/php"  "$root/infra/docker/"
+  local f
+  for f in docker-compose.yml docker-compose.ci.yml docker-compose.override.yml docker-compose.staging.yml; do
+    [[ -f "$REPO_ROOT/$f" ]] && cp -a "$REPO_ROOT/$f" "$root/$f"
+  done
+  cp -a "$REPO_ROOT/packages/api-contracts/package-lock.json" "$root/packages/api-contracts/"
+  cp -a "$REPO_ROOT/apps/mobile/pubspec.lock"                 "$root/apps/mobile/"
+  mkdir -p "$root/apps/web"
+  cp -a "$REPO_ROOT/apps/web/package-lock.json" "$root/apps/web/"
+  mkdir -p "$root/apps/api"
+  cp -a "$REPO_ROOT/apps/api/composer.lock" "$root/apps/api/"
   echo "$root"
 }
 
@@ -146,15 +172,14 @@ control "1. timeout-minutes removed from a required check" "timeout.security.yml
 
 # 2 — zero is not a bound.
 r="$(fixture t2)"
+# Anchored on the job's own `timeout-minutes:` plus the `env:` that follows it,
+# which is unique to `dependency-audit` (secret-scan has `steps:` there). It
+# used to reach through the checkout line below; M50-01 pinned that line and the
+# anchor guard caught it immediately. Narrowed, not weakened — it still mutates
+# exactly the one timeout under test.
 mutate "$r/$WF/security.yml" "    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node" "    timeout-minutes: 0
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node"
+    env:" "    timeout-minutes: 0
+    env:"
 control "2. timeout-minutes set to zero" "timeout.security.yml:dependency-audit" "$r"
 
 # 3 — a non-integer bound.
@@ -426,23 +451,109 @@ mutate "$r/$WF/ga-docker-certification.yml" \
   "          docker compose exec -T api php artisan db:seed --force || echo \"seed optional\""
 control "38. the db:seed mask restored in the GA certification gate" "masking.workflows" "$r"
 
-# 39 — positive control. Without it, a validator that rejects everything would
+# ---- M50 Phase 2 -----------------------------------------------------------
+#
+# 39-48. Six findings, ten ways to break them. Each mutation reverses exactly
+# one thing Phase 2 fixed and requires the check that owns it to fail.
+
+# 39 — an action put back on a mutable tag. The whole point of M50-01: a tag is
+#      a pointer its owner can move, and `@v4` is a promise to run whatever that
+#      repository decides v4 means tomorrow.
+r="$(fixture t39)"
+mutate "$r/$WF/security.yml" \
+  "        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9" \
+  "        uses: gitleaks/gitleaks-action@v2"
+control "39. an external action reverted to a mutable tag" "pinning.no_mutable_action" "$r"
+
+# 40 — a pin that no longer matches the policy. A SHA nobody recorded is a SHA
+#      nobody reviewed.
+r="$(fixture t40)"
+mutate "$r/$WF/workflow-integrity.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: actions/checkout@0000000000000000000000000000000000000000 # v4.4.0"
+control "40. a pinned SHA that disagrees with the policy" "pinning.sha_matches_policy" "$r"
+
+# 41 — a new action introduced pinned but undeclared. Pinned is necessary and
+#      not sufficient: the policy is the list a human is expected to have read.
+r="$(fixture t41)"
+mutate "$r/$WF/ci-docker.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: some/unreviewed-action@1111111111111111111111111111111111111111 # v1.0.0"
+control "41. an action pinned but absent from policy" "pinning.policy_covers_all" "$r"
+
+# 42 — the version comment silently disagreeing with the pin, which is how a
+#      bump reads as routine in a diff while pointing somewhere else.
+r="$(fixture t42)"
+mutate "$r/$WF/ci-web.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v9.9.9"
+control "42. a pin whose version comment no longer matches policy" "pinning.version_comment" "$r"
+
+# 43 — `:latest` restored in the compose file both certification gates load.
+r="$(fixture t43)"
+mutate "$r/docker-compose.yml" \
+  "    image: minio/minio:RELEASE.2025-09-07T16-13-09Z" \
+  "    image: minio/minio:latest"
+control "43. :latest restored in a governed compose file" "image_tag.no_mutable" "$r"
+
+# 44 — the M50-02 fallback put back. This is the control that makes that fix
+#      stick: the production web image must not be able to resolve a dependency
+#      graph the required audit never saw.
+r="$(fixture t44)"
+mutate "$r/infra/docker/node/Dockerfile" \
+  "    npm ci" \
+  "    npm ci || npm install"
+control "44. the unlocked npm fallback restored in the production image" \
+  "build_file.no_unlocked_fallback" "$r"
+
+# 45 — a build-file exemption that stops describing the file. Same staleness
+#      rule the workflow masking exemptions are held to.
+r="$(fixture t45)"
+mutate "$r/infra/docker/php/Dockerfile" \
+  "RUN addgroup -g \${GID} app 2>/dev/null || true \\" \
+  "RUN addgroup -g \${GID} app \\"
+control "45. a build-file exemption matching nothing" "build_file.no_stale_exemption" "$r"
+
+# 46 — the api-contracts lockfile deleted, putting the package back to floating
+#      resolution behind a required drift check.
+r="$(fixture t46)"
+rm -f "$r/packages/api-contracts/package-lock.json"
+control "46. a governed lockfile deleted" "lockfile.present" "$r"
+
+# 47 — the contracts install reverted to `npm install`.
+r="$(fixture t47)"
+mutate "$r/$WF/contracts.yml" \
+  "        run: npm ci --no-fund" \
+  "        run: npm install --no-audit --no-fund"
+control "47. a governed package reverted to a range-resolving install" \
+  "lockfile.deterministic_install" "$r"
+
+# 48 — the Dart scan deleted. Section C can only catch an UNGOVERNED
+#      invocation, and nothing here names osv-scanner directly, so without this
+#      the step could be removed and every other check would still pass.
+r="$(fixture t48)"
+mutate "$r/$WF/security.yml" \
+  "        run: \${{ github.workspace }}/.github/scripts/osv_scan_resilient.sh --lockfile apps/mobile/pubspec.lock" \
+  "        run: echo skipped"
+control "48. the Dart advisory scan removed entirely" "audit.dart_covered" "$r"
+
+# 49 — positive control. Without it, a validator that rejects everything would
 #      make all the controls above pass while enforcing nothing.
 r="$(fixture t22)"
 if python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" >/dev/null 2>&1; then
-  ok "39. positive control: an unmutated fixture passes"
+  ok "49. positive control: an unmutated fixture passes"
 else
-  bad "39. positive control: an UNMUTATED fixture failed — every control above proves nothing"
+  bad "49. positive control: an UNMUTATED fixture failed — every control above proves nothing"
   python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" 2>&1 | grep -E "^  FAIL" | head -12 | sed 's/^/      /'
 fi
 
-# 40 — integrity.
+# 50 — integrity.
 echo
 after="$(fingerprint)"
 if [[ "$before" == "$after" ]]; then
-  ok "40. sha256 integrity: the real repository is unchanged"
+  ok "50. sha256 integrity: the real repository is unchanged"
 else
-  bad "40. THE REAL REPOSITORY CHANGED during this run"
+  bad "50. THE REAL REPOSITORY CHANGED during this run"
 fi
 echo
 echo "Protected-file fingerprint (after):  $after"

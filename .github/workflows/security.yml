@@ -30,11 +30,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -42,11 +42,17 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # M50-10. Pinned version + checksum, declared here so a bump is one
+      # reviewable pair rather than a version buried in a run: block. The digest
+      # is of the release asset itself, measured, not copied from a page.
+      OSV_SCANNER_VERSION: 2.5.1
+      OSV_SCANNER_SHA256: f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
       - name: npm audit (web)
@@ -83,7 +89,7 @@ jobs:
         run: ${{ github.workspace }}/.github/scripts/npm_audit_resilient.sh npm audit --audit-level=high
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.4"
           tools: composer:v2
@@ -121,3 +127,43 @@ jobs:
         # within a hard bound, and exits 3 for UNAVAILABLE — a failure, not a
         # pass. `--locked` stays here, where M45's mutation tests anchor on it.
         run: ${{ github.workspace }}/.github/scripts/composer_audit_resilient.sh composer audit --locked
+
+      # M50-10. npm and composer both fail this context on a HIGH advisory;
+      # Dart had nothing. `flutter pub get` resolves, `flutter analyze` lints and
+      # `flutter test` tests, and not one of them asks whether a package in
+      # pubspec.lock has a known vulnerability — so the mobile app shipped
+      # third-party code no gate had ever looked at while web and api were gated
+      # on every pull request. This closes that asymmetry rather than adding a
+      # new kind of check.
+      #
+      # `dart pub outdated` was rejected as the mechanism: it reports version
+      # currency, not advisories, and a dependency can be current and still
+      # carry a CVE. OSV-Scanner reads pubspec.lock natively and queries the
+      # same advisory database that backs GitHub's own Dart advisories.
+      #
+      # Downloaded through the governed wrapper and verified before it runs, for
+      # the reason Phase 1 bounded actionlint and shellcheck: an unbounded fetch
+      # of a third-party release either reddens this context for somebody else's
+      # outage or eats the job budget silently.
+      - name: Install osv-scanner (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          .github/scripts/bounded_download.sh \
+            --url "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" \
+            --output osv-scanner \
+            --sha256 "${OSV_SCANNER_SHA256}"
+
+          # Independent of the wrapper on purpose, exactly as the integrity job
+          # does it: the property survives any future change to the wrapper, and
+          # `verify_ci_reliability.py` can see the verification here.
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum --check --strict
+          chmod +x osv-scanner
+
+      - name: osv-scanner (mobile)
+        # Three verdicts, same contract as the two audits above: PASS 0,
+        # VULNERABLE 1, UNAVAILABLE 3. UNAVAILABLE is a failure — a scan that
+        # could not reach OSV has produced no evidence, and absent evidence is
+        # not clean evidence.
+        env:
+          OSV_SCANNER_BIN: ${{ github.workspace }}/osv-scanner
+        run: ${{ github.workspace }}/.github/scripts/osv_scan_resilient.sh --lockfile apps/mobile/pubspec.lock

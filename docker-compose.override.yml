@@ -53,7 +53,12 @@ services:
 
   # Local mail catcher — captures outbound email during development
   mailpit:
-    image: axllent/mailpit:latest
+    # M50-18(b). Development-only (this override never loads in CI or production),
+    # so the risk was low — but `:latest` is banned repository-wide rather than
+    # per-file, because an exception that has to be re-argued at each site is how
+    # one of them stays. `v1.31.1` is the release `:latest` already pointed at
+    # (both digest sha256:98b916bd3c8d61f7633a52d3ea2f58d00620cb01ca57ab59edde68c347a95365).
+    image: axllent/mailpit:v1.31.1
     ports:
       - "${MAILPIT_SMTP_PORT:-1025}:1025"
       - "${MAILPIT_UI_PORT:-8025}:8025"
