@@ -87,6 +87,7 @@ fixture() {
     [[ -f "$REPO_ROOT/$f" ]] && cp -a "$REPO_ROOT/$f" "$root/$f"
   done
   cp -a "$REPO_ROOT/packages/api-contracts/package-lock.json" "$root/packages/api-contracts/"
+  cp -a "$REPO_ROOT/packages/api-contracts/package.json"      "$root/packages/api-contracts/"
   cp -a "$REPO_ROOT/apps/mobile/pubspec.lock"                 "$root/apps/mobile/"
   mkdir -p "$root/apps/web"
   cp -a "$REPO_ROOT/apps/web/package-lock.json" "$root/apps/web/"
@@ -205,9 +206,23 @@ control "6. a new job added without a policy entry" "timeout.contracts.yml:smugg
 
 # 7 — an ungoverned npm audit reintroduced.
 r="$(fixture t7)"
+# Anchored on the apps/web site specifically. M50-09 added a second
+# `npm_audit_resilient.sh` invocation for packages/api-contracts, which made the
+# bare command line ambiguous — the fatal-anchor guard caught it on the first
+# run. The two `run:` lines are byte-identical, so the disambiguator is the step
+# that FOLLOWS: only the web site is followed by the api-contracts step. (The
+# api-contracts site is followed by `Setup PHP`, which is how 9 finds it.)
+#
+# It replaces the run line rather than adding a second `run:` key to the step:
+# duplicate keys in a YAML mapping resolve to the last one, so an injected key
+# would have been parsed away and the fixture would not have been broken at all.
 mutate "$r/$WF/security.yml" \
-  '        run: ${{ github.workspace }}/.github/scripts/npm_audit_resilient.sh npm audit --audit-level=high' \
-  '        run: npm audit --audit-level=high'
+  '        run: ${{ github.workspace }}/.github/scripts/npm_audit_resilient.sh npm audit --audit-level=high
+
+      - name: npm audit (api-contracts)' \
+  '        run: npm audit --audit-level=high
+
+      - name: npm audit (api-contracts)'
 control "7. an unwrapped npm audit reintroduced" "audit.governed" "$r"
 
 # 8 — an ungoverned composer audit reintroduced.
@@ -219,8 +234,16 @@ control "8. an unwrapped composer audit reintroduced" "audit.governed" "$r"
 
 # 9 — the threshold lowered while the wrapper stays in place: the quiet one.
 r="$(fixture t9)"
-mutate "$r/$WF/security.yml" "npm_audit_resilient.sh npm audit --audit-level=high" \
-                             "npm_audit_resilient.sh npm audit --audit-level=critical"
+# Narrowed for the same reason as 7: two sites now share the wrapper line, so
+# the threshold is mutated at the api-contracts site, identified by the step
+# that follows it.
+mutate "$r/$WF/security.yml" \
+  "npm_audit_resilient.sh npm audit --audit-level=high
+
+      - name: Setup PHP" \
+  "npm_audit_resilient.sh npm audit --audit-level=critical
+
+      - name: Setup PHP"
 control "9. the npm threshold lowered behind the wrapper" "audit.threshold" "$r"
 
 # 10 — an unbounded curl back in the required integrity job.
@@ -537,23 +560,86 @@ mutate "$r/$WF/security.yml" \
   "        run: echo skipped"
 control "48. the Dart advisory scan removed entirely" "audit.dart_covered" "$r"
 
-# 49 — positive control. Without it, a validator that rejects everything would
+# ---- M50-09 ----------------------------------------------------------------
+#
+# 49-53. The Redocly 2.x migration, and the five ways to undo it.
+
+# 49 — the api-contracts audit step deleted outright. `audit.governed` cannot
+#      catch this: it only finds UNGOVERNED invocations, and a deleted step has
+#      nothing to find. That is why the sites are listed positively.
+r="$(fixture t49)"
+mutate "$r/$WF/security.yml" \
+  "      - name: npm audit (api-contracts)
+        working-directory: packages/api-contracts" \
+  "      - name: npm audit (api-contracts) — REMOVED
+        working-directory: nowhere"
+control "49. the api-contracts audit site deleted" "audit.site_present" "$r"
+
+# 50 — the audit kept but unwrapped, losing the three-verdict contract: a
+#      registry outage would then read as a vulnerability, or worse, as clean.
+r="$(fixture t50)"
+mutate "$r/$WF/security.yml" \
+  "        run: \${{ github.workspace }}/.github/scripts/npm_audit_resilient.sh npm audit --audit-level=high
+
+      - name: Setup PHP" \
+  "        run: npm audit --audit-level=high
+
+      - name: Setup PHP"
+control "50. the api-contracts audit stripped of its wrapper" "audit.site_wrapped" "$r"
+
+# 51 — one npx pin left behind on the vulnerable major while the lockfile moves
+#      on. This is the exact shape of the next Dependabot Redocly bump, and the
+#      reason the check exists: Dependabot cannot see an npx invocation.
+r="$(fixture t51)"
+mutate "$r/$WF/release.yml" \
+  "      - run: npx --yes @redocly/cli@2.51.2 lint openapi.yaml" \
+  "      - run: npx --yes @redocly/cli@1 lint openapi.yaml"
+control "51. an npx Redocly pin left on the vulnerable major" \
+  "pinning.redocly_npx_matches_lock" "$r"
+
+# 52 — the package itself reverted to Redocly 1.x, which is what reintroduces
+#      the six HIGH advisories. The pins then disagree with the lockfile, so the
+#      revert cannot be quiet.
+r="$(fixture t52)"
+mutate "$r/packages/api-contracts/package-lock.json" \
+  '"node_modules/@redocly/cli": {
+      "version": "2.51.2",' \
+  '"node_modules/@redocly/cli": {
+      "version": "1.34.19",'
+control "52. the package reverted to a vulnerable Redocly 1.x" \
+  "pinning.redocly_npx_matches_lock" "$r"
+
+# 53 — the OTHER listed site deleted. `required_npm_audit_sites` names two, and
+#      49 only exercises one arm of it; a check that happened to hard-code
+#      packages/api-contracts would still pass 49. It also matters more than it
+#      looks: since M50-09 there are two npm audit steps, so removing apps/web
+#      leaves `audit.npm_step_present` in verify_dependency_audit_gate.py
+#      satisfied by the survivor. This is the check that owns the web site now.
+r="$(fixture t53)"
+mutate "$r/$WF/security.yml" \
+  "      - name: npm audit (web)
+        working-directory: apps/web" \
+  "      - name: npm audit (web) — REMOVED
+        working-directory: nowhere"
+control "53. the apps/web audit site deleted" "audit.site_present" "$r"
+
+# 54 — positive control. Without it, a validator that rejects everything would
 #      make all the controls above pass while enforcing nothing.
 r="$(fixture t22)"
 if python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" >/dev/null 2>&1; then
-  ok "49. positive control: an unmutated fixture passes"
+  ok "54. positive control: an unmutated fixture passes"
 else
-  bad "49. positive control: an UNMUTATED fixture failed — every control above proves nothing"
+  bad "54. positive control: an UNMUTATED fixture failed — every control above proves nothing"
   python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" 2>&1 | grep -E "^  FAIL" | head -12 | sed 's/^/      /'
 fi
 
-# 50 — integrity.
+# 55 — integrity.
 echo
 after="$(fingerprint)"
 if [[ "$before" == "$after" ]]; then
-  ok "50. sha256 integrity: the real repository is unchanged"
+  ok "55. sha256 integrity: the real repository is unchanged"
 else
-  bad "50. THE REAL REPOSITORY CHANGED during this run"
+  bad "55. THE REAL REPOSITORY CHANGED during this run"
 fi
 echo
 echo "Protected-file fingerprint (after):  $after"

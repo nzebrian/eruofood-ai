@@ -130,7 +130,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - run: npx --yes @redocly/cli@1 lint packages/api-contracts/openapi.yaml
+      # M50-09. Exact-pinned to the version the lockfile resolves; see the note
+      # in ga-docker-certification.yml. `@1` pulled a 260-package tree carrying
+      # six HIGH advisories into this gate on every run.
+      - run: npx --yes @redocly/cli@2.51.2 lint packages/api-contracts/openapi.yaml
 
   security-scan:
     name: Security · Secrets scan

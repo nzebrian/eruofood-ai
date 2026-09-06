@@ -88,6 +88,28 @@ jobs:
         # own multi-minute internal retry storm in favour of a hard bound.
         run: ${{ github.workspace }}/.github/scripts/npm_audit_resilient.sh npm audit --audit-level=high
 
+      - name: npm audit (api-contracts)
+        working-directory: packages/api-contracts
+        # M50-09, the second half. M50 Phase 2 gave this package a lockfile and
+        # `npm ci`, but deliberately did NOT add it here: the tree carried six
+        # HIGH and ten moderate advisories, and wiring it in would have turned a
+        # required context red on the day it landed. Every one of them traced to
+        # `@redocly/cli` 1.x — @faker-js/faker (RCE via helpers.fake), four
+        # fast-uri SSRF/host-confusion advisories reached through a peer ajv,
+        # undici, and the OpenTelemetry stack — none to `openapi-typescript`, and
+        # none to `@redocly/openapi-core`, which the two share.
+        #
+        # 2.51.2 bundles its dependencies: 260 packages became 35 and every
+        # advisory went with them. Verified before this step was added, not
+        # after: `npm audit` now exits 0 at EVERY severity, not merely at the
+        # `high` threshold.
+        #
+        # Same wrapper, same threshold as apps/web above. This is a third call
+        # site for an existing control, not a new mechanism — the three-verdict
+        # contract, the bounded retry and the UNAVAILABLE-is-a-failure rule all
+        # come from M48 unchanged.
+        run: ${{ github.workspace }}/.github/scripts/npm_audit_resilient.sh npm audit --audit-level=high
+
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
