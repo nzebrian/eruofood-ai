@@ -252,7 +252,26 @@
       ".github/scripts/composer_audit_resilient.sh",
       ".github/scripts/osv_scan_resilient.sh"
     ],
-    "_m50_10": "osv-scanner joins npm audit and composer audit under the same three-verdict contract. `dart pub outdated` was rejected as the mechanism: it reports version currency, not advisories, and a dependency can be perfectly current and still carry a CVE."
+    "_m50_10": "osv-scanner joins npm audit and composer audit under the same three-verdict contract. `dart pub outdated` was rejected as the mechanism: it reports version currency, not advisories, and a dependency can be perfectly current and still carry a CVE.",
+    "required_npm_audit_sites": [
+      {
+        "directory": "apps/web",
+        "workflow": "security.yml",
+        "wrapper": ".github/scripts/npm_audit_resilient.sh",
+        "arguments": [
+          "--audit-level=high"
+        ]
+      },
+      {
+        "directory": "packages/api-contracts",
+        "workflow": "security.yml",
+        "wrapper": ".github/scripts/npm_audit_resilient.sh",
+        "arguments": [
+          "--audit-level=high"
+        ]
+      }
+    ],
+    "_required_sites_note": "M50-09. `audit.governed` can only catch an UNGOVERNED invocation \u2014 it is silent if the step is deleted outright, because there is then nothing to find. Every lockfile this repository commits must be audited by SOMETHING, so the sites are listed positively and their absence is a failure. packages/api-contracts joined the list once @redocly/cli 2.51.2 cleared the 6 HIGH / 10 moderate advisories that 1.x carried; wiring it in before that would have reddened a required context."
   },
   "download_governance": {
     "_note": "Tool downloads inside a required check are an external dependency like any other. Before Phase 1 these were bare `curl -fsSL` with no timeout and no retry, inside a ten-minute job: a GitHub Releases blip reddened the required integrity context, and a SLOW one consumed the budget and cancelled every control after it.",
@@ -595,6 +614,17 @@
         "sha": "10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
         "version": "v6.19.2"
       }
+    },
+    "redocly_npx": {
+      "_note": "M50-09. Three workflows lint the spec with `npx --yes @redocly/cli@<version>` rather than the lockfile's binary, because those jobs do not install packages/api-contracts. They were on `@1` \u2014 a major range resolving at runtime to whatever npm served that morning, and 1.x pulls 260 packages including an RCE-class @faker-js/faker advisory into a tree no lockfile covers and no npm audit can see. Exact-pinning removes the drift; this check removes the divergence.",
+      "package": "@redocly/cli",
+      "must_match_lockfile": "packages/api-contracts/package-lock.json",
+      "_dependabot": "Dependabot does not read npx invocations, so it will bump the lockfile and leave these three strings behind. That is precisely what this check exists to catch: the next Dependabot Redocly PR fails until the three pins are moved with it.",
+      "workflows": [
+        "ga-docker-certification.yml",
+        "ga-release-certification.yml",
+        "release.yml"
+      ]
     }
   },
   "image_tag_policy": {

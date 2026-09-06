@@ -99,6 +99,18 @@ def logical_lines(body: str) -> list[str]:
     return out
 
 
+def _step_working_dir(wf: dict, job_id: str, step_name: str) -> str:
+    """The `working-directory` of one named step, or the empty string.
+
+    A step is identified by where it RUNS, not by what it is called: a name is
+    prose and can be edited without changing a single command.
+    """
+    for step in ((wf.get("jobs") or {}).get(job_id) or {}).get("steps") or []:
+        if str(step.get("name", "<unnamed>")) == step_name:
+            return str(step.get("working-directory", ""))
+    return ""
+
+
 def all_run_blocks(wf: dict):
     """Yield (job_id, step_index, step_name, run_text) for every run: step."""
     for jid, job in (wf.get("jobs") or {}).items():
@@ -904,6 +916,84 @@ def main() -> int:
               f"apps/mobile/pubspec.lock is scanned through {osv_wrapper} ({len(osv_sites)} site)"
               if osv_sites else
               f"NO governed Dart advisory scan: no step routes pubspec.lock through {osv_wrapper}")
+
+    # -------------------------------------------------------------------- Q --
+    print("\nQ) Every lockfile the repository commits is actually audited")
+
+    ag = policy.get("audit_governance") or {}
+    missing_site, unwrapped_site, weak_site = [], [], []
+
+    for site in ag.get("required_npm_audit_sites") or []:
+        wf_name = site["workflow"]
+        wrapper_base = pathlib.Path(site["wrapper"]).name
+        found = None
+        for jid, _i, sname, run in all_run_blocks(workflows.get(wf_name) or {}):
+            # The step is identified by its working-directory, not its name: a
+            # name is prose and can be edited without changing what runs.
+            if site["directory"] in _step_working_dir(workflows[wf_name], jid, sname):
+                found = (jid, sname, strip_comments(run))
+                break
+        if found is None:
+            missing_site.append(
+                f"{site['directory']} commits a lockfile but no step in {wf_name} audits it")
+            continue
+        jid, sname, body = found
+        if wrapper_base not in body:
+            unwrapped_site.append(f"{wf_name}:{jid} · {sname} · audit does not route through {wrapper_base}")
+            continue
+        for arg in site.get("arguments") or []:
+            if arg not in body:
+                weak_site.append(f"{wf_name}:{jid} · {sname} · missing {arg}")
+
+    for bad, cid, ok_msg in (
+        (missing_site, "audit.site_present",
+         f"all {len(ag.get('required_npm_audit_sites') or [])} committed npm lockfile(s) are audited"),
+        (unwrapped_site, "audit.site_wrapped",
+         "every required audit site routes through its approved wrapper"),
+        (weak_site, "audit.site_threshold",
+         "every required audit site still states its severity threshold"),
+    ):
+        if bad:
+            for b in bad:
+                rep.check(cid, False, b)
+        else:
+            rep.check(cid, True, ok_msg)
+
+    # The three npx Redocly invocations are not covered by the lockfile and not
+    # covered by Dependabot. Nothing stops them drifting apart from the package
+    # except this.
+    rnx = (policy.get("action_pinning") or {}).get("redocly_npx") or {}
+    if rnx:
+        # Read defensively. The reference version comes from a file this
+        # validator does not own, and if that file is missing or malformed this
+        # check must say so as ITS OWN failure — not raise out of main() and
+        # take the whole report with it. `lockfile.present` is the check that
+        # owns the file's existence and it runs above; a traceback here would
+        # abort before anything is printed, so the deletion would surface as a
+        # non-zero exit with no failing check named. Fail closed, and legibly.
+        lock_path = root / rnx["must_match_lockfile"]
+        want = ""
+        try:
+            lock = json.loads(lock_path.read_text())
+            want = str(lock["packages"][f"node_modules/{rnx['package']}"]["version"])
+        except (OSError, ValueError, KeyError) as exc:
+            rep.check("pinning.redocly_npx_matches_lock", False,
+                      f"cannot read {rnx['package']} version from "
+                      f"{rnx['must_match_lockfile']}: {type(exc).__name__}: {exc}")
+
+        if want:
+            drift = []
+            for wf_name in rnx.get("workflows") or []:
+                text = (root / ".github/workflows" / wf_name).read_text()
+                for m in re.finditer(rf"npx[^\n]*{re.escape(rnx['package'])}@([^\s]+)", text):
+                    if m.group(1) != want:
+                        drift.append(f"{wf_name}: pins {rnx['package']}@{m.group(1)}, lockfile resolves {want}")
+            if drift:
+                for d in drift:
+                    rep.check("pinning.redocly_npx_matches_lock", False, d)
+            else:
+                rep.check("pinning.redocly_npx_matches_lock", True,
+                          f"all {len(rnx['workflows'])} npx {rnx['package']} pin(s) match the lockfile's {want}")
 
     # -------------------------------------------------------------------------
     total_checks = len(rep.checks)

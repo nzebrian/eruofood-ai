@@ -150,7 +150,19 @@ jobs:
         run: docker compose exec -T api php scripts/redis_validation.php
 
       - name: OpenAPI validation (redocly)
-        run: npx --yes @redocly/cli@1 lint packages/api-contracts/openapi.yaml
+        # M50-09. Pinned to the EXACT version packages/api-contracts resolves,
+        # not a major range. `@1` let this gate lint with whatever 1.x npm served
+        # that morning — and 1.x drags in 260 packages including an RCE-class
+        # advisory in @faker-js/faker, downloaded fresh on every run into a tree
+        # no lockfile covers and no `npm audit` can see. 2.51.2 bundles its
+        # dependencies: 35 packages, zero advisories.
+        #
+        # The exact pin is deliberate and has a cost worth stating: Dependabot
+        # does not read npx invocations, so this string cannot drift on its own
+        # but also will not be bumped for you. `pinning.redocly_npx_matches_lock`
+        # in verify_ci_reliability.py fails if it ever disagrees with the
+        # lockfile, which is what stops the two from silently diverging.
+        run: npx --yes @redocly/cli@2.51.2 lint packages/api-contracts/openapi.yaml
 
       - name: Public API smoke tests
         run: |

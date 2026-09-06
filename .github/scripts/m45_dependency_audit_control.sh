@@ -206,16 +206,31 @@ echo "-- Part A: the validator discriminates -----------------------------------
 # The npm anchors below match the audit command alone, not the whole `run:`
 # line. M48 put a bounded-retry wrapper in front of it, and an anchor that
 # included the wrapper would have to be rewritten every time the invocation
-# changes — which is how a mutation test quietly stops mutating anything. The
-# command is what these tests are about, and it appears exactly once in the
-# file, so `mutate` still refuses anything ambiguous.
+# changes — which is how a mutation test quietly stops mutating anything.
+#
+# M50-09 added a SECOND npm audit site (packages/api-contracts) to the same
+# job, so the bare command is no longer unique and `mutate`'s ambiguity guard
+# refused it — loudly, on the first run, which is exactly what that guard is
+# for. The anchors are narrowed by the step that FOLLOWS each site: only the
+# apps/web site is followed by `- name: npm audit (api-contracts)`, and only
+# the api-contracts site is followed by `- name: Setup PHP`. The command being
+# mutated is unchanged; the disambiguator is context, not a weaker match.
+#
+# apps/web is the right site for 1, 6 and 9: `verify_dependency_audit_gate.py`
+# resolves the npm step as the FIRST one matching `npm audit`, which is that
+# one. The api-contracts site is owned by `audit.site_*` in
+# `verify_ci_reliability.py`, proved by M49 mutations 49-50.
 # ---------------------------------------------------------------------------
 
 control "1. '|| true' restored on npm audit (the pre-M45 state)" \
   "audit.npm_unmasked" \
   ".github/workflows/security.yml" \
-  'npm audit --audit-level=high' \
-  'npm audit --audit-level=high || true'
+  'npm audit --audit-level=high
+
+      - name: npm audit (api-contracts)' \
+  'npm audit --audit-level=high || true
+
+      - name: npm audit (api-contracts)'
 
 control "2. '|| true' restored on composer audit" \
   "audit.composer_unmasked" \
@@ -265,15 +280,32 @@ control "5. a forced 'exit 0' appended to the composer audit" \
 control "6. npm threshold quietly lowered to --audit-level=critical" \
   "audit.npm_threshold_preserved" \
   ".github/workflows/security.yml" \
-  'npm audit --audit-level=high' \
-  'npm audit --audit-level=critical'
+  'npm audit --audit-level=high
+
+      - name: npm audit (api-contracts)' \
+  'npm audit --audit-level=critical
+
+      - name: npm audit (api-contracts)'
 
 # ---------------------------------------------------------------------------
 # 7-8. The commands themselves removed.
 # ---------------------------------------------------------------------------
 
+# "Entirely" is two sites since M50-09, and it has to be both: with either one
+# left standing `audit.npm_step_present` is satisfied — correctly, since the
+# property it owns is that SOME step audits npm, and the per-site requirement
+# belongs to `audit.site_present` (M49 mutations 49 and 53). The api-contracts
+# site is neutered first, which makes the bare command unique again, so the
+# second edit needs no context. `control` applies triples in order.
 control "7. the npm audit command removed entirely" \
   "audit.npm_step_present" \
+  ".github/workflows/security.yml" \
+  'npm audit --audit-level=high
+
+      - name: Setup PHP' \
+  'echo "skipped"
+
+      - name: Setup PHP' \
   ".github/workflows/security.yml" \
   'npm audit --audit-level=high' \
   'echo "skipped"'
