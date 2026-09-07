@@ -703,11 +703,35 @@ def main() -> int:
     # -------------------------------------------------------------------- M --
     print("\nM) Every external action is pinned to an immutable commit")
 
+    # M50-F1. The SHA used to be written twice: on the `uses:` line and again in
+    # this policy, and the two were compared. That comparison bought less than it
+    # looked. An attacker who can edit a workflow can edit the policy in the same
+    # commit, so it was never independent review — what it actually guaranteed was
+    # that a bump is ALL-OR-NOTHING, with no site left behind on an old commit.
+    #
+    # It also made the policy a file Dependabot had to edit and cannot. Five
+    # Actions security updates rewrote every `uses:` line correctly and then failed
+    # a required check against this copy. A pin nobody can bump is worse than a
+    # floating tag, which is the reasoning `image_tag_policy` already used to defer
+    # digest-pinning; it applies here too.
+    #
+    # So the SHA is now derived from the workflows and checked for INTERNAL
+    # consistency, which preserves the all-or-nothing property exactly. What the
+    # policy still owns is the part that does not move when a version does: which
+    # publishers may run code here. Dependabot bumps versions, never identities.
     ap = policy.get("action_pinning") or {}
-    pinned = ap.get("pinned_actions") or {}
+    allowed = ap.get("allowed_actions") or {}
     uses_re = re.compile(r'^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#\s*(.*))?$')
-    mutable, unlisted, wrong_sha, no_comment = [], [], [], []
-    seen_actions, external_count, local_count = set(), 0, 0
+    # Deliberately loose about the leading `v` — `shivammathur/setup-php` pins
+    # `2.37.2` with no prefix — and deliberately strict about everything else, so
+    # `# see PR 123` or an empty comment cannot pass as a version.
+    version_re = re.compile(r"^v?\d+(\.\d+){0,2}(-[0-9A-Za-z.]+)?$")
+
+    mutable, unlisted, no_comment = [], [], []
+    external_count, local_count = 0, 0
+    # action -> {sha -> [sites]} and action -> {comment -> [sites]}
+    sha_by_action: dict[str, dict[str, list[str]]] = {}
+    ver_by_action: dict[str, dict[str, list[str]]] = {}
 
     for fname in sorted(workflows):
         wf_text = (root / ".github/workflows" / fname).read_text()
@@ -716,35 +740,56 @@ def main() -> int:
             if not m:
                 continue
             ref, comment = m.group(1), (m.group(2) or "").strip()
+            site = f"{fname}:{i}"
             if ref.startswith("./"):
                 # A local reusable-workflow call has no SHA to pin; it is this
                 # repository's own file at this repository's own commit.
                 local_count += 1
                 if not (root / ref.removeprefix("./")).exists():
                     rep.check("pinning.local_call_resolves", False,
-                              f"{fname}:{i} calls {ref}, which does not exist")
+                              f"{site} calls {ref}, which does not exist")
                 continue
             external_count += 1
             if "@" not in ref:
-                mutable.append(f"{fname}:{i} {ref} (no ref at all)")
+                mutable.append(f"{site} {ref} (no ref at all)")
                 continue
             action, at = ref.rsplit("@", 1)
-            seen_actions.add(action)
             if not re.fullmatch(r"[0-9a-f]{40}", at):
-                mutable.append(f"{fname}:{i} {ref} — mutable ref, expected a 40-character commit SHA")
+                # Covers a tag (@v4), a branch (@main), a short SHA (@3d3c42e),
+                # uppercase, and 40 characters of something that is not hex.
+                mutable.append(f"{site} {ref} — mutable ref, expected a 40-character commit SHA")
                 continue
-            if action not in pinned:
-                unlisted.append(f"{fname}:{i} {action} is pinned but absent from action_pinning policy")
+            if action not in allowed:
+                unlisted.append(f"{site} {action} is pinned but absent from allowed_actions")
                 continue
-            if pinned[action]["sha"] != at:
-                wrong_sha.append(f"{fname}:{i} {action}@{at} does not match policy {pinned[action]['sha']}")
-            if comment != pinned[action]["version"]:
-                no_comment.append(f"{fname}:{i} {action} comment is {comment!r}, policy says {pinned[action]['version']!r}")
+            sha_by_action.setdefault(action, {}).setdefault(at, []).append(site)
+            if not comment:
+                no_comment.append(f"{site} {action} is pinned with no version comment")
+            elif not version_re.fullmatch(comment):
+                no_comment.append(f"{site} {action} comment {comment!r} is not a version")
+            else:
+                ver_by_action.setdefault(action, {}).setdefault(comment, []).append(site)
+
+    # A bump has to move every site or none. One reference left behind on the old
+    # commit is the failure this check exists for, and it is the same one the
+    # policy comparison used to catch.
+    split_sha = []
+    for action, shas in sorted(sha_by_action.items()):
+        if len(shas) > 1:
+            detail = "; ".join(f"{s[:12]}… at {', '.join(sites)}" for s, sites in sorted(shas.items()))
+            split_sha.append(f"{action} is pinned to {len(shas)} different SHAs — {detail}")
+
+    split_ver = []
+    for action, vers in sorted(ver_by_action.items()):
+        if len(vers) > 1:
+            detail = "; ".join(f"{v} at {', '.join(sites)}" for v, sites in sorted(vers.items()))
+            split_ver.append(f"{action} carries {len(vers)} different version comments — {detail}")
+    no_comment.extend(split_ver)
 
     for bad, cid, label in ((mutable, "pinning.no_mutable_action", "mutable action reference"),
                             (unlisted, "pinning.policy_covers_all", "action missing from policy"),
-                            (wrong_sha, "pinning.sha_matches_policy", "SHA disagrees with policy"),
-                            (no_comment, "pinning.version_comment", "version comment drift")):
+                            (split_sha, "pinning.sha_consistent", "inconsistent pin"),
+                            (no_comment, "pinning.version_comment", "version comment defect")):
         if bad:
             for b in bad:
                 rep.check(cid, False, f"{label} — {b}")
@@ -753,21 +798,41 @@ def main() -> int:
                 "pinning.no_mutable_action":
                     f"all {external_count} external action reference(s) are pinned to a 40-character commit SHA",
                 "pinning.policy_covers_all":
-                    f"all {len(seen_actions)} distinct external action(s) are declared in policy",
-                "pinning.sha_matches_policy":
-                    "every pinned SHA matches the one the policy records",
+                    f"all {len(sha_by_action)} distinct external action(s) are declared in policy",
+                "pinning.sha_consistent":
+                    f"each of the {len(sha_by_action)} action(s) resolves to one SHA everywhere it is used",
                 "pinning.version_comment":
-                    "every pin carries the policy's version comment, so a bump is readable in the diff",
+                    "every pin carries one well-formed version comment, consistent across its uses",
             }[cid]
             rep.check(cid, True, ok)
 
-    # A policy entry for an action nobody uses is a policy that has stopped
+    # M50-F1. Every check above is a statement about the references the scan
+    # FOUND, and every one of them passes vacuously against a scan that found
+    # nothing: "all 0 external action reference(s) are pinned" is a green tick for
+    # work that never happened. That is the M44 staging-deploy defect and the M37
+    # bypass check, and it is the one way a governance change could silently stop
+    # covering the workflows. So count the candidates a second time, textually and
+    # independently of the parser, and require the two to agree.
+    textual = 0
+    for fname in sorted(workflows):
+        for raw in (root / ".github/workflows" / fname).read_text().splitlines():
+            stripped = raw.strip()
+            if stripped.startswith("#"):
+                continue
+            if re.match(r'^-?\s*uses:\s*\S', stripped) and not re.search(r'uses:\s*\./', stripped):
+                textual += 1
+    rep.check("pinning.scanner_complete", textual == external_count,
+              f"the structured scan visited all {textual} external `uses:` line(s) a textual count can see"
+              if textual == external_count else
+              f"scanner blind spot — {textual} external `uses:` line(s) present, {external_count} visited")
+
+    # An allowlist entry no action uses is an allowlist that has stopped
     # describing the repository — the same staleness rule the masking exemptions
     # are held to.
-    stale_pins = sorted(set(pinned) - seen_actions)
+    stale_pins = sorted(set(allowed) - set(sha_by_action))
     rep.check("pinning.no_stale_entry", not stale_pins,
               "every policy entry corresponds to an action actually used"
-              if not stale_pins else f"policy pins actions nothing uses: {', '.join(stale_pins)}")
+              if not stale_pins else f"policy allows actions nothing uses: {', '.join(stale_pins)}")
 
     # -------------------------------------------------------------------- N --
     print("\nN) No mutable image tag in a governed Docker or Compose file")

@@ -488,13 +488,16 @@ mutate "$r/$WF/security.yml" \
   "        uses: gitleaks/gitleaks-action@v2"
 control "39. an external action reverted to a mutable tag" "pinning.no_mutable_action" "$r"
 
-# 40 — a pin that no longer matches the policy. A SHA nobody recorded is a SHA
-#      nobody reviewed.
+# 40 — a partial bump: one site moved to a different commit while the other
+#      twenty-six stayed. This is the property `sha_matches_policy` actually
+#      bought, and M50-F1 kept it — the mutation is unchanged, only the check
+#      that owns it is renamed, because the SHA is now derived from the
+#      workflows rather than duplicated into the policy Dependabot cannot edit.
 r="$(fixture t40)"
 mutate "$r/$WF/workflow-integrity.yml" \
   "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
   "      - uses: actions/checkout@0000000000000000000000000000000000000000 # v4.4.0"
-control "40. a pinned SHA that disagrees with the policy" "pinning.sha_matches_policy" "$r"
+control "40. one site left behind on a different SHA" "pinning.sha_consistent" "$r"
 
 # 41 — a new action introduced pinned but undeclared. Pinned is necessary and
 #      not sufficient: the policy is the list a human is expected to have read.
@@ -504,13 +507,13 @@ mutate "$r/$WF/ci-docker.yml" \
   "      - uses: some/unreviewed-action@1111111111111111111111111111111111111111 # v1.0.0"
 control "41. an action pinned but absent from policy" "pinning.policy_covers_all" "$r"
 
-# 42 — the version comment silently disagreeing with the pin, which is how a
-#      bump reads as routine in a diff while pointing somewhere else.
+# 42 — the version comment silently disagreeing with its siblings, which is how
+#      a bump reads as routine in a diff while pointing somewhere else.
 r="$(fixture t42)"
 mutate "$r/$WF/ci-web.yml" \
   "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
   "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v9.9.9"
-control "42. a pin whose version comment no longer matches policy" "pinning.version_comment" "$r"
+control "42. a version comment that disagrees with its siblings" "pinning.version_comment" "$r"
 
 # 43 — `:latest` restored in the compose file both certification gates load.
 r="$(fixture t43)"
@@ -623,23 +626,151 @@ mutate "$r/$WF/security.yml" \
         working-directory: nowhere"
 control "53. the apps/web audit site deleted" "audit.site_present" "$r"
 
-# 54 — positive control. Without it, a validator that rejects everything would
+# 54-60. M50-F1. The SHA moved from the policy into the workflows, so the checks
+#        that used to compare two copies now derive one. Deriving is only safe if
+#        the derivation cannot be starved: every control below breaks a way the
+#        old comparison would have caught something, and 60 breaks the scan itself.
+
+# 54 — an abbreviated SHA. Git resolves it, humans read it as a pin, and it is
+#      not one: a short prefix can later become ambiguous, and it is not what
+#      Actions resolves. 40 characters or nothing.
+r="$(fixture t54)"
+mutate "$r/$WF/ci-mobile.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: actions/checkout@11d5960 # v4.4.0"
+control "54. an abbreviated SHA accepted as a pin" "pinning.no_mutable_action" "$r"
+
+# 55 — forty characters that are not hex. Length alone is not the property; a
+#      check that only counted would take this.
+r="$(fixture t55)"
+mutate "$r/$WF/ci-mobile.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: actions/checkout@ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ # v4.4.0"
+control "55. a 40-character non-hex ref" "pinning.no_mutable_action" "$r"
+
+# 56 — the version comment removed. The SHA is still immutable, so nothing is
+#      insecure; what is lost is the only thing that makes a bump readable in a
+#      diff, and with it the sibling agreement that replaces the policy copy.
+r="$(fixture t56)"
+mutate "$r/$WF/contracts.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+control "56. a pin with no version comment at all" "pinning.version_comment" "$r"
+
+# 57 — a comment that is prose rather than a version. Presence is not the
+#      property either.
+r="$(fixture t57)"
+mutate "$r/$WF/contracts.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # see PR 123"
+control "57. a version comment that is not a version" "pinning.version_comment" "$r"
+
+# 58 — governance coverage removed. Deleting your own entry must not be a way to
+#      stop being checked; the action is still in use, so the allowlist is now
+#      the thing that is wrong.
+r="$(fixture t58)"
+python3 - "$r/$POLICY" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["action_pinning"]["allowed_actions"].pop("gitleaks/gitleaks-action")
+open(p, "w").write(json.dumps(d, indent=2) + "\n")
+PY
+control "58. an in-use action deleted from the allowlist" "pinning.policy_covers_all" "$r"
+
+# 59 — a NEW external action ARRIVES, correctly pinned and correctly commented,
+#      as an added step rather than a substitution. Under a derived model this is
+#      the arrival that matters: everything about it is well-formed, and the only
+#      thing wrong with it is that nobody reviewed the publisher.
+r="$(fixture t59)"
+mutate "$r/$WF/ci-web.yml" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0" \
+  "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: attacker/helpful-action@2222222222222222222222222222222222222222 # v1.0.0"
+control "59. a new, well-formed, unreviewed action added" "pinning.policy_covers_all" "$r"
+
+# 60 — the scan itself blinded. Every check in section M is a statement about the
+#      references the parser FOUND, so all of them pass vacuously against a parser
+#      that finds none: "all 0 external action reference(s) are pinned" is a green
+#      tick for work that never happened — M44's staging deploy and M37's bypass
+#      check, reappearing inside the pinning control.
+#
+#      This one runs the FIXTURE'S OWN validator, because the thing under test is
+#      the validator rather than the data. A mutable action is injected at the
+#      same time, so a scanner that still worked would fail on that instead and
+#      the control would not be provable either way.
+r="$(fixture t60)"
+mutate "$r/$WF/security.yml" \
+  "        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9" \
+  "        uses: gitleaks/gitleaks-action@v2"
+mutate "$r/$VALIDATOR" \
+  "    uses_re = re.compile(r'^\\s*(?:-\\s*)?uses:\\s*([^\\s#]+)\\s*(?:#\\s*(.*))?\$')" \
+  "    uses_re = re.compile(r'^ZZ_NEVER_MATCHES\$')"
+if out="$(python3 "$r/$VALIDATOR" --repo-root "$r" --json "$r/result.json" 2>&1)"; then
+  bad "60. a blinded scanner reported the workflows clean"
+  printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+elif python3 -c '
+import json,sys
+ids=[f["id"] for f in json.load(open(sys.argv[1])).get("failures",[])]
+raise SystemExit(0 if "pinning.scanner_complete" in ids else 1)' "$r/result.json"; then
+  ok "60. a blinded scanner is caught by its own completeness check"
+else
+  got="$(python3 -c 'import json,sys;print(",".join(f["id"] for f in json.load(open(sys.argv[1])).get("failures",[]))[:120])' "$r/result.json" 2>/dev/null)"
+  bad "60. blinded scanner failed on ${got:-<none>} not pinning.scanner_complete"
+fi
+
+# 61 — THE POINT OF M50-F1, as a positive control. A Dependabot Actions bump
+#      rewrites every `uses:` line for one action — SHA and trailing comment
+#      together — and touches nothing else. Before F1 that produced 54 failures
+#      against the policy's duplicate copy and blocked five security updates. It
+#      must now pass with no human editing any governance file.
+#
+#      This is the exact bump from PR #26: actions/checkout v4.4.0 -> v7.0.1.
+r="$(fixture t61)"
+if ! python3 - "$r/$WF" <<'PY'
+import pathlib, sys
+old = "11d5960a326750d5838078e36cf38b85af677262 # v4.4.0"
+new = "3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
+n = 0
+for f in sorted(pathlib.Path(sys.argv[1]).glob("*.yml")):
+    t = f.read_text()
+    if old in t:
+        n += t.count(old)
+        f.write_text(t.replace(old, new))
+# actions/setup-node also pins a v4.4.0; anchoring on the SHA AND the comment
+# together is what keeps this bump to actions/checkout, exactly as Dependabot
+# scopes it. A count that drifts means the anchor no longer describes the
+# repository, and this fixture must break loudly rather than test less.
+if n != 27:
+    sys.stderr.write(f"expected 27 checkout sites, rewrote {n}\n")
+    raise SystemExit(9)
+PY
+then
+  bad "61. Dependabot bump fixture could not be built"
+elif python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" >/dev/null 2>&1; then
+  ok "61. a Dependabot Actions bump passes with no governance edit"
+else
+  bad "61. a legitimate Dependabot Actions bump STILL fails — F1 is not fixed"
+  python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" 2>&1 | grep -E "^  FAIL" | head -8 | sed 's/^/      /'
+fi
+
+# 62 — positive control. Without it, a validator that rejects everything would
 #      make all the controls above pass while enforcing nothing.
 r="$(fixture t22)"
 if python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" >/dev/null 2>&1; then
-  ok "54. positive control: an unmutated fixture passes"
+  ok "62. positive control: an unmutated fixture passes"
 else
-  bad "54. positive control: an UNMUTATED fixture failed — every control above proves nothing"
+  bad "62. positive control: an UNMUTATED fixture failed — every control above proves nothing"
   python3 "$REPO_ROOT/$VALIDATOR" --repo-root "$r" 2>&1 | grep -E "^  FAIL" | head -12 | sed 's/^/      /'
 fi
 
-# 55 — integrity.
+# 63 — integrity.
 echo
 after="$(fingerprint)"
 if [[ "$before" == "$after" ]]; then
-  ok "55. sha256 integrity: the real repository is unchanged"
+  ok "63. sha256 integrity: the real repository is unchanged"
 else
-  bad "55. THE REAL REPOSITORY CHANGED during this run"
+  bad "63. THE REAL REPOSITORY CHANGED during this run"
 fi
 echo
 echo "Protected-file fingerprint (after):  $after"
