@@ -216,6 +216,25 @@ def check_advisory(root: str, f: Findings) -> None:
         if role not in found:
             f.add(code, f"no step runs the {role} ({CRITICAL[role]})")
 
+    # M50-05 N-4b. Asserted separately rather than as another CRITICAL role,
+    # because it lives in the SAME step as the generic fetch — a second role
+    # pointing at one step would report every masking finding on it twice.
+    #
+    # This exists because a deleted fetch is invisible to the validator: with no
+    # evidence file the required-check invariant reports EXTERNAL, which is a
+    # legitimate outcome and therefore an excellent hiding place. `audit.governed`
+    # had the same shape in M50-09 — it could only see invocations that were
+    # still there. So the call site is named positively here.
+    collector = found.get("fetch")
+
+    if collector is not None and 'fetch ruleset_detail "rulesets/' not in run_text(collector):
+        f.add(
+            "ADVISORY_RULESET_DETAIL_MISSING",
+            "the evidence collector no longer fetches GET /rulesets/{id}; "
+            "`GET /rulesets` carries no `rules`, so required-status-check "
+            "equality would silently degrade to EXTERNAL forever",
+        )
+
     for role, step in found.items():
         text = run_text(step)
         label = str(step.get("name", role))

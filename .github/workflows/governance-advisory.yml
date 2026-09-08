@@ -200,6 +200,27 @@ jobs:
           }
 
           fetch rulesets "rulesets" "${EVIDENCE}/rulesets.json" 'type == "array"'
+
+          # M50-05 N-4b. A SECOND ruleset call, to a different endpoint, because
+          # the list above cannot answer the question:
+          #
+          #   GET /rulesets       -> target, enforcement.  NO `rules`.
+          #   GET /rulesets/{id}  -> additionally `rules`, and only there do the
+          #                          required status-check contexts appear.
+          #
+          # So until now nothing could compare what `required-checks.json`
+          # declares against what GitHub actually enforces, and the drift that
+          # M50-05 found by hand — `Mobile Certification` declared but not
+          # enforced — was invisible to every control in the repository.
+          #
+          # The id is pinned deliberately. If the ruleset is ever recreated the
+          # id changes, this returns 404, `fetch` records it as `unavailable`,
+          # no evidence file is written, and the check goes EXTERNAL rather than
+          # silently comparing against nothing. The `has("rules")` shape demand
+          # is the same idea one level down: a 200 that does not carry `rules`
+          # is not evidence, and must not be promoted as if it were.
+          fetch ruleset_detail "rulesets/21203909" "${EVIDENCE}/ruleset-detail.json" 'type == "object" and has("rules")'
+
           fetch codeowners_errors "codeowners/errors" "${EVIDENCE}/codeowners-errors.json" 'type == "object"'
 
           # No token, header or URL credential is ever written here — only the
@@ -219,6 +240,15 @@ jobs:
 
           if [ -f "${EVIDENCE}/rulesets.json" ]; then
             args+=(--rulesets="${EVIDENCE}/rulesets.json")
+          fi
+
+          # N-4b. Passed only when the fetch above promoted a verified-good
+          # payload. Absent file means the validator is invoked without the flag
+          # and the required-check invariant reports EXTERNAL / ADMIN REQUIRED —
+          # never a PASS computed from `required-checks.json` alone, which would
+          # be this repository grading itself against its own file.
+          if [ -f "${EVIDENCE}/ruleset-detail.json" ]; then
+            args+=(--ruleset-detail="${EVIDENCE}/ruleset-detail.json")
           fi
 
           if [ -f "${EVIDENCE}/codeowners-errors.json" ]; then
