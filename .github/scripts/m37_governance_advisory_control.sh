@@ -182,6 +182,10 @@ control 'the evidence fetch is removed' \
     'ADVISORY_FETCH_MISSING' \
     "py_sub '$ADVISORY_REL' 'https://api.github.com/repos/\${GITHUB_REPOSITORY}/\${path}' 'https://example.invalid/nothing'"
 
+control 'the ruleset-detail fetch is removed (N-4b evidence source)' \
+    'ADVISORY_RULESET_DETAIL_MISSING' \
+    "py_sub '$ADVISORY_REL' 'fetch ruleset_detail \"rulesets/21203909\"' 'fetch ruleset_detail_disabled \"nothing/0\"'"
+
 control 'the validator invocation is removed' \
     'ADVISORY_VALIDATOR_MISSING' \
     "py_sub '$ADVISORY_REL' 'php scripts/verify_repository_governance.php \"\${args[@]}\"' 'true \"\${args[@]}\"'"

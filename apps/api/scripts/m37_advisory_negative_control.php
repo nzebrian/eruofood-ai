@@ -783,6 +783,190 @@ if (outcomeOf("  PASS something else\n", $bypassCheck) === 'ABSENT') {
     bad('false-positive control · the outcome matcher invented an outcome');
 }
 
+// =============================================================================
+// N-4b) required-check equality — declared vs what GitHub actually enforces
+//
+// M50-05 found `Mobile Certification` declared in required-checks.json and NOT
+// enforced on the live ruleset, and no control in the repository could see it:
+// `GET /rulesets` carries no `rules`, so the contexts were never in evidence.
+// The detail endpoint is now fetched, and these are the ways it can lie.
+//
+// The declared set is read from the real artifact rather than restated here. A
+// fixture carrying its own copy of the nine contexts would keep passing after
+// somebody edited required-checks.json, which is the drift this exists to catch.
+// =============================================================================
+
+heading('N-4b) required status checks — exact set equality with live GitHub');
+
+$rcCheck = 'required status checks match the declared set exactly';
+
+$declaredDoc = json_decode((string) file_get_contents($repoRoot.'/.github/governance/required-checks.json'), true);
+$declaredContexts = array_map(
+    static fn (array $r): string => (string) $r['context'],
+    $declaredDoc['required'] ?? [],
+);
+
+if (count($declaredContexts) < 2) {
+    bad('N-4b fixtures · required-checks.json yielded fewer than 2 contexts — fixtures would prove nothing');
+}
+
+/** A realistic GET /rulesets/{id} payload carrying the given contexts. */
+$rulesetDetail = static function (array $contexts, string $enforcement = 'active', bool $withRules = true, bool $withRscRule = true): array {
+    $detail = [
+        'id' => 21203909,
+        'name' => 'main branch protection (sole owner)',
+        'target' => 'branch',
+        'enforcement' => $enforcement,
+        'conditions' => ['ref_name' => ['include' => ['~DEFAULT_BRANCH'], 'exclude' => []]],
+    ];
+
+    if (! $withRules) {
+        return $detail;
+    }
+
+    $rules = [['type' => 'deletion'], ['type' => 'non_fast_forward']];
+
+    if ($withRscRule) {
+        $rules[] = [
+            'type' => 'required_status_checks',
+            'parameters' => [
+                'strict_required_status_checks_policy' => true,
+                'required_status_checks' => array_map(
+                    static fn ($c): array => is_array($c) ? $c : ['context' => $c],
+                    $contexts,
+                ),
+            ],
+        ];
+    }
+
+    $detail['rules'] = $rules;
+
+    return $detail;
+};
+
+$runDetail = static function (array $detail) use ($workdir, $validator, $rcCheck): string {
+    $path = $workdir.'/rsdetail-'.substr(md5(serialize($detail).random_int(0, PHP_INT_MAX)), 0, 10).'.json';
+    writeJson($path, $detail);
+    $result = runProcess(sprintf('php %s --ruleset-detail=%s', escapeshellarg($validator), escapeshellarg($path)));
+
+    return outcomeOf($result['output'], $rcCheck);
+};
+
+$missingOne = $declaredContexts;
+array_pop($missingOne);
+
+$rcCases = [
+    // The positive control comes first: without it every FAIL below could be
+    // produced by a check that simply always fails.
+    ['positive control · declared and live sets identical', $rulesetDetail($declaredContexts), 'PASS'],
+
+    // A. missing required check — the exact M50-05 drift, reproduced.
+    ['A · a declared context is NOT enforced live', $rulesetDetail($missingOne), 'FAIL'],
+
+    // B. unexpected live context — drift in the other direction.
+    ['B · an undeclared context IS enforced live', $rulesetDetail([...$declaredContexts, 'Surprise · Undeclared Gate']), 'FAIL'],
+
+    // C. duplicates make count and set size disagree.
+    ['C · a live context appears twice', $rulesetDetail([...$declaredContexts, $declaredContexts[0]]), 'FAIL'],
+
+    // D. malformed structure, three shapes of it.
+    ['D1 · a live entry has no `context` key', $rulesetDetail([...$declaredContexts, ['ctx' => 'wrong-key']]), 'FAIL'],
+    ['D2 · a live context is not a string', $rulesetDetail([...$declaredContexts, ['context' => 42]]), 'FAIL'],
+    ['D3 · a live context is empty', $rulesetDetail([...$declaredContexts, ['context' => '   ']]), 'FAIL'],
+
+    // The ruleset is real but enforces nothing.
+    ['E1 · the ruleset carries no required_status_checks rule', $rulesetDetail([], 'active', true, false), 'FAIL'],
+    ['E2 · the ruleset is not active', $rulesetDetail($declaredContexts, 'evaluate'), 'FAIL'],
+
+    // Evidence arrived and does not answer. Never PASS, never FAIL.
+    ['E3 · `rules` absent from an otherwise valid payload', $rulesetDetail([], 'active', false), 'EXTERNAL'],
+    ['E4 · the payload describes a TAG ruleset, not branch', ['id' => 1, 'name' => 'tags', 'target' => 'tag', 'enforcement' => 'active', 'rules' => []], 'EXTERNAL'],
+];
+
+foreach ($rcCases as [$description, $detail, $expected]) {
+    $actual = $runDetail($detail);
+
+    if ($actual === $expected) {
+        ok("{$description} → {$expected}");
+    } else {
+        bad("{$description} → expected {$expected}, got {$actual}");
+    }
+}
+
+// E. the endpoint could not be read at all. This is the one that matters most:
+//    with no live evidence the validator must NOT fall back to
+//    required-checks.json and grade this repository against its own file.
+$result = runProcess(sprintf('php %s', escapeshellarg($validator)));
+
+if (outcomeOf($result['output'], $rcCheck) === 'EXTERNAL') {
+    ok('E · no ruleset-detail evidence supplied → EXTERNAL / ADMIN REQUIRED, never PASS');
+} else {
+    bad('E · absent ruleset detail did not report EXTERNAL — the invariant is claiming more than it proved');
+}
+
+// Unreadable and malformed files are the same class: evidence that cannot be
+// trusted must stop the run, not degrade quietly into a verdict.
+foreach ([
+    ['a path that does not exist', '/nonexistent/ruleset-detail.json', null],
+    ['a GitHub API error envelope', null, ['message' => 'Resource not accessible by integration', 'status' => '403']],
+    ['a list where an object belongs', null, [['id' => 1]]],
+] as [$label, $fixedPath, $payload]) {
+    $path = $fixedPath;
+
+    if ($path === null) {
+        $path = $workdir.'/rsdetail-bad-'.substr(md5($label), 0, 8).'.json';
+        writeJson($path, $payload);
+    }
+
+    $result = runProcess(sprintf('php %s --ruleset-detail=%s', escapeshellarg($validator), escapeshellarg($path)));
+    $outcome = outcomeOf($result['output'], $rcCheck);
+
+    if ($outcome !== 'PASS') {
+        ok("E · {$label} → not a PASS ({$outcome})");
+    } else {
+        bad("E · {$label} → reported PASS on unusable evidence");
+    }
+}
+
+// Completeness: GitHub aggregates required checks across every active branch
+// ruleset, so one detail payload cannot speak for two.
+$twoActive = [
+    ['id' => 21203909, 'name' => 'main branch protection (sole owner)', 'target' => 'branch', 'enforcement' => 'active'],
+    ['id' => 99999999, 'name' => 'second branch ruleset', 'target' => 'branch', 'enforcement' => 'active'],
+];
+$listPath = $workdir.'/rslist-two-active.json';
+$detailPath = $workdir.'/rsdetail-two-active.json';
+writeJson($listPath, $twoActive);
+writeJson($detailPath, $rulesetDetail($declaredContexts));
+$result = runProcess(sprintf(
+    'php %s --rulesets=%s --ruleset-detail=%s',
+    escapeshellarg($validator),
+    escapeshellarg($listPath),
+    escapeshellarg($detailPath),
+));
+
+if (outcomeOf($result['output'], $rcCheck) === 'EXTERNAL') {
+    ok('E5 · two active branch rulesets → EXTERNAL, one payload cannot prove the aggregate');
+} else {
+    bad('E5 · two active branch rulesets did not force EXTERNAL — the set may be incomplete');
+}
+
+// And the wrong ruleset fetched entirely.
+$listPath = $workdir.'/rslist-other-id.json';
+writeJson($listPath, [['id' => 55555555, 'name' => 'main branch protection', 'target' => 'branch', 'enforcement' => 'active']]);
+$result = runProcess(sprintf(
+    'php %s --rulesets=%s --ruleset-detail=%s',
+    escapeshellarg($validator),
+    escapeshellarg($listPath),
+    escapeshellarg($detailPath),
+));
+
+if (outcomeOf($result['output'], $rcCheck) === 'EXTERNAL') {
+    ok('E6 · detail payload is a different ruleset than the live one → EXTERNAL');
+} else {
+    bad('E6 · a mismatched ruleset id was accepted as the answer');
+}
+
 // -- Integrity ----------------------------------------------------------------
 
 $fingerprintAfter = m37_fingerprint($repoRoot);

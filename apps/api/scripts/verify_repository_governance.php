@@ -144,6 +144,7 @@ $repoRoot = dirname(__DIR__, 3);
 // construction: this script has no way to reach GitHub, so it has no way to
 // change anything there. Whoever runs `gh api` decides what it sees.
 $rulesetsFile = null;
+$rulesetDetailFile = null;
 $codeownerErrorsFile = null;
 $mode = 'default';
 $jsonPath = null;
@@ -160,7 +161,8 @@ function invocationError(string $message, ?string $jsonPath = null): never
 {
     fprintf(STDERR, "ERROR  %s\n", $message);
     fprintf(STDERR, "       usage: verify_repository_governance.php [--mode=default|advisory|strict]\n");
-    fprintf(STDERR, "              [--rulesets=<path>] [--codeowners-errors=<path>]\n");
+    fprintf(STDERR, "              [--rulesets=<path>] [--ruleset-detail=<path>]\n");
+    fprintf(STDERR, "              [--codeowners-errors=<path>]\n");
     fprintf(STDERR, "              [--repo-root=<path>] [--json=<path>]\n");
 
     if ($jsonPath !== null) {
@@ -205,6 +207,23 @@ foreach ($argList as $arg) {
 
         if ($rulesetsFile === '') {
             invocationError('--rulesets= was given an empty path', $jsonPath);
+        }
+
+        continue;
+    }
+
+    // M50-05 N-4b. A SECOND ruleset flag, and the reason it has to be second is
+    // the whole finding: `GET /rulesets` returns `target` and `enforcement` and
+    // no `rules` at all, so the list this validator already consumed could never
+    // answer which status checks GitHub actually requires. That answer lives
+    // only in `GET /rulesets/{id}`. Two endpoints, two pieces of evidence, two
+    // flags — collapsing them would mean one missing payload silently degrading
+    // the other's checks.
+    if (str_starts_with($arg, '--ruleset-detail=')) {
+        $rulesetDetailFile = substr($arg, strlen('--ruleset-detail='));
+
+        if ($rulesetDetailFile === '') {
+            invocationError('--ruleset-detail= was given an empty path', $jsonPath);
         }
 
         continue;
@@ -1535,10 +1554,203 @@ if ($rulesetsFile !== null) {
     $liveRulesets = readEvidence('--rulesets', $rulesetsFile, 'list');
 }
 
+// M50-05 N-4b. `GET /rulesets/{id}` returns a single object carrying `rules`.
+// A list here would be the wrong endpoint's payload, so the shape demand is the
+// opposite of the one above and is doing real work, not decoration.
+$liveRulesetDetail = null;
+
+if ($rulesetDetailFile !== null) {
+    $liveRulesetDetail = readEvidence('--ruleset-detail', $rulesetDetailFile, 'map');
+}
+
+/**
+ * The N-4b invariant: what this repository DECLARES it requires, and what
+ * GitHub is ACTUALLY enforcing, must be the same set.
+ *
+ * Returns `null` — EXTERNAL / ADMIN REQUIRED — whenever nobody could look. That
+ * is the single most important property here. `.github/governance/required-checks.json`
+ * records nine contexts, and a control that fell back to that list when GitHub
+ * did not answer would be grading GitHub against a file this repository wrote:
+ * a green tick proving only that we can read our own JSON. The declared set is
+ * one side of the comparison and is never evidence for the other.
+ *
+ * Everything is compared as a SET. Ordering is not asserted because GitHub does
+ * not treat required checks as a sequence, and asserting it would produce
+ * failures that mean nothing. Count is not asserted either: "9" is today's
+ * answer, not the property. `declared == live` stays correct after the tenth
+ * check is added, and a hard-coded number would not.
+ *
+ * @return callable():array{bool|null, string}|null
+ */
+$requiredChecksInvariant = null;
+
+if ($liveRulesetDetail !== null) {
+    $requiredChecksInvariant = static function () use ($liveRulesetDetail, $liveRulesets, $governanceDir): array {
+        // --- is this detail payload the WHOLE live answer? ----------------
+        // The collector fetches one ruleset by id. GitHub allows several branch
+        // rulesets to apply to the same ref and aggregates their required
+        // checks, so a second active branch ruleset would add contexts this
+        // payload never mentions — and the comparison below would then be
+        // exact about an incomplete set, which is the worst kind of green.
+        //
+        // The list evidence already collected answers "how many are there".
+        // More than one, or a list that does not contain the ruleset actually
+        // fetched, means nobody can claim completeness: EXTERNAL, not PASS.
+        if (is_array($liveRulesets)) {
+            $activeBranch = array_values(array_filter(
+                $liveRulesets,
+                static fn ($rs): bool => is_array($rs)
+                    && ($rs['target'] ?? null) === 'branch'
+                    && ($rs['enforcement'] ?? null) === 'active',
+            ));
+
+            if (count($activeBranch) !== 1) {
+                return [null, sprintf(
+                    '%d active branch ruleset(s) exist; required checks aggregate across them, so one detail payload cannot answer this',
+                    count($activeBranch),
+                )];
+            }
+
+            $listedId = $activeBranch[0]['id'] ?? null;
+            $detailId = $liveRulesetDetail['id'] ?? null;
+
+            if ($listedId !== null && $detailId !== null && $listedId !== $detailId) {
+                return [null, sprintf(
+                    'detail payload is ruleset #%s but the only active branch ruleset is #%s — the wrong one was fetched',
+                    (string) $detailId,
+                    (string) $listedId,
+                )];
+            }
+        }
+
+        // --- the live side -----------------------------------------------
+        $enforcement = $liveRulesetDetail['enforcement'] ?? null;
+        $target = $liveRulesetDetail['target'] ?? null;
+
+        if ($target !== 'branch') {
+            return [null, sprintf(
+                'the supplied ruleset detail targets %s, not branch — it cannot answer what main requires',
+                is_string($target) ? "`{$target}`" : 'nothing recognisable',
+            )];
+        }
+
+        // A ruleset that is not active enforces nothing, so this is answered
+        // and answered badly: every declared context is unenforced.
+        if ($enforcement !== 'active') {
+            return [false, sprintf(
+                'ruleset "%s" is enforcement=%s — required checks are not being enforced at all',
+                (string) ($liveRulesetDetail['name'] ?? 'unnamed'),
+                is_string($enforcement) ? $enforcement : 'absent',
+            )];
+        }
+
+        $rules = $liveRulesetDetail['rules'] ?? null;
+
+        if (! is_array($rules) || ! array_is_list($rules)) {
+            return [null, '`rules` is absent or not a list — this payload does not answer which checks are required'];
+        }
+
+        $liveRaw = null;
+
+        foreach ($rules as $rule) {
+            if (is_array($rule) && ($rule['type'] ?? null) === 'required_status_checks') {
+                $liveRaw = $rule['parameters']['required_status_checks'] ?? null;
+
+                break;
+            }
+        }
+
+        // The rules array arrived and carries no required_status_checks rule.
+        // That is answered: GitHub requires nothing.
+        if ($liveRaw === null) {
+            return [false, 'the active branch ruleset carries no required_status_checks rule — GitHub requires no status check at all'];
+        }
+
+        if (! is_array($liveRaw) || ! array_is_list($liveRaw)) {
+            return [null, 'required_status_checks parameters are not a list — unusable evidence'];
+        }
+
+        $live = [];
+
+        foreach ($liveRaw as $i => $entry) {
+            if (! is_array($entry) || ! array_key_exists('context', $entry)) {
+                return [false, sprintf('live required check #%d is malformed (no `context` key)', $i)];
+            }
+
+            $ctx = $entry['context'];
+
+            if (! is_string($ctx) || trim($ctx) === '') {
+                return [false, sprintf('live required check #%d has a malformed context (%s)', $i, get_debug_type($ctx))];
+            }
+
+            $live[] = $ctx;
+        }
+
+        // --- the declared side -------------------------------------------
+        $declaredDoc = readJson($governanceDir.'/required-checks.json');
+        $declaredList = $declaredDoc['required'] ?? null;
+
+        if (! is_array($declaredList) || ! array_is_list($declaredList)) {
+            return [false, 'required-checks.json has no `required` list — the declared side of the invariant is malformed'];
+        }
+
+        $declared = [];
+
+        foreach ($declaredList as $i => $entry) {
+            $ctx = is_array($entry) ? ($entry['context'] ?? null) : null;
+
+            if (! is_string($ctx) || trim($ctx) === '') {
+                return [false, sprintf('declared required check #%d is malformed (no usable `context`)', $i)];
+            }
+
+            $declared[] = $ctx;
+        }
+
+        // --- duplicates, on either side ----------------------------------
+        // A duplicate is not harmless noise: it makes `count()` disagree with
+        // the set size, so any control that compared counts would report a
+        // difference that is not there, or miss one that is.
+        foreach ([['live', $live], ['declared', $declared]] as [$side, $list]) {
+            $dupes = array_keys(array_filter(array_count_values($list), static fn (int $n): bool => $n > 1));
+
+            if ($dupes !== []) {
+                return [false, sprintf('%s required checks contain duplicates: %s', $side, implode(', ', $dupes))];
+            }
+        }
+
+        // --- exact set equality ------------------------------------------
+        $missing = array_values(array_diff($declared, $live));
+        $unexpected = array_values(array_diff($live, $declared));
+
+        if ($missing !== [] || $unexpected !== []) {
+            $parts = [];
+
+            if ($missing !== []) {
+                $parts[] = 'declared but NOT enforced: '.implode(', ', array_map(static fn ($c) => "\"{$c}\"", $missing));
+            }
+
+            if ($unexpected !== []) {
+                $parts[] = 'enforced but NOT declared: '.implode(', ', array_map(static fn ($c) => "\"{$c}\"", $unexpected));
+            }
+
+            return [false, implode('; ', $parts)];
+        }
+
+        return [true, sprintf(
+            'declared and live required-check sets are identical (%d context(s), ruleset "%s")',
+            count($declared),
+            (string) ($liveRulesetDetail['name'] ?? 'unnamed'),
+        )];
+    };
+}
+
 if ($liveRulesets === null) {
     externalCheck('the main ruleset is actually active on GitHub', null, CHECK_MAIN_RULESET_ACTIVE);
     externalCheck('the production tag rulesets are actually active on GitHub', null, CHECK_TAG_RULESETS_ACTIVE);
-    externalCheck('required status checks are enforced by GitHub, not advisory', null, CHECK_REQUIRED_CHECKS_ENFORCED);
+    // N-4b is driven by the DETAIL endpoint, which is fetched independently of
+    // the list. It is evaluated here too so that a missing list cannot suppress
+    // an answer the detail payload can give on its own.
+    externalCheck('required status checks match the declared set exactly', $requiredChecksInvariant, CHECK_REQUIRED_CHECKS_ENFORCED);
     externalCheck('no bypass actors are configured on the live rulesets', null, CHECK_NO_BYPASS_ACTORS);
     externalCheck('branch protection is effective (direct push and force-push refused)', null, CHECK_BRANCH_PROTECTION_EFFECTIVE);
 } else {
@@ -1685,9 +1897,15 @@ if ($liveRulesets === null) {
         )];
     }, CHECK_NO_BYPASS_ACTORS);
 
-    // Even with live ruleset data these remain unprovable here: the first needs
-    // the per-branch rules endpoint, the second needs somebody to try a push.
-    externalCheck('required status checks are enforced by GitHub, not advisory', null, CHECK_REQUIRED_CHECKS_ENFORCED);
+    // M50-05 N-4b closed the first of these two. It said, correctly, that the
+    // required-check question "needs the per-branch rules endpoint" — the list
+    // consumed above carries no `rules`. That endpoint is now fetched as its own
+    // evidence file and drives the check below; when it is absent or unreadable
+    // this stays EXTERNAL exactly as it was, because a control that guessed
+    // would be worse than one that admits it does not know.
+    //
+    // The second still needs somebody to try a push, and no payload answers it.
+    externalCheck('required status checks match the declared set exactly', $requiredChecksInvariant, CHECK_REQUIRED_CHECKS_ENFORCED);
     externalCheck('branch protection is effective (direct push and force-push refused)', null, CHECK_BRANCH_PROTECTION_EFFECTIVE);
 }
 

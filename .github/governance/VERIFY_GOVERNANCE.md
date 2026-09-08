@@ -88,13 +88,29 @@ claiming falsely.
 ### Optional: feed it live GitHub data
 
 ```bash
-gh api /repos/nzebrian/eruofood-ai/rulesets > /tmp/rulesets.json
-gh api /repos/nzebrian/eruofood-ai/codeowners/errors > /tmp/codeowners-errors.json
+gh api /repos/nzebrian/eruofood-ai/rulesets              > /tmp/rulesets.json
+gh api /repos/nzebrian/eruofood-ai/rulesets/21203909     > /tmp/ruleset-detail.json
+gh api /repos/nzebrian/eruofood-ai/codeowners/errors     > /tmp/codeowners-errors.json
 
 php apps/api/scripts/verify_repository_governance.php \
   --rulesets=/tmp/rulesets.json \
+  --ruleset-detail=/tmp/ruleset-detail.json \
   --codeowners-errors=/tmp/codeowners-errors.json
 ```
+
+**Why two ruleset calls (M50-05 N-4b).** They are different payloads and only
+one of them answers the required-check question:
+
+| endpoint | carries | answers |
+| --- | --- | --- |
+| `GET /rulesets` | `id`, `name`, `target`, `enforcement` | which rulesets exist and whether they are active |
+| `GET /rulesets/{id}` | the above **plus `rules`** | which status-check contexts are actually required |
+
+The list has no `rules` array at all, so for as long as it was the only evidence
+collected, nothing in this repository could compare what
+`required-checks.json` declares against what GitHub enforces. That is exactly
+how `Mobile Certification` came to be declared-but-unenforced without any
+control noticing.
 
 With those files present, the matching external checks are evaluated for real
 rather than deferred. Everything still unanswered stays EXTERNAL — supplying one
@@ -144,8 +160,35 @@ gh api /repos/nzebrian/eruofood-ai/rules/branches/main \
            | .parameters.required_status_checks[].context'
 ```
 
-Must equal the seven contexts in `required-checks.json`, byte for byte —
-including U+00B7 MIDDLE DOT.
+Must equal the contexts in `required-checks.json` as a **set**, byte for byte —
+including U+00B7 MIDDLE DOT. Not a count: "nine" is today's answer, not the
+property, and a control asserting the number would keep passing after somebody
+swapped one context for another.
+
+**This is now checked automatically** — `github.required_checks_enforced` in
+`verify_repository_governance.php`, fed by `--ruleset-detail=`. Its three
+outcomes are deliberate and it is worth knowing which you are looking at:
+
+- **PASS** — live detail was retrieved, structurally valid, and
+  `declared == live` exactly. Duplicates, malformed entries, an inactive
+  ruleset, and a ruleset carrying no `required_status_checks` rule are all
+  **FAIL**, not PASS.
+- **FAIL** — the sets differ. The message names each context that is declared
+  but not enforced, and each that is enforced but not declared.
+- **EXTERNAL / ADMIN REQUIRED** — nobody could look. No detail evidence was
+  supplied, or the payload arrived without `rules`, or more than one active
+  branch ruleset exists (GitHub aggregates required checks across them, so a
+  single detail payload cannot prove the whole set).
+
+**EXTERNAL is never an approximation of PASS.** The validator does not fall back
+to `required-checks.json` when GitHub does not answer: that file is one side of
+the comparison, and using it as evidence for the other would mean this
+repository grading itself against its own JSON and reporting a green tick for it.
+
+If CI reports EXTERNAL here, read the `GET /rulesets/{id} -> HTTP <code>` line in
+the advisory job's evidence step. A 403 means the token lacks the permission to
+read ruleset detail, and the honest state is unverified — not a failure of
+governance, and not a pass either.
 
 ### 2.5 No bypass actors
 
