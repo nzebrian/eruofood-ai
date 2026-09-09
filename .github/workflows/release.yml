@@ -195,6 +195,32 @@ jobs:
         # expression is an ordinary scalar and the trap does not exist.
         env:
           GITHUB_TOKEN: "${{ github.token }}"
+
+      # M50-05. This job had no PHP setup at all, so `composer install` below
+      # ran against whatever the runner ships — 8.3.6 — while
+      # `apps/api/composer.json` requires `php: ^8.4`. Composer refused the
+      # lockfile outright:
+      #
+      #   Your lock file does not contain a compatible set of packages.
+      #   Root composer.json requires php ^8.4 but your php version (8.3.6)
+      #   does not satisfy that requirement.        (exit 2)
+      #
+      # So this job could never have passed as written. It went unnoticed for a
+      # simple reason: `release.yml` produced 44 consecutive zero-job startup
+      # failures from the M46 YAML defect, so no job in it had ever run. Tag
+      # v0.0.1-rc1 (run 34292697589) was the first execution in the workflow's
+      # history, and it found this on the first try.
+      #
+      # `security.yml`'s `dependency-audit` job — the pull-request gate — has
+      # always had this step, which is why composer auditing is green there and
+      # why the gap was invisible from the PR side. Same action, same pinned
+      # SHA, same version as the `api` job above; nothing else about the audit
+      # changes.
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          tools: composer:v2
+
       - name: Composer audit
         working-directory: apps/api
         # Wrapped in Phase 1. This is the production release path, which is
