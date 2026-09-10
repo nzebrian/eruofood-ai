@@ -21,12 +21,14 @@ final readonly class IdentityAssessment
      * @param list<IdentityFinding> $findings
      * @param array<string, list<string>> $resolved role value => owner handles
      * @param list<string> $unresolvedRoles
+     * @param list<string> $deferredRoles roles nobody has decided yet, on purpose
      */
     public function __construct(
         public ActivationState $state,
         public array $findings,
         public array $resolved,
         public array $unresolvedRoles,
+        public array $deferredRoles = [],
     ) {
     }
 

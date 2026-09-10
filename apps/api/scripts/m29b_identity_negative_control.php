@@ -59,10 +59,24 @@ function baseIdentities(): array
             'PLATFORM' => ['handles' => ['@zeta-reviewer']],
             'GOVERNANCE' => ['handles' => ['@eta-reviewer']],
         ],
-        'release_actors' => [
-            ['actor_id' => 12345, 'actor_type' => 'Integration', 'bypass_mode' => 'always'],
-        ],
+        'release_actors' => [m29b_release_actor()],
     ];
+}
+
+/**
+ * The release actor these fixtures declare.
+ *
+ * It is the one `production-tags-ruleset.json` actually records, and it has to
+ * be: since N-1 the validator compares that file's creation bypass_actors
+ * against identities.json for exact equality, so a fixture inventing its own id
+ * would fail every control for a reason none of them is testing — and control 9,
+ * which requires the validator to SUCCEED, would fail outright.
+ *
+ * @return array{actor_id: int, actor_type: string, bypass_mode: string}
+ */
+function m29b_release_actor(): array
+{
+    return ['actor_id' => 4902397, 'actor_type' => 'Integration', 'bypass_mode' => 'always'];
 }
 
 function m29b_identities_path(string $fixture): string
@@ -152,7 +166,7 @@ m29_identity_control(
 
         $tagPath = $f.'/.github/governance/production-tags-ruleset.json';
         $doc = m29_read_json($tagPath);
-        $actor = ['actor_id' => 12345, 'actor_type' => 'Integration', 'bypass_mode' => 'always'];
+        $actor = m29b_release_actor();
 
         if (isset($doc['rulesets']) && is_array($doc['rulesets'])) {
             foreach ($doc['rulesets'] as &$ruleset) {
@@ -179,6 +193,50 @@ m29_identity_control(
         m29_write_json(m29b_identities_path($f), $doc);
     },
     'IDENTITY_ROLE_UNKNOWN',
+);
+
+// -- 8a. N-1 Path A: the CODEOWNERS deferral --------------------------------
+//
+// The deferral exists so a release actor can be recorded without naming seven
+// code owners who do not exist. That is a narrow licence, and these three keep
+// it narrow: it must be stated rather than obtained by omission, it must not be
+// combined with the thing it replaces, and it must not survive the arrival of a
+// second human.
+
+m29_identity_control(
+    'CODEOWNERS is deferred AND named at the same time',
+    static function (string $f): void {
+        $doc = baseIdentities();
+        $doc['codeowners_deferred'] = ['mode' => 'SOLE_OWNER', 'reason' => 'x'];
+        m29_write_json(m29b_identities_path($f), $doc);
+    },
+    'IDENTITY_CODEOWNERS_DEFERRAL_AMBIGUOUS',
+);
+
+m29_identity_control(
+    'CODEOWNERS is deferred while ownership.json declares MULTI_PERSON',
+    static function (string $f): void {
+        $doc = baseIdentities();
+        unset($doc['codeowners']);
+        $doc['codeowners_deferred'] = ['mode' => 'SOLE_OWNER', 'reason' => 'x'];
+        m29_write_json(m29b_identities_path($f), $doc);
+
+        $ownershipPath = $f.'/.github/governance/ownership.json';
+        $ownership = m29_read_json($ownershipPath);
+        $ownership['mode'] = 'MULTI_PERSON';
+        m29_write_json($ownershipPath, $ownership);
+    },
+    'IDENTITY_CODEOWNERS_DEFERRAL_NOT_PERMITTED',
+);
+
+m29_identity_control(
+    'the codeowners section is simply omitted, with no deferral declared',
+    static function (string $f): void {
+        $doc = baseIdentities();
+        unset($doc['codeowners']);
+        m29_write_json(m29b_identities_path($f), $doc);
+    },
+    'IDENTITY_CODEOWNERS_SECTION_MISSING',
 );
 
 // -- 9. A flawless identity file still proves nothing about GitHub ------------

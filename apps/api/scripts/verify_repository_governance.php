@@ -1033,18 +1033,79 @@ verify('creation authority and immutability are not in the same ruleset', functi
     return [$tagRulesets !== [], 'the two-ruleset split holds'];
 });
 
-verify('the creation ruleset carries no bypass actor yet', function () use ($tagRulesets): array {
-    // Not a permanent invariant — this is where release actors legitimately go.
-    // It is checked so that the day one appears, it appears because somebody
-    // decided to put it there, having read production-tags-ruleset.json's
-    // actor_placeholder_contract.
+verify('the creation ruleset names exactly the recorded release actors', function () use ($tagRulesets, $governanceDir): array {
+    // This check used to assert the creation ruleset carried NO actor, so that
+    // the day one appeared it appeared because somebody had decided to put it
+    // there. N-1 is that day. Asserting emptiness now would either fail forever
+    // or have to be deleted, and a check deleted the moment it fires is not a
+    // check — so it becomes the durable form of the same question: an actor is
+    // here because identities.json says who it should be.
+    //
+    // Both sides are committed artifacts, so this is a consistency check and
+    // never evidence about GitHub. What is actually deployed is answered by the
+    // live `github.tag_ruleset_release_actors`, which reads the same two sides
+    // from `GET /rulesets/{id}` instead.
+    $creation = null;
+
     foreach ($tagRulesets as $rs) {
-        if (ruleOfType($rs, 'creation') !== null && ($rs['bypass_actors'] ?? null) !== []) {
-            return [false, '"'.($rs['name'] ?? '?').'" already names release actors — confirm each is intended'];
+        if (ruleOfType($rs, 'creation') !== null) {
+            $creation = $rs;
+
+            break;
         }
     }
 
-    return [$tagRulesets !== [], 'no release actor configured yet (tag creation denied to everyone)'];
+    if ($creation === null) {
+        return [false, 'no ruleset carries a creation rule'];
+    }
+
+    $live = $creation['bypass_actors'] ?? null;
+
+    if (! is_array($live) || ! array_is_list($live)) {
+        return [false, 'the creation ruleset has no usable bypass_actors list'];
+    }
+
+    $identitiesPath = $governanceDir.'/identities.json';
+
+    if (! is_file($identitiesPath)) {
+        return $live === []
+            ? [true, 'no release actor configured yet (tag creation denied to everyone)']
+            : [false, '"'.($creation['name'] ?? '?').'" names release actors that identities.json does not record — it does not exist'];
+    }
+
+    $declared = readJson($identitiesPath)['release_actors'] ?? null;
+
+    if (! is_array($declared) || ! array_is_list($declared)) {
+        return [false, 'identities.json has no `release_actors` list to compare against'];
+    }
+
+    $liveKeys = actorKeys($live);
+    $declaredKeys = actorKeys($declared);
+
+    if (in_array('unusable', array_merge($liveKeys, $declaredKeys), true)) {
+        return [false, 'a release actor is not a {actor_id:int, actor_type:string} pair — a handle is not an actor id, and GitHub rejects one'];
+    }
+
+    $extra = array_values(array_diff($liveKeys, $declaredKeys));
+    $absent = array_values(array_diff($declaredKeys, $liveKeys));
+
+    if ($extra !== [] || $absent !== []) {
+        $parts = [];
+
+        if ($extra !== []) {
+            $parts[] = 'in the ruleset but not in identities.json: '.implode(', ', $extra);
+        }
+
+        if ($absent !== []) {
+            $parts[] = 'in identities.json but not in the ruleset: '.implode(', ', $absent);
+        }
+
+        return [false, implode('; ', $parts)];
+    }
+
+    return [true, $liveKeys === []
+        ? 'no release actor configured yet (tag creation denied to everyone)'
+        : 'the prepared creation ruleset and identities.json agree: '.implode(', ', $liveKeys)];
 });
 
 // -- 4. Required checks -------------------------------------------------------

@@ -462,7 +462,8 @@ function m29_run_identities(string $fixture, array $extraArgs = []): array
     $command = 'php '.escapeshellarg(m29_identities_validator())
         .' --identities='.escapeshellarg($fixture.'/.github/governance/identities.json')
         .' --codeowners='.escapeshellarg($fixture.'/.github/CODEOWNERS')
-        .' --tags='.escapeshellarg($fixture.'/.github/governance/production-tags-ruleset.json');
+        .' --tags='.escapeshellarg($fixture.'/.github/governance/production-tags-ruleset.json')
+        .' --ownership='.escapeshellarg($fixture.'/.github/governance/ownership.json');
 
     foreach ($extraArgs as $arg) {
         $command .= ' '.$arg;

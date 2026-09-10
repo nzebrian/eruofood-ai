@@ -14,8 +14,10 @@
       "jq '.rulesets[0]' .github/governance/production-tags-ruleset.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -",
       "jq '.rulesets[1]' .github/governance/production-tags-ruleset.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -"
     ],
+    "release_actor_resolved": "N-1 Path A. rulesets[0].bypass_actors names GitHub App 4902397, \"EruoFood Release Governor\", installed on this repository only, with Contents: read and write. That is the APP ID — not the installation id, and not the repository owner's user id 36742102. GitHub's ruleset bypass actor types are Integration, OrganizationAdmin, RepositoryRole and Team; there is no User, so a person cannot hold this grant at all and a dedicated App is the only encoding that is both accepted and true. The same actor is recorded in identities.json, and github.tag_ruleset_release_actors compares the two for exact set equality.",
     "unresolved_administrator_inputs": [
-      "The identity of the release actor(s) permitted to create v*.*.* tags. Supplied as bypass_actors on the FIRST ruleset only. Until supplied, that ruleset denies tag creation to everyone — which is the correct failure direction, but it does stop releases, so it is an explicit decision rather than a silent default."
+      "None for the actor itself. What remains is external: that App 4902397 exists, that GitHub accepts the id in bypass_actors, and that the install is scoped to this repository. Confirm with: gh api /repos/nzebrian/eruofood-ai/installation --jq '{app_id, repository_selection, permissions}'",
+      "A working tag-creation path must exist BEFORE these rulesets are applied. Once rulesets[0] is live, the repository owner can no longer push a tag by hand — only the App can — so applying this without .github/workflows/release-tag.yml in place and exercised would leave nobody able to cut a release."
     ],
     "actor_placeholder_contract": "Each entry in rulesets[0].bypass_actors must name a real GitHub actor: {\"actor_id\": <int>, \"actor_type\": \"Team\" | \"Integration\" | \"OrganizationAdmin\" | \"RepositoryRole\", \"bypass_mode\": \"always\"}. No wildcard, no RepositoryRole covering all writers, and no `actor_type: \"OrganizationAdmin\"` used as a shortcut for 'whoever happens to be an admin'. Release authority is a named grant or it is not a grant.",
     "unresolved_placeholder_token": "<RELEASE_ACTOR_UNRESOLVED>"
@@ -25,7 +27,13 @@
       "name": "production release tags — restricted creation",
       "target": "tag",
       "enforcement": "active",
-      "bypass_actors": [],
+      "bypass_actors": [
+        {
+          "actor_id": 4902397,
+          "actor_type": "Integration",
+          "bypass_mode": "always"
+        }
+      ],
       "conditions": {
         "ref_name": {
           "include": ["refs/tags/v*"],

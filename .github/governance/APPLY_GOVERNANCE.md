@@ -46,9 +46,14 @@ in the ruleset, not just this one.
 
 ### 0.3 Who cuts releases?
 
-`release.yml` fires on `v*.*.*` and promotes a container image. Decide which
-named accounts may create those tags. "Whoever is an admin" is not an answer —
-write down the accounts.
+**Decided (N-1): GitHub App 4902397, *EruoFood Release Governor*.** Not an
+account — GitHub's ruleset bypass actor types contain no `User`, so no person
+can hold this grant. Releases are cut by dispatching
+`.github/workflows/release-tag.yml`, which acts as the App. See §3.2.
+
+`release.yml` fires on `v*.*.*` and builds container images — both
+`docker/build-push-action` steps are `push: false`, so it promotes nothing; the
+publishing path is `staging-deploy.yml`.
 
 ---
 
@@ -217,32 +222,65 @@ the release actors on the `creation` rule and they are exempt from `deletion`
 too — and a release tag its creator can delete is not an immutable release
 record. `github.tag_ruleset_split` fails if the two are ever collapsed.
 
-### 3.2 Supply the release actor first
-
-`rulesets[0].bypass_actors` must name real GitHub actors, as numeric ids:
+### 3.2 The release actor — decided
 
 ```json
-{ "actor_id": 12345, "actor_type": "Integration", "bypass_mode": "always" }
+{ "actor_id": 4902397, "actor_type": "Integration", "bypass_mode": "always" }
 ```
 
-**A numeric `actor_id`, never a username.** Bypass actors are identified
-numerically; a handle validates in any schema that treats all identities alike
-and is then rejected by the API. No wildcard, no `RepositoryRole` covering all
-writers, and no `actor_type: "OrganizationAdmin"` as shorthand for "whoever
-happens to be an admin". Release authority is a named grant or it is not a grant.
+GitHub App **4902397**, *EruoFood Release Governor*, installed on this
+repository only, with `Contents: read and write` and `Metadata: read-only`.
+Recorded in both `.github/governance/identities.json` and
+`rulesets[0].bypass_actors`, and `github.tag_ruleset_release_actors` compares
+the two for exact equality — an actor granted on GitHub but recorded nowhere
+fails, and so does one recorded but not granted.
 
-The same entries go in `.github/governance/identities.json` under
-`release_actors`, and `github.tag_ruleset_release_actors` compares the two sets
-for exact equality — so an actor granted on GitHub but recorded nowhere fails,
-and so does one recorded but not granted.
+> **4902397 is the App ID. It is not the installation ID.**
+>
+> Two different numbers. The App ID is on the App's settings page and identifies
+> the App. The installation ID appears in the `…/settings/installations/<id>`
+> URL and identifies *this repository's install* of it. `bypass_actors` takes
+> the App ID: a ruleset is already repository-scoped, so an installation id
+> there would be both redundant and wrong.
 
-**`identities.json` does not exist today.** Until it does, that check reports
-`RELEASE_ACTOR_ID_REQUIRED` and stays EXTERNAL. Nobody may invent an id to
-satisfy it.
+**And it is not a person.** GitHub's ruleset bypass actor types are
+`Integration`, `OrganizationAdmin`, `RepositoryRole` and `Team`. There is no
+`User` — so the repository owner cannot hold this grant at all, and writing
+their user id `36742102` under any of those types would be a false statement
+that the local validator cannot detect and GitHub rejects later. No wildcard, no
+`RepositoryRole` covering all writers, and no `OrganizationAdmin` as shorthand
+for "whoever happens to be an admin". Release authority is a named grant or it
+is not a grant.
 
-Applied with an empty `bypass_actors`, 3a denies tag creation to **everyone**,
-including you. That is the safe failure direction, but it does stop releases —
-so it should be a decision, not a surprise.
+**A person can no longer cut a release once 3a is applied.** That is the
+intended end state, and it is why §3.2a exists.
+
+### 3.2a Before applying: the tag must be creatable
+
+`.github/workflows/release-tag.yml` is the only thing that can create a release
+tag once 3a is live. It is `workflow_dispatch`-only, holds `permissions: {}`,
+and mints an installation token from App 4902397 to create the ref.
+
+`GITHUB_TOKEN` is deliberately not used and deliberately not granted: inside
+Actions it authenticates as `github-actions[bot]`, a **different** Integration,
+so a tag it created would be refused by the very ruleset you are applying — and
+the failure would look like a broken ruleset rather than the wrong token.
+
+Two repository secrets must exist before the workflow can run:
+
+| Secret | Contents |
+|---|---|
+| `RELEASE_GOVERNOR_APP_ID` | `4902397` |
+| `RELEASE_GOVERNOR_PRIVATE_KEY` | the App's PEM private key |
+
+The private key is never committed, never printed, and never handed to a
+third-party action — the workflow signs its own JWT with `openssl`, so the key
+stays in the runner's shell.
+
+**Exercise it first.** Dispatch `Release Tag · Create` and cut a disposable tag
+(`v0.0.1-rc3`) **while creation is still unrestricted**. If the mechanism is
+broken you find out with a working escape hatch still available. Applying 3a
+first would leave nobody able to cut the release that proves the mechanism.
 
 ### 3.3 Apply
 
