@@ -367,6 +367,18 @@ jobs:
         # workflow set losing, gaining and renaming a member.
         run: .github/scripts/run_control.sh m46_workflow_privilege_control -- .github/scripts/m46_workflow_privilege_control.sh
 
+      - name: Prove the release-tag workflow refuses what it claims to
+        # N-1. `release-tag.yml` is the only thing that may create a production
+        # release tag once the creation ruleset is applied, and everything it
+        # decides is decided inside one `run:` block that no other validator
+        # reads. This lifts its two input predicates out of the file and runs
+        # them against a table — a multi-line value, a workflow-command payload,
+        # an abbreviated SHA — and asserts the properties the PR #74 review had
+        # to find by hand: the App it authenticates as is the one identities.json
+        # records, the creation call is a POST that is never retried, and 422 is
+        # not blanket-reported as "already exists".
+        run: .github/scripts/run_control.sh n1_release_tag_control -- .github/scripts/n1_release_tag_control.sh
+
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
         # every enforcement step still propagates a non-zero exit, then breaks

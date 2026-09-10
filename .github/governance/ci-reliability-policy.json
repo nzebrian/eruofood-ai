@@ -371,7 +371,7 @@
     "components_seconds": {
       "fixed_overhead": {
         "value": 150,
-        "note": "Checkout, two extractions, actionlint over 14 files, and every structural control that makes no network call. Measured healthy total for the whole job was 104s on run 33879626208; 150 carries headroom."
+        "note": "Checkout, two extractions, actionlint over 15 files, and every structural control that makes no network call \u2014 n1_release_tag_control among them, measured at 0.16s. Measured healthy total for the whole job was 104s on run 33879626208; 150 carries headroom."
       },
       "governed_downloads": {
         "count": 2,
@@ -416,6 +416,7 @@
       "m35_docker_certification_negative_control",
       "m31_platform_negative_control",
       "m37_governance_advisory_control",
+      "n1_release_tag_control",
       "verify_deployment_safety",
       "m44_deployment_safety_control",
       "verify_dependency_audit_gate",

@@ -72,12 +72,26 @@ jobs:
 
           b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
+          # L-2. `retry` is a parameter, not a constant.
+          #
+          # `--retry` covers transient problems irrespective of method, so a
+          # tag-creation POST whose 201 was lost in transit would be REPLAYED —
+          # the second attempt returning 422 for a ref the first attempt had
+          # already created. The workflow would report failure for a tag that
+          # exists, and the operator's natural next move is to cut a different
+          # one. Reads stay retried; the single state-changing call does not.
           api() {
-            # $1 method, $2 path, $3 auth header value, $4 optional body
-            local method="$1" path="$2" auth="$3" body="${4:-}" out code
+            # $1 retry|noretry, $2 method, $3 path, $4 auth header value, $5 optional body
+            local retry="$1" method="$2" path="$3" auth="$4" body="${5:-}" out code
+            local -a retry_args=()
             out="$(mktemp)"
+
+            if [ "${retry}" = "retry" ]; then
+              retry_args=(--retry 2 --retry-connrefused)
+            fi
+
             if [ -n "${body}" ]; then
-              code="$(curl -sS --max-time 30 --retry 2 --retry-connrefused \
+              code="$(curl -sS --max-time 30 "${retry_args[@]+"${retry_args[@]}"}" \
                 -o "${out}" -w '%{http_code}' -X "${method}" \
                 -H "Authorization: Bearer ${auth}" \
                 -H "Accept: application/vnd.github+json" \
@@ -85,7 +99,7 @@ jobs:
                 -d "${body}" \
                 "https://api.github.com/${path}")"
             else
-              code="$(curl -sS --max-time 30 --retry 2 --retry-connrefused \
+              code="$(curl -sS --max-time 30 "${retry_args[@]+"${retry_args[@]}"}" \
                 -o "${out}" -w '%{http_code}' -X "${method}" \
                 -H "Authorization: Bearer ${auth}" \
                 -H "Accept: application/vnd.github+json" \
@@ -102,13 +116,23 @@ jobs:
           # ruleset governs; `v*.*.*` is what release.yml fires on. A tag
           # matching only the first is governed but builds nothing, which reads
           # as a release that silently did not happen.
-          if ! printf '%s' "${RELEASE_TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
-            echo "::error::'${RELEASE_TAG}' is not a release tag. Expected vMAJOR.MINOR.PATCH with an optional -suffix, e.g. v1.2.3 or v1.2.3-rc1."
+          # M-1. `[[ =~ ]]`, not `grep -Eq`. grep matches LINE BY LINE, so `^…$`
+          # anchor a line rather than the value: `v1.2.3\n<anything>` satisfied
+          # both patterns and carried the remainder through validation. It could
+          # not forge a tag — GitHub rejects a ref name containing a newline —
+          # but the residue reached an `echo`, where a `::` line is read as a
+          # workflow command. Bash `[[ =~ ]]` matches the whole string, newlines
+          # included, so the anchors mean what they appear to mean.
+          #
+          # Validation runs before the value is echoed anywhere, so a rejected
+          # input is never rendered into a workflow command either.
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::the tag input is not a release tag. Expected vMAJOR.MINOR.PATCH with an optional -suffix, e.g. v1.2.3 or v1.2.3-rc1."
             exit 1
           fi
 
-          if ! printf '%s' "${TARGET_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "::error::'${TARGET_SHA}' is not a full 40-character commit SHA. Abbreviated SHAs are refused: a release must name exactly one commit."
+          if [[ ! "${TARGET_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the sha input is not a full 40-character lowercase commit SHA. Abbreviated SHAs are refused: a release must name exactly one commit."
             exit 1
           fi
 
@@ -120,7 +144,7 @@ jobs:
             | openssl dgst -sha256 -sign "${keyfile}" -binary | b64url)"
           jwt="${header}.${payload}.${signature}"
 
-          response="$(api GET "repos/${REPO}/installation" "${jwt}")"
+          response="$(api retry GET "repos/${REPO}/installation" "${jwt}")"
           code="$(printf '%s' "${response}" | head -n1)"
           body="$(printf '%s' "${response}" | tail -n +2)"
 
@@ -130,9 +154,29 @@ jobs:
           fi
 
           installation_id="$(printf '%s' "${body}" | jq -r '.id')"
-          echo "App installation: ${installation_id} (app_id $(printf '%s' "${body}" | jq -r '.app_id'))"
+          authenticated_app_id="$(printf '%s' "${body}" | jq -r '.app_id')"
 
-          response="$(api POST "app/installations/${installation_id}/access_tokens" "${jwt}")"
+          # M-2. Bind the mechanism to the record.
+          #
+          # Until this check existed the workflow trusted RELEASE_GOVERNOR_APP_ID
+          # and only PRINTED the app_id it got back, so a secret naming a
+          # different App with Contents: write would mint that App's token and
+          # cut the tag without complaint. Once the creation ruleset is applied
+          # that fails closed — a non-bypass App is refused — but the rc3
+          # exercise happens while creation is still unrestricted, which is
+          # exactly when a wrong identity would look like success.
+          #
+          # 4902397 is the APP ID. `installation_id` above is a different number
+          # identifying this repository's install of it, and is used only to
+          # mint the token — never as an actor id.
+          if [ "${authenticated_app_id}" != "4902397" ]; then
+            echo "::error::authenticated as App ${authenticated_app_id}, but the recorded release actor is Integration#4902397 (.github/governance/identities.json). Check RELEASE_GOVERNOR_APP_ID and RELEASE_GOVERNOR_PRIVATE_KEY."
+            exit 1
+          fi
+
+          echo "App ${authenticated_app_id} (Integration#4902397), installation ${installation_id}"
+
+          response="$(api retry POST "app/installations/${installation_id}/access_tokens" "${jwt}")"
           code="$(printf '%s' "${response}" | head -n1)"
           body="$(printf '%s' "${response}" | tail -n +2)"
 
@@ -150,7 +194,7 @@ jobs:
           # branch ruleset would be a release of unreviewed code wearing a
           # version number. `compare` answers this without a checkout: a commit
           # contained in main is `identical` or `behind`.
-          response="$(api GET "repos/${REPO}/compare/main...${TARGET_SHA}" "${token}")"
+          response="$(api retry GET "repos/${REPO}/compare/main...${TARGET_SHA}" "${token}")"
           code="$(printf '%s' "${response}" | head -n1)"
           body="$(printf '%s' "${response}" | tail -n +2)"
 
@@ -172,18 +216,28 @@ jobs:
           # the correct outcome: moving a release tag is what the immutability
           # ruleset exists to prevent, and this workflow must not be the hole in
           # it. Re-releasing means a new tag.
-          response="$(api POST "repos/${REPO}/git/refs" "${token}" \
+          response="$(api noretry POST "repos/${REPO}/git/refs" "${token}" \
             "$(jq -nc --arg r "refs/tags/${RELEASE_TAG}" --arg s "${TARGET_SHA}" '{ref: $r, sha: $s}')")"
           code="$(printf '%s' "${response}" | head -n1)"
           body="$(printf '%s' "${response}" | tail -n +2)"
 
-          if [ "${code}" = "422" ]; then
-            echo "::error::refs/tags/${RELEASE_TAG} already exists. Release tags are immutable; cut a new tag rather than moving this one."
-            exit 1
-          fi
-
+          # L-1. 422 is not a synonym for "already exists".
+          #
+          # GitHub returns it for a reference that exists AND for one it will not
+          # accept at all — an invalid ref name among them. Announcing the first
+          # for every 422 names the wrong cause, and the operator's next move
+          # after "already exists" is to cut a different tag, which does not fix
+          # a malformed one. So the message is read rather than assumed, and only
+          # GitHub's own "Reference already exists" earns the immutability note.
           if [ "${code}" != "201" ]; then
-            echo "::error::Tag creation failed (HTTP ${code}): $(printf '%s' "${body}" | jq -r '.message // "no message"')"
+            message="$(printf '%s' "${body}" | jq -r '.message // "no message"')"
+
+            if [ "${code}" = "422" ] && [ "${message}" = "Reference already exists" ]; then
+              echo "::error::refs/tags/${RELEASE_TAG} already exists. Release tags are immutable; cut a new tag rather than moving this one."
+            else
+              echo "::error::tag creation failed (HTTP ${code}): ${message}"
+            fi
+
             exit 1
           fi
 
