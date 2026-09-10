@@ -33,7 +33,12 @@ It checks:
 - `main-ruleset.json` encodes the intended policy: deletion, non-fast-forward,
   pull request, approvals, stale dismissal, last-push approval, code-owner
   review, strict status checks, and an empty `bypass_actors`
-- the tag rulesets restrict creation, deletion and updates on `refs/tags/v*`
+- the **prepared** tag rulesets restrict creation, deletion and updates on
+  `refs/tags/v*` — a claim about the committed JSON, not about GitHub. What is
+  actually deployed is answered separately by the five live tag checks
+  (`github.tag_rulesets_active` plus the four `github.tag_ruleset_*`), which
+  read `GET /rulesets` and `GET /rulesets/{id}` and report EXTERNAL when that
+  evidence is missing
 - every required check context in `required-checks.json` exists as a job `name:`
   in the workflow it claims
 - every workflow owning a required check reports on **every** pull request
@@ -88,23 +93,36 @@ claiming falsely.
 ### Optional: feed it live GitHub data
 
 ```bash
-gh api /repos/nzebrian/eruofood-ai/rulesets              > /tmp/rulesets.json
-gh api /repos/nzebrian/eruofood-ai/rulesets/21203909     > /tmp/ruleset-detail.json
-gh api /repos/nzebrian/eruofood-ai/codeowners/errors     > /tmp/codeowners-errors.json
+gh api /repos/nzebrian/eruofood-ai/rulesets          > /tmp/rulesets.json
+gh api /repos/nzebrian/eruofood-ai/codeowners/errors > /tmp/codeowners-errors.json
+
+# One detail call per ruleset, ids taken from the list — never hard-coded.
+jq -r '.[].id' /tmp/rulesets.json \
+  | xargs -I{} gh api /repos/nzebrian/eruofood-ai/rulesets/{} \
+  | jq -s '.' > /tmp/ruleset-details.json
 
 php apps/api/scripts/verify_repository_governance.php \
   --rulesets=/tmp/rulesets.json \
-  --ruleset-detail=/tmp/ruleset-detail.json \
+  --ruleset-details=/tmp/ruleset-details.json \
   --codeowners-errors=/tmp/codeowners-errors.json
 ```
 
-**Why two ruleset calls (M50-05 N-4b).** They are different payloads and only
-one of them answers the required-check question:
+**Why two ruleset endpoints (M50-05 N-4b, generalised by N-1).** They are
+different payloads and only one of them answers the content questions:
 
 | endpoint | carries | answers |
 | --- | --- | --- |
 | `GET /rulesets` | `id`, `name`, `target`, `enforcement` | which rulesets exist and whether they are active |
-| `GET /rulesets/{id}` | the above **plus `rules`** | which status-check contexts are actually required |
+| `GET /rulesets/{id}` | the above **plus `rules` and `bypass_actors`** | which status checks are required, which tag rules are enforced, and who may bypass them |
+
+N-1 replaced a pinned `rulesets/21203909` with the walk above. The pin read
+main's ruleset, so the tag rulesets — whose `rules` and `bypass_actors` live at
+the very same endpoint — had no evidence source at all, and every question about
+their contents was unanswerable by construction. Deriving the ids from the list
+also means a recreated ruleset is simply picked up next run instead of silently
+404-ing forever.
+
+`--ruleset-detail=` (singular) still works and is treated as a one-element set.
 
 The list has no `rules` array at all, so for as long as it was the only evidence
 collected, nothing in this repository could compare what
@@ -166,7 +184,7 @@ property, and a control asserting the number would keep passing after somebody
 swapped one context for another.
 
 **This is now checked automatically** — `github.required_checks_enforced` in
-`verify_repository_governance.php`, fed by `--ruleset-detail=`. Its three
+`verify_repository_governance.php`, fed by `--ruleset-details=`. Its three
 outcomes are deliberate and it is worth knowing which you are looking at:
 
 - **PASS** — live detail was retrieved, structurally valid, and
@@ -185,10 +203,35 @@ to `required-checks.json` when GitHub does not answer: that file is one side of
 the comparison, and using it as evidence for the other would mean this
 repository grading itself against its own JSON and reporting a green tick for it.
 
-If CI reports EXTERNAL here, read the `GET /rulesets/{id} -> HTTP <code>` line in
-the advisory job's evidence step. A 403 means the token lacks the permission to
-read ruleset detail, and the honest state is unverified — not a failure of
-governance, and not a pass either.
+If CI reports EXTERNAL here, read the `GET ruleset detail <id> -> HTTP <code>`
+lines in the advisory job's evidence step. A 403 means the token lacks the
+permission to read ruleset detail, and the honest state is unverified — not a
+failure of governance, and not a pass either.
+
+### 2.4a Tag-ruleset contents (N-1)
+
+`github.tag_rulesets_active` counts tag rulesets. Four more checks read them,
+all from `GET /rulesets/{id}` and all with the same three outcomes:
+
+| check | PASS when |
+| --- | --- |
+| `github.tag_ruleset_split` | exactly two active tag rulesets, both including `refs/tags/v*`, dividing into one creation and one immutability ruleset |
+| `github.tag_ruleset_rules` | the creation ruleset carries `creation`; the immutability ruleset carries exactly `deletion` + `non_fast_forward` + `update` |
+| `github.tag_ruleset_bypass_empty` | the immutability ruleset's `bypass_actors` is **present and `[]`**, and no actor appears in both rulesets |
+| `github.tag_ruleset_release_actors` | the creation ruleset grants exactly the actors `identities.json` records |
+
+Two distinctions carry the weight:
+
+- **Absent is not empty.** A payload with no `bypass_actors` key reports
+  EXTERNAL, never PASS. This is the M37 Phase 4A defect, and it is the reason
+  the detail endpoint matters: `GET /rulesets` omits the field on every ruleset.
+- **The rulesets are classified by their rules, not their names.** A name is
+  administrator-supplied free text and renaming one is not a security event; the
+  rule types are what GitHub enforces.
+
+They report EXTERNAL — not PASS — when no tag ruleset exists, when the detail
+payloads do not cover every listed tag ruleset, or when `identities.json` is
+absent. `production-tags-ruleset.json` is never consulted for any of them.
 
 ### 2.5 No bypass actors
 

@@ -176,10 +176,75 @@ Record the returned ruleset `id`.
 
 ## 3. Apply the production tag rulesets
 
-Two rulesets, deliberately. GitHub scopes `bypass_actors` to the whole ruleset,
-so putting the release actors on the `creation` rule would also exempt them from
-`deletion` — and a release tag that its creator can delete is not an immutable
-release record.
+**Administrator only.** Nothing in this repository can do it: ruleset creation
+is `POST /repos/{owner}/{repo}/rulesets`, the session credential reports
+`admin: false`, and the agent proxy refuses the write outright. N-1 built the
+checks that verify the result; it deliberately applied nothing.
+
+### 3.0 What is deployed today, and what is intended
+
+As of 2026-09-10 the live `GET /rulesets` reports **one** active ruleset,
+targeting `main`, and **zero** targeting tags. `v0.0.1-rc1` and `v0.0.1-rc2`
+were both created by an ordinary account with no restriction — and either can
+still be moved or deleted.
+
+The intended end state is exactly two tag rulesets:
+
+| | `rulesets[0]` | `rulesets[1]` |
+|---|---|---|
+| name | production release tags — restricted creation | production release tags — immutable |
+| `target` | `tag` | `tag` |
+| `enforcement` | `active` | `active` |
+| `conditions.ref_name.include` | `["refs/tags/v*"]` | `["refs/tags/v*"]` |
+| `rules` | `creation` | `deletion`, `non_fast_forward`, `update` |
+| `bypass_actors` | the release actors from `identities.json`, or `[]` | **`[]`, permanently** |
+
+All three immutability rules are load-bearing and none is redundant: without
+`update` a tag can be **moved to another commit**, without `non_fast_forward` it
+can be rewritten, and without `deletion` it can be removed and recreated
+pointing anywhere. Any one of them missing is the whole protection gone, and
+`github.tag_ruleset_rules` fails on each individually.
+
+`refs/tags/v*` is deliberately **broader** than release.yml's `v*.*.*` trigger.
+It governs a superset, which is the safe direction — but it does mean every
+`v`-prefixed tag becomes restricted and permanent, release-related or not. That
+is a decision to take knowingly, not a side effect to discover later.
+
+### 3.1 Why two rulesets and not one
+
+GitHub scopes `bypass_actors` to the whole ruleset, not to individual rules. Put
+the release actors on the `creation` rule and they are exempt from `deletion`
+too — and a release tag its creator can delete is not an immutable release
+record. `github.tag_ruleset_split` fails if the two are ever collapsed.
+
+### 3.2 Supply the release actor first
+
+`rulesets[0].bypass_actors` must name real GitHub actors, as numeric ids:
+
+```json
+{ "actor_id": 12345, "actor_type": "Integration", "bypass_mode": "always" }
+```
+
+**A numeric `actor_id`, never a username.** Bypass actors are identified
+numerically; a handle validates in any schema that treats all identities alike
+and is then rejected by the API. No wildcard, no `RepositoryRole` covering all
+writers, and no `actor_type: "OrganizationAdmin"` as shorthand for "whoever
+happens to be an admin". Release authority is a named grant or it is not a grant.
+
+The same entries go in `.github/governance/identities.json` under
+`release_actors`, and `github.tag_ruleset_release_actors` compares the two sets
+for exact equality — so an actor granted on GitHub but recorded nowhere fails,
+and so does one recorded but not granted.
+
+**`identities.json` does not exist today.** Until it does, that check reports
+`RELEASE_ACTOR_ID_REQUIRED` and stays EXTERNAL. Nobody may invent an id to
+satisfy it.
+
+Applied with an empty `bypass_actors`, 3a denies tag creation to **everyone**,
+including you. That is the safe failure direction, but it does stop releases —
+so it should be a decision, not a surprise.
+
+### 3.3 Apply
 
 ```bash
 # 3a. Restricted creation. Add the release actors as bypass_actors FIRST.
@@ -191,22 +256,53 @@ jq '.rulesets[1]' .github/governance/production-tags-ruleset.json \
   | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -
 ```
 
-Before running 3a, add each release actor to `rulesets[0].bypass_actors` — the
-same entries validated in §1.1 and recorded in `identities.json`:
-
-```json
-{ "actor_id": 12345, "actor_type": "Integration", "bypass_mode": "always" }
-```
-
 `rulesets[1].bypass_actors` stays `[]`. Not "stays empty for now" — stays empty.
 `verify_repository_governance.php` and `verify_governance_identities.php` both
-fail if an actor appears there, and the second one fails specifically when it is
-an actor that also holds creation authority, because that combination reads as
+fail if an actor appears there, and the second fails specifically when it is an
+actor that also holds creation authority, because that combination reads as
 correct in each file examined alone.
 
-Applied with an empty `bypass_actors`, 3a denies tag creation to **everyone**.
-That is the safe failure direction, but it does stop releases — so it should be
-a decision, not a surprise.
+### 3.4 Record the returned ruleset ids
+
+Each `POST` returns the created ruleset, including its `id`. **Write both down
+in `.github/governance/README.md`** with the date applied, alongside the `main`
+ruleset id from §2.
+
+The evidence collector does not need them — since N-1 it enumerates ids from
+`GET /rulesets` and fetches the detail for every one, so a recreated ruleset is
+picked up on the next run rather than silently going unread. The ids are
+recorded for humans: so that a later `GET /rulesets/<id>` can be run by hand,
+and so a ruleset that quietly disappears can be told apart from one that was
+recreated.
+
+### 3.5 Verify — and close the recorded gap in the same change
+
+```bash
+gh api /repos/nzebrian/eruofood-ai/rulesets | jq '.[] | {id, name, target, enforcement}'
+for id in <CREATION_ID> <IMMUTABLE_ID>; do
+  gh api /repos/nzebrian/eruofood-ai/rulesets/$id | jq '{name, enforcement, bypass_actors, rules: [.rules[].type]}'
+done
+```
+
+Expect `bypass_actors: []` on the immutability ruleset and
+`["deletion","non_fast_forward","update"]` for its rules.
+
+Then let the repository check it rather than reading it yourself — the next
+`Governance Advisory` run evaluates all five live tag checks against that
+payload. And **delete the `github.tag_rulesets_active` entry from
+`.github/governance/known-gaps.json` in the same commit that applies the
+rulesets**:
+
+- delete it *before* applying, and the ratchet goes red on an unexpected failure;
+- delete it *after*, and the ratchet goes red on a stale recorded gap;
+- the four `github.tag_ruleset_*` checks need no edit either way — they sit in
+  `expected_unverified`, which is a subset bound, so EXTERNAL → PASS is an
+  improvement that passes on its own.
+
+If a content check goes **FAIL** rather than PASS, the rulesets were applied and
+applied wrongly. Do not record that as a gap; fix the ruleset.
+
+§6.7 below is the live test of all this, and it is not optional.
 
 ---
 
