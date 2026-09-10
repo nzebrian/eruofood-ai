@@ -83,6 +83,15 @@ const SUMMARY_SCHEMA = 2;
  */
 const CHECK_MAIN_RULESET_ACTIVE = 'github.main_ruleset_active';
 const CHECK_TAG_RULESETS_ACTIVE = 'github.tag_rulesets_active';
+// N-1. Four invariants about what the live tag rulesets CONTAIN, as opposed to
+// the one above, which only counts them. `GET /rulesets` cannot answer any of
+// these — it carries neither `rules` nor `bypass_actors` — so each is driven
+// exclusively by the per-ruleset detail evidence and reports EXTERNAL, never
+// PASS, when that evidence is absent or incomplete.
+const CHECK_TAG_RULESET_SPLIT = 'github.tag_ruleset_split';
+const CHECK_TAG_RULESET_RULES = 'github.tag_ruleset_rules';
+const CHECK_TAG_RULESET_BYPASS_EMPTY = 'github.tag_ruleset_bypass_empty';
+const CHECK_TAG_RULESET_RELEASE_ACTORS = 'github.tag_ruleset_release_actors';
 const CHECK_NO_BYPASS_ACTORS = 'github.no_bypass_actors';
 const CHECK_REQUIRED_CHECKS_ENFORCED = 'github.required_checks_enforced';
 const CHECK_BRANCH_PROTECTION_EFFECTIVE = 'github.branch_protection_effective';
@@ -108,6 +117,10 @@ const CHECK_POLICY_FINANCE_FOUR_EYES = 'policy.finance_four_eyes';
 const PUBLISHED_CHECK_IDS = [
     CHECK_MAIN_RULESET_ACTIVE,
     CHECK_TAG_RULESETS_ACTIVE,
+    CHECK_TAG_RULESET_SPLIT,
+    CHECK_TAG_RULESET_RULES,
+    CHECK_TAG_RULESET_BYPASS_EMPTY,
+    CHECK_TAG_RULESET_RELEASE_ACTORS,
     CHECK_NO_BYPASS_ACTORS,
     CHECK_REQUIRED_CHECKS_ENFORCED,
     CHECK_BRANCH_PROTECTION_EFFECTIVE,
@@ -145,6 +158,7 @@ $repoRoot = dirname(__DIR__, 3);
 // change anything there. Whoever runs `gh api` decides what it sees.
 $rulesetsFile = null;
 $rulesetDetailFile = null;
+$rulesetDetailsFile = null;
 $codeownerErrorsFile = null;
 $mode = 'default';
 $jsonPath = null;
@@ -162,6 +176,7 @@ function invocationError(string $message, ?string $jsonPath = null): never
     fprintf(STDERR, "ERROR  %s\n", $message);
     fprintf(STDERR, "       usage: verify_repository_governance.php [--mode=default|advisory|strict]\n");
     fprintf(STDERR, "              [--rulesets=<path>] [--ruleset-detail=<path>]\n");
+    fprintf(STDERR, "              [--ruleset-details=<path>]\n");
     fprintf(STDERR, "              [--codeowners-errors=<path>]\n");
     fprintf(STDERR, "              [--repo-root=<path>] [--json=<path>]\n");
 
@@ -224,6 +239,26 @@ foreach ($argList as $arg) {
 
         if ($rulesetDetailFile === '') {
             invocationError('--ruleset-detail= was given an empty path', $jsonPath);
+        }
+
+        continue;
+    }
+
+    // N-1. The plural form, and the reason it exists is that `--ruleset-detail=`
+    // could only ever describe ONE ruleset. The collector pinned a single id, so
+    // the tag rulesets — whose `rules` and `bypass_actors` live in exactly the
+    // same place as main's — had no evidence source at all, and every question
+    // about their contents was unanswerable by construction.
+    //
+    // This takes the whole set: one detail payload per ruleset the list reports.
+    // `--ruleset-detail=` still works and is treated as a one-element set, so
+    // every M50-05 N-4b control keeps exercising the code path it was written
+    // for. When both are supplied the plural wins, because it is the superset.
+    if (str_starts_with($arg, '--ruleset-details=')) {
+        $rulesetDetailsFile = substr($arg, strlen('--ruleset-details='));
+
+        if ($rulesetDetailsFile === '') {
+            invocationError('--ruleset-details= was given an empty path', $jsonPath);
         }
 
         continue;
@@ -570,6 +605,69 @@ function readEvidence(string $flag, string $path, string $shape = 'any'): ?array
  *
  * @return array{string, string} one of enforcing|creation_only|not_enforcing|ambiguous, and a label
  */
+/**
+ * The rule types a ruleset detail payload declares, or null when it declares
+ * nothing readable.
+ *
+ * Null and `[]` are deliberately different: a payload with no `rules` key has
+ * not told us what it enforces, whereas one with an empty list has told us it
+ * enforces nothing. Collapsing them would turn the first into the second and
+ * report an unanswered question as an answer.
+ *
+ * @return list<string>|null
+ */
+function ruleTypesOf(mixed $detail): ?array
+{
+    if (! is_array($detail)) {
+        return null;
+    }
+
+    $rules = $detail['rules'] ?? null;
+
+    if (! is_array($rules) || ! array_is_list($rules)) {
+        return null;
+    }
+
+    $types = [];
+
+    foreach ($rules as $rule) {
+        $type = is_array($rule) ? ($rule['type'] ?? null) : null;
+
+        if (is_string($type) && $type !== '') {
+            $types[] = $type;
+        }
+    }
+
+    return array_values(array_unique($types));
+}
+
+/**
+ * Comparable keys for a list of ruleset bypass actors.
+ *
+ * An actor is identified by the PAIR (actor_id, actor_type) — id alone is not
+ * unique, because team #5 and integration #5 are different actors. Anything
+ * that is not that pair becomes the literal string `unusable`, so a malformed
+ * entry can never quietly compare equal to a well-formed one.
+ *
+ * @param list<mixed> $actors
+ * @return list<string>
+ */
+function actorKeys(array $actors): array
+{
+    $keys = [];
+
+    foreach ($actors as $actor) {
+        $id = is_array($actor) ? ($actor['actor_id'] ?? null) : null;
+        $type = is_array($actor) ? ($actor['actor_type'] ?? null) : null;
+
+        $keys[] = is_int($id) && is_string($type) && $type !== ''
+            ? $type.'#'.$id
+            : 'unusable';
+    }
+
+    return $keys;
+}
+
 function classifyRulesetForBypass(mixed $rs, int|string $index): array
 {
     $label = 'ruleset #'.(string) $index;
@@ -935,18 +1033,79 @@ verify('creation authority and immutability are not in the same ruleset', functi
     return [$tagRulesets !== [], 'the two-ruleset split holds'];
 });
 
-verify('the creation ruleset carries no bypass actor yet', function () use ($tagRulesets): array {
-    // Not a permanent invariant — this is where release actors legitimately go.
-    // It is checked so that the day one appears, it appears because somebody
-    // decided to put it there, having read production-tags-ruleset.json's
-    // actor_placeholder_contract.
+verify('the creation ruleset names exactly the recorded release actors', function () use ($tagRulesets, $governanceDir): array {
+    // This check used to assert the creation ruleset carried NO actor, so that
+    // the day one appeared it appeared because somebody had decided to put it
+    // there. N-1 is that day. Asserting emptiness now would either fail forever
+    // or have to be deleted, and a check deleted the moment it fires is not a
+    // check — so it becomes the durable form of the same question: an actor is
+    // here because identities.json says who it should be.
+    //
+    // Both sides are committed artifacts, so this is a consistency check and
+    // never evidence about GitHub. What is actually deployed is answered by the
+    // live `github.tag_ruleset_release_actors`, which reads the same two sides
+    // from `GET /rulesets/{id}` instead.
+    $creation = null;
+
     foreach ($tagRulesets as $rs) {
-        if (ruleOfType($rs, 'creation') !== null && ($rs['bypass_actors'] ?? null) !== []) {
-            return [false, '"'.($rs['name'] ?? '?').'" already names release actors — confirm each is intended'];
+        if (ruleOfType($rs, 'creation') !== null) {
+            $creation = $rs;
+
+            break;
         }
     }
 
-    return [$tagRulesets !== [], 'no release actor configured yet (tag creation denied to everyone)'];
+    if ($creation === null) {
+        return [false, 'no ruleset carries a creation rule'];
+    }
+
+    $live = $creation['bypass_actors'] ?? null;
+
+    if (! is_array($live) || ! array_is_list($live)) {
+        return [false, 'the creation ruleset has no usable bypass_actors list'];
+    }
+
+    $identitiesPath = $governanceDir.'/identities.json';
+
+    if (! is_file($identitiesPath)) {
+        return $live === []
+            ? [true, 'no release actor configured yet (tag creation denied to everyone)']
+            : [false, '"'.($creation['name'] ?? '?').'" names release actors that identities.json does not record — it does not exist'];
+    }
+
+    $declared = readJson($identitiesPath)['release_actors'] ?? null;
+
+    if (! is_array($declared) || ! array_is_list($declared)) {
+        return [false, 'identities.json has no `release_actors` list to compare against'];
+    }
+
+    $liveKeys = actorKeys($live);
+    $declaredKeys = actorKeys($declared);
+
+    if (in_array('unusable', array_merge($liveKeys, $declaredKeys), true)) {
+        return [false, 'a release actor is not a {actor_id:int, actor_type:string} pair — a handle is not an actor id, and GitHub rejects one'];
+    }
+
+    $extra = array_values(array_diff($liveKeys, $declaredKeys));
+    $absent = array_values(array_diff($declaredKeys, $liveKeys));
+
+    if ($extra !== [] || $absent !== []) {
+        $parts = [];
+
+        if ($extra !== []) {
+            $parts[] = 'in the ruleset but not in identities.json: '.implode(', ', $extra);
+        }
+
+        if ($absent !== []) {
+            $parts[] = 'in identities.json but not in the ruleset: '.implode(', ', $absent);
+        }
+
+        return [false, implode('; ', $parts)];
+    }
+
+    return [true, $liveKeys === []
+        ? 'no release actor configured yet (tag creation denied to everyone)'
+        : 'the prepared creation ruleset and identities.json agree: '.implode(', ', $liveKeys)];
 });
 
 // -- 4. Required checks -------------------------------------------------------
@@ -1557,10 +1716,47 @@ if ($rulesetsFile !== null) {
 // M50-05 N-4b. `GET /rulesets/{id}` returns a single object carrying `rules`.
 // A list here would be the wrong endpoint's payload, so the shape demand is the
 // opposite of the one above and is doing real work, not decoration.
-$liveRulesetDetail = null;
+//
+// N-1 generalises the source without changing that contract. The pool below is
+// the set of detail payloads — one per ruleset — however it was supplied:
+//
+//   --ruleset-details=<list>   the collector's output, every ruleset
+//   --ruleset-detail=<map>     one payload, treated as a one-element set
+//
+// A null pool means no detail evidence of any kind arrived, which every check
+// downstream must translate into EXTERNAL rather than a verdict.
+$rulesetDetailPool = null;
 
-if ($rulesetDetailFile !== null) {
-    $liveRulesetDetail = readEvidence('--ruleset-detail', $rulesetDetailFile, 'map');
+if ($rulesetDetailsFile !== null) {
+    $rulesetDetailPool = readEvidence('--ruleset-details', $rulesetDetailsFile, 'list');
+} elseif ($rulesetDetailFile !== null) {
+    $one = readEvidence('--ruleset-detail', $rulesetDetailFile, 'map');
+    $rulesetDetailPool = $one === null ? null : [$one];
+}
+
+// The branch-targeted member of the pool, which is what N-4b has always read.
+// Selecting by `target` rather than by position is the only change: a pool that
+// now legitimately contains tag rulesets must not let one of them be mistaken
+// for main's. Zero or several branch payloads are both "nobody can answer this
+// from here" — never a verdict.
+$liveRulesetDetail = null;
+$branchDetailReason = null;
+
+if ($rulesetDetailPool !== null) {
+    $branchDetails = array_values(array_filter(
+        $rulesetDetailPool,
+        static fn ($d): bool => is_array($d) && ($d['target'] ?? null) === 'branch',
+    ));
+
+    if (count($branchDetails) === 1) {
+        $liveRulesetDetail = $branchDetails[0];
+    } else {
+        $branchDetailReason = sprintf(
+            '%d branch-targeted ruleset detail payload(s) supplied out of %d — exactly one is needed to answer what main requires',
+            count($branchDetails),
+            count($rulesetDetailPool),
+        );
+    }
 }
 
 /**
@@ -1583,6 +1779,12 @@ if ($rulesetDetailFile !== null) {
  * @return callable():array{bool|null, string}|null
  */
 $requiredChecksInvariant = null;
+
+if ($liveRulesetDetail === null && $branchDetailReason !== null) {
+    // Detail evidence arrived but none of it describes a branch ruleset. That is
+    // a reason worth printing, so the reader is not left with a bare EXTERNAL.
+    $requiredChecksInvariant = static fn (): array => [null, $branchDetailReason];
+}
 
 if ($liveRulesetDetail !== null) {
     $requiredChecksInvariant = static function () use ($liveRulesetDetail, $liveRulesets, $governanceDir): array {
@@ -1744,9 +1946,401 @@ if ($liveRulesetDetail !== null) {
     };
 }
 
+// -- N-1: what the live TAG rulesets actually contain --------------------------
+//
+// `github.tag_rulesets_active` counts them. These four read them.
+//
+// The distinction matters because the count is the easy half. Two active tag
+// rulesets can exist and still protect nothing: a `creation` rule with a
+// standing bypass actor, an immutability ruleset missing `update` so a tag can
+// be moved but not deleted, a ref pattern narrowed to `refs/tags/v9*`. Every
+// one of those reads as "two active tag rulesets" in the list payload, and
+// every one of them is the whole protection gone.
+//
+// The evidence contract is the N-4b one, unchanged:
+//
+//   PASS      complete positive evidence — the invariant was checked and holds
+//   FAIL      evidence exists and contradicts the invariant
+//   EXTERNAL  evidence is required and is absent, partial or unusable
+//
+// `production-tags-ruleset.json` is NEVER consulted for any of it. That file is
+// what this repository INTENDS; comparing GitHub against it would be a valid
+// design check but is not evidence of enforcement, and reporting it as such is
+// exactly the class of vacuous PASS M37 Phase 4B and M50-05 N-4b each had to
+// remove once already.
+
+/**
+ * Resolve the live tag rulesets from the two evidence sources, or explain why
+ * nobody can.
+ *
+ * @return array{0: 'external'|'ready', 1: string, 2: list<array<string, mixed>>}
+ */
+$resolveTagDetails = static function () use ($liveRulesets, $rulesetDetailPool): array {
+    if ($rulesetDetailPool === null) {
+        return ['external', 'no ruleset detail evidence was supplied — `GET /rulesets` carries neither `rules` nor `bypass_actors`, so the list alone cannot answer this', []];
+    }
+
+    if ($liveRulesets === null) {
+        return ['external', 'the ruleset list is absent, so there is no way to tell whether the detail payloads are the complete set', []];
+    }
+
+    // Every TAG-targeted ruleset, not only the active ones. An inactive tag
+    // ruleset is a real answer — it enforces nothing — and filtering it out
+    // here would turn "protection was switched off" into "nothing to see".
+    $listedTags = array_values(array_filter(
+        $liveRulesets,
+        static fn ($rs): bool => is_array($rs) && ($rs['target'] ?? null) === 'tag',
+    ));
+
+    if ($listedTags === []) {
+        return ['external', 'no tag ruleset exists on GitHub — there is no content to assess; `github.tag_rulesets_active` is the check that reports that absence', []];
+    }
+
+    $byId = [];
+
+    foreach ($rulesetDetailPool as $detail) {
+        if (is_array($detail) && isset($detail['id'])) {
+            $byId[(string) $detail['id']] = $detail;
+        }
+    }
+
+    $resolved = [];
+    $missing = [];
+
+    foreach ($listedTags as $rs) {
+        $id = $rs['id'] ?? null;
+
+        if ($id === null) {
+            return ['external', 'a listed tag ruleset carries no `id`, so its detail payload cannot be matched to it', []];
+        }
+
+        if (! isset($byId[(string) $id])) {
+            $missing[] = '#'.(string) $id;
+
+            continue;
+        }
+
+        $resolved[] = $byId[(string) $id];
+    }
+
+    if ($missing !== []) {
+        return ['external', sprintf(
+            'no detail payload for tag ruleset(s) %s — the set is incomplete, and a partial read of tag protection is not a verdict',
+            implode(', ', $missing),
+        ), []];
+    }
+
+    return ['ready', '', $resolved];
+};
+
+/**
+ * Split the resolved tag rulesets into the creation one and the immutability
+ * one, by the rules they carry rather than by their names.
+ *
+ * Names are administrator-supplied free text; a policy that keyed off them
+ * could be defeated by a rename, which is not a security boundary. The rule
+ * types are the thing GitHub actually enforces.
+ *
+ * @param list<array<string, mixed>> $details
+ * @return array{0: ?array<string, mixed>, 1: ?array<string, mixed>, 2: ?string}
+ */
+$classifyTagRulesets = static function (array $details): array {
+    $immutabilityRules = ['deletion', 'non_fast_forward', 'update'];
+    $creation = null;
+    $immutable = null;
+
+    foreach ($details as $detail) {
+        $types = ruleTypesOf($detail);
+
+        if ($types === null) {
+            return [null, null, sprintf(
+                'ruleset "%s" has no usable `rules` list, so it cannot be classified',
+                (string) ($detail['name'] ?? 'unnamed'),
+            )];
+        }
+
+        if (array_intersect($types, $immutabilityRules) !== []) {
+            if ($immutable !== null) {
+                return [null, null, 'two rulesets both carry immutability rules — the creation/immutability split is not what is deployed'];
+            }
+
+            $immutable = $detail;
+
+            continue;
+        }
+
+        if ($creation !== null) {
+            return [null, null, 'two rulesets carry neither deletion, non_fast_forward nor update — neither can be the immutability ruleset'];
+        }
+
+        $creation = $detail;
+    }
+
+    if ($creation === null || $immutable === null) {
+        return [null, null, 'the two rulesets do not divide into one creation ruleset and one immutability ruleset'];
+    }
+
+    return [$creation, $immutable, null];
+};
+
+$tagSplitInvariant = static function () use ($resolveTagDetails, $classifyTagRulesets): array {
+    [$state, $reason, $details] = $resolveTagDetails();
+
+    if ($state === 'external') {
+        return [null, $reason];
+    }
+
+    if (count($details) !== 2) {
+        return [false, sprintf(
+            '%d tag ruleset(s) exist; the design is exactly two — one restricting creation, one making tags immutable. GitHub scopes bypass_actors to a whole ruleset, so collapsing them would exempt the release actors from deletion as well',
+            count($details),
+        )];
+    }
+
+    foreach ($details as $detail) {
+        $name = (string) ($detail['name'] ?? 'unnamed');
+
+        if (($detail['enforcement'] ?? null) !== 'active') {
+            return [false, sprintf(
+                'ruleset "%s" is enforcement=%s — it is deployed but enforces nothing',
+                $name,
+                is_string($detail['enforcement'] ?? null) ? (string) $detail['enforcement'] : 'absent',
+            )];
+        }
+
+        $include = $detail['conditions']['ref_name']['include'] ?? null;
+
+        if (! is_array($include) || ! array_is_list($include)) {
+            return [null, sprintf('ruleset "%s" carries no readable conditions.ref_name.include — the payload does not say which tags it governs', $name)];
+        }
+
+        if (! in_array('refs/tags/v*', $include, true)) {
+            return [false, sprintf(
+                'ruleset "%s" does not include `refs/tags/v*` (includes: %s) — release.yml fires on `v*.*.*`, so any narrower pattern leaves release tags ungoverned',
+                $name,
+                implode(', ', array_map(static fn ($p): string => is_string($p) ? $p : get_debug_type($p), $include)) ?: 'none',
+            )];
+        }
+    }
+
+    [, , $splitError] = $classifyTagRulesets($details);
+
+    if ($splitError !== null) {
+        return [false, $splitError];
+    }
+
+    return [true, 'two active tag rulesets, both governing refs/tags/v*, split into creation and immutability'];
+};
+
+$tagRulesInvariant = static function () use ($resolveTagDetails, $classifyTagRulesets): array {
+    [$state, $reason, $details] = $resolveTagDetails();
+
+    if ($state === 'external') {
+        return [null, $reason];
+    }
+
+    [$creation, $immutable, $splitError] = $classifyTagRulesets($details);
+
+    if ($splitError !== null) {
+        // The split check reports this as a FAIL. Repeating it here would be a
+        // second failure for one cause; what this check can honestly say is
+        // that it could not be evaluated.
+        return [null, 'the creation/immutability split could not be established (see github.tag_ruleset_split), so which ruleset should carry which rule is undecidable'];
+    }
+
+    $creationTypes = ruleTypesOf($creation) ?? [];
+    $immutableTypes = ruleTypesOf($immutable) ?? [];
+
+    if (! in_array('creation', $creationTypes, true)) {
+        return [false, sprintf(
+            'the non-immutability tag ruleset ("%s") carries no `creation` rule (rules: %s) — nothing restricts who may cut a release tag',
+            (string) ($creation['name'] ?? 'unnamed'),
+            implode(', ', $creationTypes) ?: 'none',
+        )];
+    }
+
+    $expected = ['deletion', 'non_fast_forward', 'update'];
+    sort($immutableTypes);
+
+    if ($immutableTypes !== $expected) {
+        $absent = array_values(array_diff($expected, $immutableTypes));
+        $extra = array_values(array_diff($immutableTypes, $expected));
+        $parts = [];
+
+        if ($absent !== []) {
+            $parts[] = 'missing '.implode(', ', $absent);
+        }
+
+        if ($extra !== []) {
+            $parts[] = 'unexpected '.implode(', ', $extra);
+        }
+
+        return [false, sprintf(
+            'the immutability ruleset ("%s") must carry exactly deletion + non_fast_forward + update: %s. Without `update` a tag can be moved; without `non_fast_forward` it can be rewritten; without `deletion` it can be removed and recreated',
+            (string) ($immutable['name'] ?? 'unnamed'),
+            implode('; ', $parts),
+        )];
+    }
+
+    return [true, 'creation is restricted, and the immutability ruleset carries deletion + non_fast_forward + update'];
+};
+
+$tagBypassEmptyInvariant = static function () use ($resolveTagDetails, $classifyTagRulesets): array {
+    [$state, $reason, $details] = $resolveTagDetails();
+
+    if ($state === 'external') {
+        return [null, $reason];
+    }
+
+    [$creation, $immutable, $splitError] = $classifyTagRulesets($details);
+
+    if ($splitError !== null) {
+        return [null, 'the creation/immutability split could not be established (see github.tag_ruleset_split), so which ruleset must be actor-free is undecidable'];
+    }
+
+    // The absent-versus-empty distinction M37 Phase 4B established. `GET
+    // /rulesets/{id}` does send bypass_actors, but a payload that omits it is
+    // still not evidence of emptiness.
+    if (! array_key_exists('bypass_actors', $immutable)) {
+        return [null, sprintf(
+            'the immutability ruleset ("%s") payload carries no `bypass_actors` field — a missing field is not an empty one',
+            (string) ($immutable['name'] ?? 'unnamed'),
+        )];
+    }
+
+    $immutableActors = $immutable['bypass_actors'];
+
+    if (! is_array($immutableActors) || ! array_is_list($immutableActors)) {
+        return [false, sprintf(
+            'the immutability ruleset ("%s") has a bypass_actors that is not a list (%s)',
+            (string) ($immutable['name'] ?? 'unnamed'),
+            get_debug_type($immutableActors),
+        )];
+    }
+
+    if ($immutableActors !== []) {
+        return [false, sprintf(
+            'the immutability ruleset ("%s") has %d bypass actor(s) — a release tag its creator can delete is not an immutable release record, and this ruleset exists for no other reason',
+            (string) ($immutable['name'] ?? 'unnamed'),
+            count($immutableActors),
+        )];
+    }
+
+    // Disjointness. Authority to create a release tag is not authority to unmake
+    // one; an actor holding both has the immutability ruleset switched off for
+    // them personally, which reads as correct in each ruleset examined alone.
+    if (! array_key_exists('bypass_actors', $creation)) {
+        return [null, sprintf(
+            'the immutability ruleset is actor-free, but the creation ruleset ("%s") payload carries no `bypass_actors` field, so the two sets cannot be compared',
+            (string) ($creation['name'] ?? 'unnamed'),
+        )];
+    }
+
+    $creationActors = $creation['bypass_actors'];
+
+    if (! is_array($creationActors) || ! array_is_list($creationActors)) {
+        return [false, sprintf(
+            'the creation ruleset ("%s") has a bypass_actors that is not a list (%s)',
+            (string) ($creation['name'] ?? 'unnamed'),
+            get_debug_type($creationActors),
+        )];
+    }
+
+    $both = array_intersect(actorKeys($creationActors), actorKeys($immutableActors));
+
+    if ($both !== []) {
+        return [false, 'the same actor holds creation authority and immutability bypass: '.implode(', ', $both)];
+    }
+
+    return [true, 'the immutability ruleset has an explicitly empty bypass_actors, and no actor appears in both rulesets'];
+};
+
+$tagReleaseActorsInvariant = static function () use ($resolveTagDetails, $classifyTagRulesets, $governanceDir): array {
+    [$state, $reason, $details] = $resolveTagDetails();
+
+    if ($state === 'external') {
+        return [null, $reason];
+    }
+
+    [$creation, , $splitError] = $classifyTagRulesets($details);
+
+    if ($splitError !== null) {
+        return [null, 'the creation/immutability split could not be established (see github.tag_ruleset_split), so the creation ruleset cannot be identified'];
+    }
+
+    $identitiesPath = $governanceDir.'/identities.json';
+
+    // No identities file means nobody has yet decided who may cut a release. The
+    // declared side of the comparison does not exist, and inventing it — from a
+    // username, from "whoever is an admin", from the actors GitHub happens to
+    // report — is the failure mode M29-B exists to prevent.
+    if (! is_file($identitiesPath)) {
+        return [null, 'no .github/governance/identities.json — the release actor set has not been decided, so there is nothing to compare the live bypass actors against (RELEASE_ACTOR_ID_REQUIRED)'];
+    }
+
+    $identities = readJson($identitiesPath);
+    $declaredActors = $identities['release_actors'] ?? null;
+
+    if (! is_array($declaredActors) || ! array_is_list($declaredActors)) {
+        return [false, 'identities.json has no `release_actors` list — the declared side of this invariant is malformed'];
+    }
+
+    if (! array_key_exists('bypass_actors', $creation)) {
+        return [null, sprintf(
+            'the creation ruleset ("%s") payload carries no `bypass_actors` field, so what GitHub grants cannot be compared with what identities.json records',
+            (string) ($creation['name'] ?? 'unnamed'),
+        )];
+    }
+
+    $liveActors = $creation['bypass_actors'];
+
+    if (! is_array($liveActors) || ! array_is_list($liveActors)) {
+        return [false, sprintf('the creation ruleset has a bypass_actors that is not a list (%s)', get_debug_type($liveActors))];
+    }
+
+    $declaredKeys = actorKeys($declaredActors);
+    $liveKeys = actorKeys($liveActors);
+
+    foreach ([['declared', $declaredKeys], ['live', $liveKeys]] as [$side, $keys]) {
+        if (in_array('unusable', $keys, true)) {
+            return [false, sprintf('a %s release actor is not a {actor_id:int, actor_type:string} pair — a handle is not an actor id, and GitHub rejects one', $side)];
+        }
+    }
+
+    $unrecorded = array_values(array_diff($liveKeys, $declaredKeys));
+    $ungranted = array_values(array_diff($declaredKeys, $liveKeys));
+
+    if ($unrecorded !== [] || $ungranted !== []) {
+        $parts = [];
+
+        if ($unrecorded !== []) {
+            $parts[] = 'granted on GitHub but NOT recorded in identities.json: '.implode(', ', $unrecorded);
+        }
+
+        if ($ungranted !== []) {
+            $parts[] = 'recorded in identities.json but NOT granted on GitHub: '.implode(', ', $ungranted);
+        }
+
+        return [false, implode('; ', $parts)];
+    }
+
+    return [true, sprintf(
+        'the creation ruleset grants exactly the %d release actor(s) identities.json records',
+        count($declaredKeys),
+    )];
+};
+
 if ($liveRulesets === null) {
     externalCheck('the main ruleset is actually active on GitHub', null, CHECK_MAIN_RULESET_ACTIVE);
     externalCheck('the production tag rulesets are actually active on GitHub', null, CHECK_TAG_RULESETS_ACTIVE);
+    // N-1. Evaluated in both arms so the four content invariants always appear
+    // in the report and in the summary's id set. With no list they resolve to
+    // EXTERNAL on their own terms — completeness cannot be established — rather
+    // than vanishing, which would let a missing payload shrink the check set.
+    externalCheck('the tag rulesets are split into creation and immutability', $tagSplitInvariant, CHECK_TAG_RULESET_SPLIT);
+    externalCheck('the tag rulesets carry the rules that make a release tag immutable', $tagRulesInvariant, CHECK_TAG_RULESET_RULES);
+    externalCheck('the tag-immutability ruleset has an explicitly empty bypass_actors', $tagBypassEmptyInvariant, CHECK_TAG_RULESET_BYPASS_EMPTY);
+    externalCheck('release-tag creation is granted to exactly the recorded actors', $tagReleaseActorsInvariant, CHECK_TAG_RULESET_RELEASE_ACTORS);
     // N-4b is driven by the DETAIL endpoint, which is fetched independently of
     // the list. It is evaluated here too so that a missing list cannot suppress
     // an answer the detail payload can give on its own.
@@ -1779,6 +2373,13 @@ if ($liveRulesets === null) {
 
         return [count($tagRules) >= 2, 'active tag rulesets='.count($tagRules)];
     }, CHECK_TAG_RULESETS_ACTIVE);
+
+    // N-1. The count above is necessary and nowhere near sufficient; these four
+    // read what those rulesets actually say.
+    externalCheck('the tag rulesets are split into creation and immutability', $tagSplitInvariant, CHECK_TAG_RULESET_SPLIT);
+    externalCheck('the tag rulesets carry the rules that make a release tag immutable', $tagRulesInvariant, CHECK_TAG_RULESET_RULES);
+    externalCheck('the tag-immutability ruleset has an explicitly empty bypass_actors', $tagBypassEmptyInvariant, CHECK_TAG_RULESET_BYPASS_EMPTY);
+    externalCheck('release-tag creation is granted to exactly the recorded actors', $tagReleaseActorsInvariant, CHECK_TAG_RULESET_RELEASE_ACTORS);
 
     // M37 Phase 4B — five outcomes, because there really are five.
     //

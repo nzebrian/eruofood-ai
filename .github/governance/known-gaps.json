@@ -7,7 +7,7 @@
     "this_is_not_suppression": "A recorded gap is still reported as a FAIL by the validator, still counted in `failed`, and still printed on the console. Recording it here does not silence it; it states that somebody looked at it, decided not to fix it yet, and wrote down what they saw. The ratchet's job is to notice the moment that written-down state stops being true.",
     "the_ratchet_bites_both_ways": "A NEW failure makes the advisory job red because it is not in this list. A recorded failure that DISAPPEARS also makes it red, because this file is then describing a repository that no longer exists, and a stale record of accepted risk is worse than none. Closing a gap therefore requires deleting its entry here, deliberately.",
     "identifiers_are_a_contract": "The `id` values are published by apps/api/scripts/verify_repository_governance.php as CHECK_* constants and emitted in its --json summary under `failures[].id`. They are matched exactly. Renaming a constant without updating this file makes the ratchet fail on an unknown identifier, which is the intended failure mode.",
-    "how_to_verify": "php apps/api/scripts/verify_repository_governance.php --mode=strict --rulesets=<live> --codeowners-errors=<live> --json=summary.json && php apps/api/scripts/governance_ratchet.php --summary=summary.json"
+    "how_to_verify": "php apps/api/scripts/verify_repository_governance.php --mode=strict --rulesets=<live> --ruleset-details=<live> --codeowners-errors=<live> --json=summary.json && php apps/api/scripts/governance_ratchet.php --summary=summary.json. See VERIFY_GOVERNANCE.md for how to build the --ruleset-details payload: one GET /rulesets/{id} per id in the list, never a hard-coded id."
   },
 
   "schema": 1,
@@ -21,8 +21,9 @@
       "recorded_on": "2026-08-27",
       "approved_by": "repository owner — M37 Phase 4B implementation contract, locked decision D",
       "why_not_closed": "Applying a ruleset is an administrative change to live GitHub state. Phase 4B is explicitly forbidden from applying, creating, editing, deleting or activating it. The gap is recorded so that it stays visible on every run instead of being rediscovered by a future audit.",
-      "material_risk": "`.github/governance/required-checks.json` records release.yml as `governed_instead_by` this ruleset. While the ruleset is absent, that governance claim is false: production tags are unprotected — nothing prevents a tag being moved, deleted or recreated.",
-      "how_to_close": "Apply .github/governance/production-tags-ruleset.json on GitHub, confirm `GET /rulesets` reports two active rulesets with target=tag, then delete this entry. The ratchet will go red until the entry is removed."
+      "material_risk": "`.github/governance/required-checks.json` records release.yml as `governed_instead_by` this ruleset. While the ruleset is absent, that governance claim is false: production tags are unprotected — nothing prevents a tag being moved, deleted or recreated. Demonstrated, not theorised: v0.0.1-rc1 (072b096f) and v0.0.1-rc2 (d20dd452) were both created by an ordinary account with no restriction, no approval and no required check, and either can still be moved or deleted today.",
+      "n1_status": "N-1 built the LIVE content invariants that make applying this ruleset verifiable — github.tag_ruleset_split, .tag_ruleset_rules, .tag_ruleset_bypass_empty and .tag_ruleset_release_actors. It did not apply anything: ruleset creation is an administrative write no automation in this repository holds. This entry therefore stays, because the gap it records is still true.",
+      "how_to_close": "Apply .github/governance/production-tags-ruleset.json on GitHub per APPLY_GOVERNANCE.md §3, confirm `GET /rulesets` reports two active rulesets with target=tag, then delete this entry IN THE SAME CHANGE. Deleting it earlier makes the ratchet red for an unexpected failure; deleting it later makes the ratchet red for a stale gap. The four N-1 content checks need no record edit at all — they live in `expected_unverified`, which is a subset bound, so EXTERNAL → PASS is an improvement that passes on its own."
     },
     {
       "id": "github.codeowners_errors_zero",
@@ -44,15 +45,23 @@
       "github.release_actor_id_valid",
       "github.no_bypass_actors",
       "github.required_checks_enforced",
-      "github.branch_protection_effective"
+      "github.branch_protection_effective",
+      "github.tag_ruleset_split",
+      "github.tag_ruleset_rules",
+      "github.tag_ruleset_bypass_empty",
+      "github.tag_ruleset_release_actors"
     ],
     "why_each": {
       "github.identity_accounts_exist": "Needs GitHub to confirm an account exists. No identities are configured.",
       "github.identity_accounts_write_access": "Needs GitHub to confirm push access. No identities are configured.",
       "github.release_actor_id_valid": "Needs GitHub to accept the actor id in a bypass_actors payload. No release actor is configured.",
       "github.no_bypass_actors": "GET /rulesets does not include a bypass_actors field at all. M37 Phase 4B stopped reading that absence as an empty list. Its review then found a second way to reach a vacuous PASS — returning one after examining NO enforcing ruleset — and that is now EXTERNAL too: an affirmative result requires at least one classified, enforcing ruleset that explicitly supplied an empty array. Closing this gap needs an evidence source that actually carries the field.",
-      "github.required_checks_enforced": "Needs the per-branch rules endpoint, which the workflow token cannot read.",
-      "github.branch_protection_effective": "Needs somebody to actually attempt a direct push and a force-push. No API answers it."
+      "github.required_checks_enforced": "Needs `GET /rulesets/{id}`, which carries `rules` where the list does not. M50-05 N-4b proved the workflow token CAN read that endpoint and wired it in, so this check now reports PASS on a healthy run — the earlier note here, that the token could not read it, was measured wrong and is corrected. It stays listed because `expected_unverified` is a subset bound: an id that leaves the set is an improvement, and keeping it costs nothing, whereas removing it would make the ratchet red the first time the endpoint is genuinely unreachable.",
+      "github.branch_protection_effective": "Needs somebody to actually attempt a direct push and a force-push. No API answers it.",
+      "github.tag_ruleset_split": "There is no tag ruleset on GitHub, so there is no content to assess. Becomes a PASS the moment two are applied correctly, and a FAIL if they are applied wrongly — neither needs a record edit.",
+      "github.tag_ruleset_rules": "Same cause: `GET /rulesets/{id}` is the only endpoint carrying `rules`, and there is no tag ruleset to fetch one for.",
+      "github.tag_ruleset_bypass_empty": "Same cause. Note this is the check that closes the tag half of `github.no_bypass_actors`: the detail endpoint does send `bypass_actors`, which the list endpoint never has.",
+      "github.tag_ruleset_release_actors": "Two reasons today, either sufficient. No tag ruleset exists, and `.github/governance/identities.json` is absent — nobody has yet decided which numeric actor_id may cut a release, and the validator will not invent one from a handle, from the repository owner, or from whatever GitHub happens to report. RELEASE_ACTOR_ID_REQUIRED."
     }
   }
 }

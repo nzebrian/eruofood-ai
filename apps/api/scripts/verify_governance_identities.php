@@ -74,6 +74,11 @@ $identitiesPath = $options['identities'] ?? $governanceDir.'/identities.json';
 $identitiesExplicit = isset($options['identities']);
 $codeownersPath = $options['codeowners'] ?? $repoRoot.'/.github/CODEOWNERS';
 $tagsPath = $options['tags'] ?? $governanceDir.'/production-tags-ruleset.json';
+// N-1. The ownership mode decides one rule here — whether a CODEOWNERS deferral
+// is permitted — so it has to be overridable for the same reason the other
+// three are: a negative control cannot prove a mode-dependent guard bites if
+// every fixture is forced to read the real repository's mode.
+$ownershipPathOption = $options['ownership'] ?? null;
 
 /** @return array<mixed> */
 function readJsonOrFail(string $path): array
@@ -150,7 +155,7 @@ $repositoryOwner = explode('/', $appliesTo)[0] ?? '';
 // Read before anything is judged: whether FINANCE naming the repository owner
 // is a defect or a recorded deferral depends entirely on how many humans there
 // are, and that is a declared fact rather than something inferable from files.
-$ownershipPath = $governanceDir.'/ownership.json';
+$ownershipPath = $ownershipPathOption ?? $governanceDir.'/ownership.json';
 $ownershipDoc = null;
 
 if (is_file($ownershipPath)) {
@@ -194,12 +199,18 @@ if ($identities === null) {
 
 foreach (GovernanceRole::cases() as $role) {
     $handles = $assessment->resolved[$role->value] ?? null;
+    $isDeferred = in_array($role->value, $assessment->deferredRoles, true);
 
+    // DEFERRED is printed, never omitted. A deferred role that disappeared from
+    // this table would leave a reader believing the file covers seven roles it
+    // says nothing about.
     printf(
         "  %-10s %-14s %s\n",
-        $handles === null ? 'UNRESOLVED' : 'RESOLVED',
+        $handles !== null ? 'RESOLVED' : ($isDeferred ? 'DEFERRED' : 'UNRESOLVED'),
         $role->value,
-        $handles === null ? '—' : implode(' ', $handles),
+        $handles !== null
+            ? implode(' ', $handles)
+            : ($isDeferred ? '— deferred under SOLE_OWNER; CODEOWNERS stays inert' : '—'),
     );
 }
 
@@ -285,7 +296,13 @@ printf(
     strtoupper(str_replace('_', ' ', $assessment->state->value)),
     $assessment->state->summary(),
 );
-printf("       %d error(s), %d warning(s), %d role(s) unresolved\n", count($errors), count($warnings), count($assessment->unresolvedRoles));
+printf(
+    "       %d error(s), %d warning(s), %d role(s) unresolved, %d deferred\n",
+    count($errors),
+    count($warnings),
+    count($assessment->unresolvedRoles),
+    count($assessment->deferredRoles),
+);
 
 if ($assessment->state === ActivationState::ReadyForActivation) {
     echo "\nREADY FOR ACTIVATION means nothing further is blocked on this repository.\n";

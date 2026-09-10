@@ -4,15 +4,20 @@
     "purpose": "Repository rulesets protecting refs/tags/v* — the tags that cut a production release. Prepared by M29-A; NOT APPLIED.",
     "applies_to": "nzebrian/eruofood-ai",
     "prepared_against_main_sha": "cbdc2ab445ba157c1d4b2bccb5f766f81b6b0c31",
+    "reviewed_against_main_sha": "d20dd452e50a377507f4b0fe6da7136e6d5f224c",
     "api": "POST /repos/{owner}/{repo}/rulesets",
-    "why_this_matters": "`.github/workflows/release.yml` triggers on `push: tags: [\"v*.*.*\"]` and every job in it is a mandatory production gate that ends in building and promoting a container image. As audited on 2026-08-21, `GET /repos/nzebrian/eruofood-ai/tags/protection` returned 404 and `GET /rulesets` returned an empty list: tag creation is completely unrestricted. A production release is currently one `git push --tags` away, with no review, no approval and no required check.",
+    "why_this_matters": "`.github/workflows/release.yml` triggers on `push: tags: [\"v*.*.*\"]` and every job in it is a mandatory production gate. Tag creation is completely unrestricted: as re-audited on 2026-09-10 the live `GET /rulesets` reports one active ruleset, targeting `main`, and ZERO targeting tags. A production release is one `git push --tags` away with no review, no approval and no required check — now demonstrated rather than argued, because v0.0.1-rc1 and v0.0.1-rc2 were both created by an ordinary account with nothing in the way, and either can still be moved or deleted today.",
+    "correction_2026_09_10": "This block previously said `every job ... ends in building and promoting a container image` and that `GET /rulesets` returned an empty list. Both were stale. release.yml builds two images and promotes NEITHER — both `docker/build-push-action` steps are `push: false`, there is no `docker/login-action` and no registry; the publishing path is `staging-deploy.yml`, which is `workflow_dispatch` and takes a ref as an input. And the list is no longer empty: the `main` ruleset has since been applied. Overstating what the release path can do is the wrong direction of error in the file whose job is to say what is at risk.",
+    "what_this_file_is_not": "It is a proposal. Nothing in it is evidence that GitHub enforces anything, and no check in this repository may read it to decide whether tag protection is live. That question is answered only by `GET /rulesets` plus `GET /rulesets/{id}`, through github.tag_rulesets_active, github.tag_ruleset_split, github.tag_ruleset_rules, github.tag_ruleset_bypass_empty and github.tag_ruleset_release_actors — all of which report EXTERNAL, never PASS, when that live evidence is missing.",
     "why_two_rulesets": "GitHub applies bypass_actors to an entire ruleset, not to individual rules. Restricting *who may create* a release tag requires a `creation` rule plus bypass actors who are exempt from it — and those actors would then also be exempt from every other rule in the same ruleset, including deletion. Splitting the policy keeps tag immutability absolute: the release actors may create tags, and nobody may delete or move one.",
     "apply_commands": [
       "jq '.rulesets[0]' .github/governance/production-tags-ruleset.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -",
       "jq '.rulesets[1]' .github/governance/production-tags-ruleset.json | gh api -X POST /repos/nzebrian/eruofood-ai/rulesets --input -"
     ],
+    "release_actor_resolved": "N-1 Path A. rulesets[0].bypass_actors names GitHub App 4902397, \"EruoFood Release Governor\", installed on this repository only, with Contents: read and write. That is the APP ID — not the installation id, and not the repository owner's user id 36742102. GitHub's ruleset bypass actor types are Integration, OrganizationAdmin, RepositoryRole and Team; there is no User, so a person cannot hold this grant at all and a dedicated App is the only encoding that is both accepted and true. The same actor is recorded in identities.json, and github.tag_ruleset_release_actors compares the two for exact set equality.",
     "unresolved_administrator_inputs": [
-      "The identity of the release actor(s) permitted to create v*.*.* tags. Supplied as bypass_actors on the FIRST ruleset only. Until supplied, that ruleset denies tag creation to everyone — which is the correct failure direction, but it does stop releases, so it is an explicit decision rather than a silent default."
+      "None for the actor itself. What remains is external: that App 4902397 exists, that GitHub accepts the id in bypass_actors, and that the install is scoped to this repository. Confirm with: gh api /repos/nzebrian/eruofood-ai/installation --jq '{app_id, repository_selection, permissions}'",
+      "A working tag-creation path must exist BEFORE these rulesets are applied. Once rulesets[0] is live, the repository owner can no longer push a tag by hand — only the App can — so applying this without .github/workflows/release-tag.yml in place and exercised would leave nobody able to cut a release."
     ],
     "actor_placeholder_contract": "Each entry in rulesets[0].bypass_actors must name a real GitHub actor: {\"actor_id\": <int>, \"actor_type\": \"Team\" | \"Integration\" | \"OrganizationAdmin\" | \"RepositoryRole\", \"bypass_mode\": \"always\"}. No wildcard, no RepositoryRole covering all writers, and no `actor_type: \"OrganizationAdmin\"` used as a shortcut for 'whoever happens to be an admin'. Release authority is a named grant or it is not a grant.",
     "unresolved_placeholder_token": "<RELEASE_ACTOR_UNRESOLVED>"
@@ -22,7 +27,13 @@
       "name": "production release tags — restricted creation",
       "target": "tag",
       "enforcement": "active",
-      "bypass_actors": [],
+      "bypass_actors": [
+        {
+          "actor_id": 4902397,
+          "actor_type": "Integration",
+          "bypass_mode": "always"
+        }
+      ],
       "conditions": {
         "ref_name": {
           "include": ["refs/tags/v*"],

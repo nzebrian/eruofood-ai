@@ -88,6 +88,17 @@ EXPECTED_WORKFLOWS: dict[str, dict[str, object]] = {
     "governance-advisory.yml": {"permissions": BASELINE},
     "performance-certification.yml": {"permissions": BASELINE},
     "release.yml": {"permissions": BASELINE},
+    "release-tag.yml": {
+        "permissions": {},
+        "reason": (
+            "N-1. The only workflow with NO scope at all, and the reason is the "
+            "point of it: GITHUB_TOKEN authenticates as `github-actions[bot]`, a "
+            "different Integration from release App 4902397, so a tag it created "
+            "would be refused by the creation ruleset. Every call runs on an "
+            "installation token minted from the App's own key. A scope this "
+            "workflow must never use is a scope it must not hold."
+        ),
+    },
     "security.yml": {"permissions": BASELINE},
     "staging-deploy.yml": {
         "permissions": {"contents": "read", "packages": "write"},
@@ -101,7 +112,7 @@ EXPECTED_WORKFLOWS: dict[str, dict[str, object]] = {
     "workflow-integrity.yml": {"permissions": BASELINE},
 }
 
-EXPECTED_WORKFLOW_COUNT = 14
+EXPECTED_WORKFLOW_COUNT = 15
 
 # Scopes that must never appear at write level unless EXPECTED_WORKFLOWS says so.
 WRITE_SCOPES = (

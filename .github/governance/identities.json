@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "artifact": "identities",
+    "status": "ACTIVE — this file names the release actor. It names no code owner, on purpose.",
+    "purpose": "The identities governance depends on. Today that is one thing: which actor may create a production release tag. Reviewer identity is deferred, explicitly, below.",
+    "prepared_by": "N-1 Path A",
+    "prepared_against_main_sha": "d20dd452e50a377507f4b0fe6da7136e6d5f224c",
+
+    "why_the_release_actor_is_an_app": "GitHub identifies ruleset bypass actors numerically, and the actor types it accepts are Integration, OrganizationAdmin, RepositoryRole and Team. There is no User. A person cannot be granted release authority on a repository ruleset at all — so 'the owner cuts releases' is not expressible, and writing the owner's user id under any of those types would be a false statement that the local validator cannot detect and GitHub rejects later. A dedicated App is the only encoding that is both accepted and true.",
+
+    "app_id_is_not_the_installation_id": "actor_id below is the GitHub App ID — the number on the App's settings page. It is NOT the installation ID, which is a different number, appears in the /settings/installations/<id> URL, and identifies this repository's install of the App rather than the App itself. A ruleset is already repository-scoped; an installation id there would be both redundant and wrong. Neither is the repository owner's user id, 36742102, which is what N-1's read-only verification refused.",
+
+    "what_this_file_cannot_establish": [
+      "that App 4902397 exists, or that the id is one GitHub will accept in bypass_actors",
+      "that the App is installed, and installed only on this repository",
+      "that any ruleset has been created, or is enforcing anything"
+    ],
+    "those_remain": "EXTERNAL / ADMIN REQUIRED. Confirm with: gh api /repos/nzebrian/eruofood-ai/installation --jq '{app_id, repository_selection, permissions}'"
+  },
+
+  "repository": "nzebrian/eruofood-ai",
+
+  "codeowners_deferred": {
+    "mode": "SOLE_OWNER",
+    "reason": "The repository has one human participant. Naming that person as the code owner of all seven roles would route every review back to the author, which GitHub forbids approving anyway — and for FINANCE it would read as four-eyes review on the money-moving paths while being none. Recording a release actor is a separate decision and does not require this one.",
+    "consequence": ".github/CODEOWNERS stays inert: every rule in it remains commented out and no review is routed to anybody.",
+    "resolve_by": "Grant a second real human write access, replace this block with a \"codeowners\" object naming them, and move ownership.json to MULTI_PERSON. Do not resolve it by naming the repository owner in every role, and do not name an assistant or a second account of the same person."
+  },
+
+  "release_actors": [
+    {
+      "actor_id": 4902397,
+      "actor_type": "Integration",
+      "bypass_mode": "always"
+    }
+  ],
+
+  "_release_actor_note": {
+    "app_name": "EruoFood Release Governor",
+    "app_id": 4902397,
+    "installation_scope": "nzebrian/eruofood-ai only",
+    "permissions": "Contents: read and write; Metadata: read-only. No webhook, no events.",
+    "private_key": "Held outside this repository. It is never committed, never printed, and never passed to a third-party action — the release-tag workflow signs its own JWT with openssl so the key stays in the runner's shell.",
+    "goes_where": "rulesets[0].bypass_actors of production-tags-ruleset.json — the creation ruleset — and nowhere else. Never rulesets[1], whose bypass_actors must stay []. Authority to create a release tag is not authority to unmake one."
+  }
+}

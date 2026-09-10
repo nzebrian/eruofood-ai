@@ -213,13 +213,79 @@ jobs:
           # M50-05 found by hand — `Mobile Certification` declared but not
           # enforced — was invisible to every control in the repository.
           #
-          # The id is pinned deliberately. If the ruleset is ever recreated the
-          # id changes, this returns 404, `fetch` records it as `unavailable`,
-          # no evidence file is written, and the check goes EXTERNAL rather than
-          # silently comparing against nothing. The `has("rules")` shape demand
-          # is the same idea one level down: a 200 that does not carry `rules`
-          # is not evidence, and must not be promoted as if it were.
-          fetch ruleset_detail "rulesets/21203909" "${EVIDENCE}/ruleset-detail.json" 'type == "object" and has("rules")'
+          # N-1 replaced a pinned id with the list. That pin read
+          # `rulesets/21203909` — main's — so the tag rulesets, whose `rules`
+          # and `bypass_actors` live at exactly the same endpoint, had no
+          # evidence source at all. Nothing could say whether a deployed tag
+          # ruleset actually restricted creation, made tags immutable, or
+          # carried a standing bypass actor; the list payload answers none of
+          # those, and the pin meant the only endpoint that does was never asked.
+          #
+          # So this now walks whatever `GET /rulesets` reported and fetches the
+          # detail for every one. The id set is discovered, never assumed, which
+          # is also why recreating a ruleset no longer silently blinds a check:
+          # the new id is simply in the list on the next run.
+          #
+          # The `has("rules")` shape demand is unchanged and still load-bearing:
+          # a 200 that does not carry `rules` is not evidence and must not be
+          # promoted as if it were. Payloads that fail it are dropped, and the
+          # validator's completeness gate turns a short set into EXTERNAL rather
+          # than judging tag protection from a partial read.
+          fetch_ruleset_details() {
+            local list="${EVIDENCE}/rulesets.json" out="${EVIDENCE}/ruleset-details.json"
+            local ids id body code collected=0 attempted=0 failures=""
+
+            if [ ! -f "$list" ]; then
+              entries="${entries}$(jq -nc '{ruleset_details: {status: "unavailable",
+                detail: "the ruleset list was not fetched, so no ids could be enumerated"}}')"
+              return 0
+            fi
+
+            ids="$(jq -r '.[] | select(has("id")) | .id' "$list")"
+
+            printf '[]' > "$out"
+
+            for id in $ids; do
+              attempted=$((attempted + 1))
+              body="${EVIDENCE}/.raw-detail-${id}"
+
+              if ! code="$(curl -sS --max-time 30 --retry 2 --retry-connrefused \
+                    -o "$body" -w '%{http_code}' \
+                    -H "Authorization: Bearer ${GH_TOKEN}" \
+                    -H "Accept: application/vnd.github+json" \
+                    -H "X-GitHub-Api-Version: 2022-11-28" \
+                    "https://api.github.com/repos/${GITHUB_REPOSITORY}/rulesets/${id}")"; then
+                code="000"
+              fi
+
+              echo "GET ruleset detail ${id} -> HTTP ${code}"
+
+              if [ "$code" = "200" ] && [ -s "$body" ] \
+                 && jq -e 'type == "object" and has("rules")' "$body" >/dev/null 2>&1; then
+                jq -s '.[0] + [.[1]]' "$out" "$body" > "${out}.tmp" && mv "${out}.tmp" "$out"
+                collected=$((collected + 1))
+              else
+                failures="${failures}${failures:+, }#${id} (HTTP ${code})"
+              fi
+
+              rm -f "$body"
+            done
+
+            if [ "$attempted" -eq 0 ]; then
+              # GitHub answered, and the answer was "no rulesets". Complete, and
+              # the empty set is the correct evidence to hand on.
+              entries="${entries}$(jq -nc '{ruleset_details: {status: "ok",
+                detail: "0 ruleset(s) listed; nothing to fetch"}}')"
+            elif [ -n "$failures" ]; then
+              entries="${entries}$(jq -nc --arg d "${collected}/${attempted} fetched; unusable: ${failures}" \
+                '{ruleset_details: {status: "unavailable", detail: $d}}')"
+            else
+              entries="${entries}$(jq -nc --arg d "HTTP 200 for all ${attempted} ruleset(s)" \
+                '{ruleset_details: {status: "ok", detail: $d}}')"
+            fi
+          }
+
+          fetch_ruleset_details   # N-1 · walk every ruleset the list reported
 
           fetch codeowners_errors "codeowners/errors" "${EVIDENCE}/codeowners-errors.json" 'type == "object"'
 
@@ -242,13 +308,14 @@ jobs:
             args+=(--rulesets="${EVIDENCE}/rulesets.json")
           fi
 
-          # N-4b. Passed only when the fetch above promoted a verified-good
-          # payload. Absent file means the validator is invoked without the flag
-          # and the required-check invariant reports EXTERNAL / ADMIN REQUIRED —
-          # never a PASS computed from `required-checks.json` alone, which would
-          # be this repository grading itself against its own file.
-          if [ -f "${EVIDENCE}/ruleset-detail.json" ]; then
-            args+=(--ruleset-detail="${EVIDENCE}/ruleset-detail.json")
+          # N-4b, generalised by N-1. Passed only when the collector above
+          # promoted verified-good payloads. An absent file means the validator
+          # is invoked without the flag, and every check driven by it reports
+          # EXTERNAL / ADMIN REQUIRED — never a PASS computed from
+          # `required-checks.json` or `production-tags-ruleset.json`, which would
+          # be this repository grading itself against its own files.
+          if [ -f "${EVIDENCE}/ruleset-details.json" ]; then
+            args+=(--ruleset-details="${EVIDENCE}/ruleset-details.json")
           fi
 
           if [ -f "${EVIDENCE}/codeowners-errors.json" ]; then

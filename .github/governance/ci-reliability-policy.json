@@ -151,6 +151,10 @@
       "class": "fast-validation",
       "measured_seconds": null
     },
+    "release-tag.yml:create": {
+      "class": "fast-validation",
+      "_note": "N-1. Four bounded GitHub API calls and one openssl signature. No checkout, no toolchain, no install. The bound exists to catch a hang, not to accommodate work."
+    },
     "staging-deploy.yml:build-images": {
       "class": "deployment",
       "measured_seconds": null
@@ -306,6 +310,11 @@
         "workflow": "governance-advisory.yml",
         "match": "api.github.com",
         "reason": "Governance evidence query against the GitHub API, already bounded with --max-time 30 --retry 2 --retry-connrefused. Fetches JSON evidence, not an executable artefact, and has no checksum to verify."
+      },
+      {
+        "workflow": "release-tag.yml",
+        "match": "api.github.com",
+        "reason": "N-1. Mints a GitHub App installation token and creates the release tag ref. No artefact is fetched, so the bounded-download wrapper and its checksum have nothing to verify; each call is already bounded with --max-time 30 and --retry 2."
       }
     ]
   },
@@ -362,7 +371,7 @@
     "components_seconds": {
       "fixed_overhead": {
         "value": 150,
-        "note": "Checkout, two extractions, actionlint over 14 files, and every structural control that makes no network call. Measured healthy total for the whole job was 104s on run 33879626208; 150 carries headroom."
+        "note": "Checkout, two extractions, actionlint over 15 files, and every structural control that makes no network call \u2014 n1_release_tag_control among them, measured at 0.16s. Measured healthy total for the whole job was 104s on run 33879626208; 150 carries headroom."
       },
       "governed_downloads": {
         "count": 2,
@@ -407,6 +416,7 @@
       "m35_docker_certification_negative_control",
       "m31_platform_negative_control",
       "m37_governance_advisory_control",
+      "n1_release_tag_control",
       "verify_deployment_safety",
       "m44_deployment_safety_control",
       "verify_dependency_audit_gate",
@@ -535,6 +545,10 @@
       {
         "workflow": "performance-certification.yml",
         "reason": "Long-running k6 scenarios including a 2h soak. A superseding run must not discard hours of in-flight measurement."
+      },
+      {
+        "workflow": "release-tag.yml",
+        "reason": "N-1. Two dispatches are two different release tags, exactly as two pushed tags are two independent releases in release.yml. Cancelling the first would abort a legitimate tag creation that somebody requested, and the work is four bounded API calls \u2014 there is nothing to save by superseding it."
       }
     ]
   },

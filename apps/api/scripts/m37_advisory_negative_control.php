@@ -967,6 +967,433 @@ if (outcomeOf($result['output'], $rcCheck) === 'EXTERNAL') {
     bad('E6 · a mismatched ruleset id was accepted as the answer');
 }
 
+// =============================================================================
+// G) N-1 — what the live TAG rulesets contain
+// =============================================================================
+//
+// `github.tag_rulesets_active` counts tag rulesets. These read them. Every case
+// below is a deployment that would satisfy the count and protect nothing.
+//
+// The four checks are asserted by name so a mutation cannot be "detected" by an
+// unrelated check going red somewhere else in the report.
+
+heading('G) N-1 · tag-ruleset content invariants');
+
+$splitCheck = 'the tag rulesets are split into creation and immutability';
+$rulesCheck = 'the tag rulesets carry the rules that make a release tag immutable';
+$bypassEmptyCheck = 'the tag-immutability ruleset has an explicitly empty bypass_actors';
+$actorsCheck = 'release-tag creation is granted to exactly the recorded actors';
+
+/** One tag ruleset detail payload, shaped as GET /rulesets/{id} returns it. */
+$tagDetail = static function (
+    int $id,
+    string $name,
+    array $ruleTypes,
+    mixed $bypass = '__omit__',
+    string $enforcement = 'active',
+    array $include = ['refs/tags/v*'],
+    bool $withRules = true,
+): array {
+    $detail = [
+        'id' => $id,
+        'name' => $name,
+        'target' => 'tag',
+        'enforcement' => $enforcement,
+        'conditions' => ['ref_name' => ['include' => $include, 'exclude' => []]],
+    ];
+
+    if ($withRules) {
+        $detail['rules'] = array_map(static fn (string $t): array => ['type' => $t], $ruleTypes);
+    }
+
+    if ($bypass !== '__omit__') {
+        $detail['bypass_actors'] = $bypass;
+    }
+
+    return $detail;
+};
+
+/** The matching GET /rulesets list entry — no `rules`, no `bypass_actors`. */
+$tagListEntry = static fn (int $id, string $name, string $enforcement = 'active'): array => [
+    'id' => $id,
+    'name' => $name,
+    'target' => 'tag',
+    'enforcement' => $enforcement,
+];
+
+$creationName = 'production release tags — restricted creation';
+$immutableName = 'production release tags — immutable';
+
+/**
+ * Run the validator over a (list, details) pair and report one named check.
+ *
+ * @param list<array<string, mixed>>|null $list
+ * @param list<array<string, mixed>>|null $details
+ */
+$runTag = static function (?array $list, ?array $details, string $check, ?string $repoRootOverride = null) use ($workdir, $validator): string {
+    $args = [];
+    $seed = substr(md5(serialize([$list, $details, $check]).random_int(0, PHP_INT_MAX)), 0, 10);
+
+    if ($list !== null) {
+        $p = $workdir.'/taglist-'.$seed.'.json';
+        writeJson($p, $list);
+        $args[] = '--rulesets='.escapeshellarg($p);
+    }
+
+    if ($details !== null) {
+        $p = $workdir.'/tagdetails-'.$seed.'.json';
+        writeJson($p, $details);
+        $args[] = '--ruleset-details='.escapeshellarg($p);
+    }
+
+    if ($repoRootOverride !== null) {
+        $args[] = '--repo-root='.escapeshellarg($repoRootOverride);
+    }
+
+    $result = runProcess(sprintf('php %s %s', escapeshellarg($validator), implode(' ', $args)));
+
+    return outcomeOf($result['output'], $check);
+};
+
+$goodList = [$tagListEntry(1, $creationName), $tagListEntry(2, $immutableName)];
+$goodDetails = [
+    $tagDetail(1, $creationName, ['creation'], []),
+    $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], []),
+];
+
+$tagCases = [
+    // --- positive control, first, so no FAIL below can come from a check that
+    //     simply always fails ------------------------------------------------
+    ['G0 · positive control · the intended two-ruleset deployment', $goodList, $goodDetails, $splitCheck, 'PASS'],
+    ['G0 · positive control · rules', $goodList, $goodDetails, $rulesCheck, 'PASS'],
+    ['G0 · positive control · immutability bypass empty', $goodList, $goodDetails, $bypassEmptyCheck, 'PASS'],
+
+    // --- the split ------------------------------------------------------------
+    [
+        'G1 · one of the two rulesets is removed',
+        [$tagListEntry(2, $immutableName)],
+        [$tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [])],
+        $splitCheck,
+        'FAIL',
+    ],
+    [
+        'G2 · enforcement is downgraded active → evaluate',
+        [$tagListEntry(1, $creationName), $tagListEntry(2, $immutableName, 'evaluate')],
+        [
+            $tagDetail(1, $creationName, ['creation'], []),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [], 'evaluate'),
+        ],
+        $splitCheck,
+        'FAIL',
+    ],
+    [
+        'G3 · the refs/tags/v* pattern is narrowed',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], [], 'active', ['refs/tags/v9*']),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], []),
+        ],
+        $splitCheck,
+        'FAIL',
+    ],
+    [
+        'G4 · the two rulesets are collapsed into one',
+        [$tagListEntry(1, 'production release tags')],
+        [$tagDetail(1, 'production release tags', ['creation', 'deletion', 'non_fast_forward', 'update'], [])],
+        $splitCheck,
+        'FAIL',
+    ],
+
+    // --- the rules ------------------------------------------------------------
+    [
+        'G5 · the creation rule is removed',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, [], []),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], []),
+        ],
+        $rulesCheck,
+        'FAIL',
+    ],
+    [
+        'G6 · deletion is removed (a tag can be deleted and recreated)',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], []),
+            $tagDetail(2, $immutableName, ['non_fast_forward', 'update'], []),
+        ],
+        $rulesCheck,
+        'FAIL',
+    ],
+    [
+        'G7 · non_fast_forward is removed (a tag can be rewritten)',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], []),
+            $tagDetail(2, $immutableName, ['deletion', 'update'], []),
+        ],
+        $rulesCheck,
+        'FAIL',
+    ],
+    [
+        'G8 · update is removed (a tag can be MOVED to another commit)',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], []),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward'], []),
+        ],
+        $rulesCheck,
+        'FAIL',
+    ],
+
+    // --- bypass actors --------------------------------------------------------
+    [
+        'G9 · a bypass actor is added to the immutability ruleset',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], []),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [
+                ['actor_id' => 42, 'actor_type' => 'Integration', 'bypass_mode' => 'always'],
+            ]),
+        ],
+        $bypassEmptyCheck,
+        'FAIL',
+    ],
+    [
+        'G10 · the same actor holds creation authority AND immutability bypass',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], [['actor_id' => 42, 'actor_type' => 'Integration', 'bypass_mode' => 'always']]),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [
+                ['actor_id' => 42, 'actor_type' => 'Integration', 'bypass_mode' => 'always'],
+            ]),
+        ],
+        $bypassEmptyCheck,
+        'FAIL',
+    ],
+    [
+        'G11 · the immutability payload carries no bypass_actors field',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], []),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update']),
+        ],
+        $bypassEmptyCheck,
+        'EXTERNAL',
+    ],
+
+    // --- evidence that does not answer. Never PASS, never FAIL. ---------------
+    [
+        'G12 · list evidence only — no detail payloads, so no `rules` anywhere',
+        $goodList,
+        null,
+        $splitCheck,
+        'EXTERNAL',
+    ],
+    [
+        'G13 · detail payloads with no list — completeness cannot be established',
+        null,
+        $goodDetails,
+        $splitCheck,
+        'EXTERNAL',
+    ],
+    [
+        'G14 · two tag rulesets listed, only one detail payload supplied',
+        $goodList,
+        [$tagDetail(1, $creationName, ['creation'], [])],
+        $splitCheck,
+        'EXTERNAL',
+    ],
+    [
+        'G15 · no tag ruleset exists at all — content is unassessable, not clean',
+        [['id' => 9, 'name' => 'main branch protection', 'target' => 'branch', 'enforcement' => 'active']],
+        [['id' => 9, 'name' => 'main branch protection', 'target' => 'branch', 'enforcement' => 'active', 'rules' => []]],
+        $splitCheck,
+        'EXTERNAL',
+    ],
+    [
+        'G16 · a detail payload carries no `rules` list',
+        $goodList,
+        [
+            $tagDetail(1, $creationName, ['creation'], [], 'active', ['refs/tags/v*'], false),
+            $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], []),
+        ],
+        $splitCheck,
+        'FAIL',
+    ],
+];
+
+foreach ($tagCases as [$description, $list, $details, $check, $expected]) {
+    $actual = $runTag($list, $details, $check);
+
+    if ($actual === $expected) {
+        ok("{$description} → {$expected}");
+    } else {
+        bad("{$description} → expected {$expected}, got {$actual}");
+    }
+}
+
+// The single most important property of the whole section: with no live
+// evidence, none of the four may consult production-tags-ruleset.json — the
+// file that describes a perfectly correct deployment nobody has applied.
+$result = runProcess(sprintf('php %s', escapeshellarg($validator)));
+
+foreach ([$splitCheck, $rulesCheck, $bypassEmptyCheck, $actorsCheck] as $check) {
+    if (outcomeOf($result['output'], $check) === 'EXTERNAL') {
+        ok('G17 · no evidence → EXTERNAL, never a PASS read off the prepared file: '.$check);
+    } else {
+        bad('G17 · absent evidence produced a verdict for: '.$check);
+    }
+}
+
+// -- G18: the release-actor set, which needs a declared side ------------------
+//
+// identities.json is absent from the real repository, so these run against a
+// throwaway repo root. The real tree is never written to; the fingerprint at the
+// end of this file is what proves it.
+
+/** Recursively copy a directory. */
+$copyTree = static function (string $src, string $dst) use (&$copyTree): void {
+    @mkdir($dst, 0700, true);
+
+    foreach (scandir($src) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        $from = $src.'/'.$entry;
+        $to = $dst.'/'.$entry;
+
+        if (is_link($from)) {
+            continue;
+        }
+
+        is_dir($from) ? $copyTree($from, $to) : copy($from, $to);
+    }
+};
+
+$actorFixtureRoot = $workdir.'/fixture-root';
+$copyTree($repoRoot.'/.github', $actorFixtureRoot.'/.github');
+
+$withIdentities = static function (mixed $releaseActors) use ($actorFixtureRoot, $repoRoot): void {
+    $example = json_decode((string) file_get_contents($repoRoot.'/.github/governance/identities.example.json'), true) ?: [];
+    unset($example['_example']);
+    $example['release_actors'] = $releaseActors;
+    file_put_contents(
+        $actorFixtureRoot.'/.github/governance/identities.json',
+        json_encode($example, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+    );
+};
+
+$recorded = [['actor_id' => 42, 'actor_type' => 'Integration', 'bypass_mode' => 'always']];
+$unrecorded = ['actor_id' => 99, 'actor_type' => 'Team', 'bypass_mode' => 'always'];
+
+$actorCases = [
+    [
+        'G18 · the live grant matches identities.json exactly',
+        $recorded,
+        [$tagDetail(1, $creationName, ['creation'], $recorded), $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [])],
+        'PASS',
+    ],
+    [
+        'G19 · an actor is granted on GitHub but recorded nowhere',
+        $recorded,
+        [$tagDetail(1, $creationName, ['creation'], [...$recorded, $unrecorded]), $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [])],
+        'FAIL',
+    ],
+    [
+        'G20 · a recorded actor is not actually granted',
+        [...$recorded, $unrecorded],
+        [$tagDetail(1, $creationName, ['creation'], $recorded), $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [])],
+        'FAIL',
+    ],
+    [
+        'G21 · the release actor is a handle, not a numeric actor_id',
+        [['actor_id' => '@nzebrian', 'actor_type' => 'Integration', 'bypass_mode' => 'always']],
+        [$tagDetail(1, $creationName, ['creation'], $recorded), $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [])],
+        'FAIL',
+    ],
+    [
+        'G22 · the creation ruleset payload carries no bypass_actors field',
+        $recorded,
+        [$tagDetail(1, $creationName, ['creation']), $tagDetail(2, $immutableName, ['deletion', 'non_fast_forward', 'update'], [])],
+        'EXTERNAL',
+    ],
+];
+
+foreach ($actorCases as [$description, $declared, $details, $expected]) {
+    $withIdentities($declared);
+    $actual = $runTag($goodList, $details, $actorsCheck, $actorFixtureRoot);
+
+    if ($actual === $expected) {
+        ok("{$description} → {$expected}");
+    } else {
+        bad("{$description} → expected {$expected}, got {$actual}");
+    }
+}
+
+// And with no identities file at all — the repository's state today.
+@unlink($actorFixtureRoot.'/.github/governance/identities.json');
+$actual = $runTag($goodList, $goodDetails, $actorsCheck, $actorFixtureRoot);
+
+if ($actual === 'EXTERNAL') {
+    ok('G23 · no identities.json → EXTERNAL (RELEASE_ACTOR_ID_REQUIRED), never PASS on an empty grant');
+} else {
+    bad("G23 · a missing identities.json produced {$actual} instead of EXTERNAL");
+}
+
+// -- G24: N-4b must survive the generalisation --------------------------------
+//
+// The pool now legitimately contains tag rulesets. If the branch payload were
+// selected by position rather than by target, a tag ruleset would be handed to
+// the required-status-check comparison and the M50-05 invariant would be
+// answering the wrong question.
+$mixedPool = [
+    ...$goodDetails,
+    $rulesetDetail($declaredContexts),
+];
+$mixedList = [
+    ...$goodList,
+    ['id' => 21203909, 'name' => 'main branch protection (sole owner)', 'target' => 'branch', 'enforcement' => 'active'],
+];
+$listPath = $workdir.'/mixed-list.json';
+$poolPath = $workdir.'/mixed-pool.json';
+writeJson($listPath, $mixedList);
+writeJson($poolPath, $mixedPool);
+$result = runProcess(sprintf(
+    'php %s --rulesets=%s --ruleset-details=%s',
+    escapeshellarg($validator),
+    escapeshellarg($listPath),
+    escapeshellarg($poolPath),
+));
+
+if (outcomeOf($result['output'], $rcCheck) === 'PASS') {
+    ok('G24 · N-4b still selects the BRANCH payload out of a mixed pool → PASS');
+} else {
+    bad('G24 · the required-check invariant broke once tag payloads joined the pool');
+}
+
+if (outcomeOf($result['output'], $splitCheck) === 'PASS') {
+    ok('G24 · and the tag invariants read the TAG payloads from the same pool → PASS');
+} else {
+    bad('G24 · the tag invariants could not read a mixed pool');
+}
+
+// A pool carrying two branch payloads cannot answer what main requires.
+writeJson($poolPath, [...$goodDetails, $rulesetDetail($declaredContexts), $rulesetDetail($declaredContexts)]);
+$result = runProcess(sprintf(
+    'php %s --rulesets=%s --ruleset-details=%s',
+    escapeshellarg($validator),
+    escapeshellarg($listPath),
+    escapeshellarg($poolPath),
+));
+
+if (outcomeOf($result['output'], $rcCheck) === 'EXTERNAL') {
+    ok('G25 · two branch payloads in the pool → required-check invariant EXTERNAL');
+} else {
+    bad('G25 · an ambiguous branch payload set was accepted as the answer');
+}
+
 // -- Integrity ----------------------------------------------------------------
 
 $fingerprintAfter = m37_fingerprint($repoRoot);
@@ -980,8 +1407,26 @@ if ($fingerprintBefore === $fingerprintAfter) {
 }
 
 // Best-effort cleanup. The fingerprint above, not this, is what proves safety.
-array_map('unlink', glob($workdir.'/*') ?: []);
-@rmdir($workdir);
+// N-1 added a fixture repo root, so the sweep has to descend rather than
+// assuming every entry is a file.
+// scandir, not glob: the fixture root's only child is `.github`, and glob()
+// does not match dot-entries — a sweep built on it silently leaves the whole
+// tree behind.
+$sweep = static function (string $path) use (&$sweep): void {
+    if (is_dir($path) && ! is_link($path)) {
+        foreach (array_diff(scandir($path) ?: [], ['.', '..']) as $child) {
+            $sweep($path.'/'.$child);
+        }
+
+        @rmdir($path);
+
+        return;
+    }
+
+    @unlink($path);
+};
+
+$sweep($workdir);
 
 $total = $passed + $failedControls;
 

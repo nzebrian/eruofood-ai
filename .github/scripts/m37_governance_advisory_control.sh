@@ -178,13 +178,25 @@ control 'set +e is added to the validator step' \
 printf '\n'
 printf 'B) The job stops doing the work\n'
 
+# Both call sites, because N-1 added a second one. Neutering only the first
+# would leave `api.github.com/repos/` in the step and the `fetch` role would
+# still be found — a mutation that no longer mutates anything the guard reads.
 control 'the evidence fetch is removed' \
     'ADVISORY_FETCH_MISSING' \
-    "py_sub '$ADVISORY_REL' 'https://api.github.com/repos/\${GITHUB_REPOSITORY}/\${path}' 'https://example.invalid/nothing'"
+    "py_sub '$ADVISORY_REL' 'https://api.github.com/repos/\${GITHUB_REPOSITORY}/\${path}' 'https://example.invalid/nothing' \
+     && py_sub '$ADVISORY_REL' 'https://api.github.com/repos/\${GITHUB_REPOSITORY}/rulesets/\${id}' 'https://example.invalid/nothing'"
 
-control 'the ruleset-detail fetch is removed (N-4b evidence source)' \
+control 'the ruleset-detail endpoint is no longer called (N-4b/N-1 evidence source)' \
     'ADVISORY_RULESET_DETAIL_MISSING' \
-    "py_sub '$ADVISORY_REL' 'fetch ruleset_detail \"rulesets/21203909\"' 'fetch ruleset_detail_disabled \"nothing/0\"'"
+    "py_sub '$ADVISORY_REL' 'rulesets/\${id}' 'nothing/0'"
+
+control 'the ruleset-detail walk is defined but never invoked' \
+    'ADVISORY_RULESET_DETAIL_MISSING' \
+    "py_sub '$ADVISORY_REL' 'fetch_ruleset_details   # N-1' ': # N-1'"
+
+control 'the ruleset ids are no longer derived from the fetched list (N-1)' \
+    'ADVISORY_RULESET_IDS_UNDERIVED' \
+    "py_sub '$ADVISORY_REL' 'jq -r '\"'\"'.[] | select(has(\"id\")) | .id'\"'\"'' 'echo 21203909 #'"
 
 control 'the validator invocation is removed' \
     'ADVISORY_VALIDATOR_MISSING' \

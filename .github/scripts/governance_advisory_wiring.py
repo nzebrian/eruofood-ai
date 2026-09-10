@@ -227,13 +227,37 @@ def check_advisory(root: str, f: Findings) -> None:
     # still there. So the call site is named positively here.
     collector = found.get("fetch")
 
-    if collector is not None and 'fetch ruleset_detail "rulesets/' not in run_text(collector):
-        f.add(
-            "ADVISORY_RULESET_DETAIL_MISSING",
-            "the evidence collector no longer fetches GET /rulesets/{id}; "
-            "`GET /rulesets` carries no `rules`, so required-status-check "
-            "equality would silently degrade to EXTERNAL forever",
-        )
+    if collector is not None:
+        collector_text = run_text(collector)
+
+        # N-1 generalised the pinned single fetch into a walk of the whole list.
+        # Both halves are named: the call site, and the enumeration that feeds
+        # it. A collector that still called the endpoint but stopped deriving
+        # ids from `rulesets.json` would fetch nothing, write an empty array,
+        # and hand every tag invariant a complete-looking empty set.
+        if "rulesets/${id}" not in collector_text:
+            f.add(
+                "ADVISORY_RULESET_DETAIL_MISSING",
+                "the evidence collector no longer fetches GET /rulesets/{id}; "
+                "`GET /rulesets` carries neither `rules` nor `bypass_actors`, so "
+                "required-status-check equality and every tag-ruleset content "
+                "invariant would silently degrade to EXTERNAL forever",
+            )
+
+        if "fetch_ruleset_details   # N-1" not in collector_text:
+            f.add(
+                "ADVISORY_RULESET_DETAIL_MISSING",
+                "the evidence collector no longer invokes fetch_ruleset_details; "
+                "defining the walk without calling it writes no evidence file at all",
+            )
+
+        if 'jq -r \'.[] | select(has("id")) | .id\'' not in collector_text:
+            f.add(
+                "ADVISORY_RULESET_IDS_UNDERIVED",
+                "the evidence collector no longer derives ruleset ids from the "
+                "fetched list; a hard-coded or empty id set is how a tag ruleset "
+                "gets created and then never looked at again",
+            )
 
     for role, step in found.items():
         text = run_text(step)

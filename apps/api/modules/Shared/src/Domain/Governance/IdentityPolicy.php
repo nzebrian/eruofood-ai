@@ -103,12 +103,16 @@ final class IdentityPolicy
             );
         }
 
-        [$identityFindings, $resolved, $unresolved] = $this->assessIdentities($identities);
+        [$identityFindings, $resolved, $unresolved, $deferred] = $this->assessIdentities($identities);
 
         foreach ($identityFindings as $finding) {
             $findings[] = $finding;
         }
 
+        // Deferred roles are deliberately NOT unresolved. "Nobody has decided
+        // this yet, and that is the recorded position" is a different state from
+        // "this should have a value and does not", and collapsing the two would
+        // either block activation forever or hide a real omission.
         $state = $unresolved === [] ? ActivationState::ReadyForActivation : ActivationState::Incomplete;
 
         return new IdentityAssessment(
@@ -116,6 +120,7 @@ final class IdentityPolicy
             $findings,
             $resolved,
             $unresolved,
+            $deferred,
         );
     }
 
@@ -143,7 +148,7 @@ final class IdentityPolicy
 
     /**
      * @param array<mixed> $identities
-     * @return array{list<IdentityFinding>, array<string, list<string>>, list<string>}
+     * @return array{list<IdentityFinding>, array<string, list<string>>, list<string>, list<string>}
      */
     private function assessIdentities(array $identities): array
     {
@@ -163,17 +168,69 @@ final class IdentityPolicy
                 'Copy identities.example.json to identities.json, replace every <EXAMPLE:...> value with a real handle, and delete the "_example" key. The example is a shape, not a starting set of people.',
             );
 
-            // Every role in it is by definition unresolved.
-            return [$findings, [], array_map(static fn (GovernanceRole $r): string => $r->value, GovernanceRole::cases())];
+            // Every role in it is by definition unresolved — and none of them is
+            // deferred: the example is not a decision to postpone naming people,
+            // it is a file that should not have been read as active at all.
+            return [$findings, [], array_map(static fn (GovernanceRole $r): string => $r->value, GovernanceRole::cases()), []];
         }
 
+        // 1b. N-1 Path A. Reviewer identity and release authority are two
+        //     different decisions, and until now the file forced them to be made
+        //     together: declaring a release actor meant naming seven code owners
+        //     in the same breath. Under SOLE_OWNER there is nobody to name, so
+        //     the only way to record the release App was to write the owner's
+        //     handle into all seven roles — including FINANCE, the money-moving
+        //     paths — purely to satisfy a validator. That is a governance claim
+        //     nobody meant to make, and it would have read as four-eyes review
+        //     to the next person.
+        //
+        //     So the deferral becomes something you STATE, not something you get
+        //     by leaving a key out. Absence is still an error; an explicit
+        //     `codeowners_deferred` block is not. The distinction is the whole
+        //     point — "we decided not to decide yet" and "somebody forgot"
+        //     must not produce the same file.
         $codeowners = $identities['codeowners'] ?? null;
+        $deferral = $identities['codeowners_deferred'] ?? null;
+        $deferred = [];
 
-        if (! is_array($codeowners)) {
+        if ($deferral !== null) {
+            if (is_array($codeowners)) {
+                $findings[] = IdentityFinding::error(
+                    'IDENTITY_CODEOWNERS_DEFERRAL_AMBIGUOUS',
+                    'The identity configuration declares both "codeowners" and "codeowners_deferred".',
+                    'Pick one. Naming owners and deferring naming them are contradictory claims, and a file asserting both leaves the reader to guess which is current.',
+                );
+            } elseif ($this->mode !== OwnershipMode::SoleOwner) {
+                // MULTI_PERSON means somebody else already has write access.
+                // Deferring reviewer identity while a second human exists is not
+                // a deferral, it is a decision not to route review to them.
+                $findings[] = IdentityFinding::error(
+                    'IDENTITY_CODEOWNERS_DEFERRAL_NOT_PERMITTED',
+                    'The identity configuration defers CODEOWNERS, but ownership.json declares MULTI_PERSON.',
+                    'Deferral is only coherent while there is one human to name. Name the code owners, or move ownership.json back to SOLE_OWNER and say why.',
+                );
+            } else {
+                foreach (GovernanceRole::codeownerRoles() as $role) {
+                    $deferred[] = $role->value;
+                }
+
+                // A warning, not silence. It is printed on every run, it keeps
+                // CODEOWNERS inert, and it is exactly as loud as the deferral it
+                // describes.
+                $findings[] = IdentityFinding::warning(
+                    'IDENTITY_CODEOWNERS_DEFERRED',
+                    sprintf('CODEOWNERS identity is deferred for all %d reviewer role(s) under SOLE_OWNER mode.', count($deferred)),
+                    'Deferred because the repository has one human participant, not because reviewer routing stopped mattering. CODEOWNERS stays inert and every rule in it stays commented out. Resolve by granting a second real human write access, naming the roles here, and moving ownership.json to MULTI_PERSON. Do not resolve it by naming the repository owner in every role — an owner who authors every change is not a reviewer, and FINANCE in particular would then read as four-eyes on the money-moving paths while being none.',
+                );
+
+            }
+
+            $codeowners = is_array($codeowners) ? $codeowners : [];
+        } elseif (! is_array($codeowners)) {
             $findings[] = IdentityFinding::error(
                 'IDENTITY_CODEOWNERS_SECTION_MISSING',
                 'The identity configuration has no "codeowners" object.',
-                'Add a "codeowners" object keyed by role, as in identities.example.json.',
+                'Add a "codeowners" object keyed by role, or declare "codeowners_deferred" if reviewer identity is deliberately deferred under SOLE_OWNER mode.',
             );
             $codeowners = [];
         }
@@ -196,7 +253,10 @@ final class IdentityPolicy
         }
 
         // 3. Every code-owner role present, non-empty, syntactically valid.
-        foreach (GovernanceRole::codeownerRoles() as $role) {
+        //    Skipped entirely when the roles are explicitly deferred: there is
+        //    nothing to validate, and reporting seven absences as findings would
+        //    bury the release actor, which is the one thing this file does say.
+        foreach ($deferred === [] ? GovernanceRole::codeownerRoles() : [] as $role) {
             $handles = $this->handlesFor($codeowners[$role->value] ?? null);
 
             if ($handles === null) {
@@ -246,7 +306,7 @@ final class IdentityPolicy
             ? $resolved[GovernanceRole::ReleaseActor->value] = $actorResolved
             : $unresolved[] = GovernanceRole::ReleaseActor->value;
 
-        return [$findings, $resolved, array_values(array_unique($unresolved))];
+        return [$findings, $resolved, array_values(array_unique($unresolved)), $deferred];
     }
 
     /**
