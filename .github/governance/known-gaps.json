@@ -15,17 +15,6 @@
 
   "known_gaps": [
     {
-      "id": "github.tag_rulesets_active",
-      "summary": "The prepared production tag rulesets have never been applied on GitHub.",
-      "observed_evidence": "active tag rulesets=0",
-      "recorded_on": "2026-08-27",
-      "approved_by": "repository owner — M37 Phase 4B implementation contract, locked decision D",
-      "why_not_closed": "Applying a ruleset is an administrative change to live GitHub state. Phase 4B is explicitly forbidden from applying, creating, editing, deleting or activating it. The gap is recorded so that it stays visible on every run instead of being rediscovered by a future audit.",
-      "material_risk": "`.github/governance/required-checks.json` records release.yml as `governed_instead_by` this ruleset. While the ruleset is absent, that governance claim is false: production tags are unprotected — nothing prevents a tag being moved, deleted or recreated. Demonstrated, not theorised: v0.0.1-rc1 (072b096f) and v0.0.1-rc2 (d20dd452) were both created by an ordinary account with no restriction, no approval and no required check, and either can still be moved or deleted today.",
-      "n1_status": "N-1 built the LIVE content invariants that make applying this ruleset verifiable — github.tag_ruleset_split, .tag_ruleset_rules, .tag_ruleset_bypass_empty and .tag_ruleset_release_actors. It did not apply anything: ruleset creation is an administrative write no automation in this repository holds. This entry therefore stays, because the gap it records is still true.",
-      "how_to_close": "Apply .github/governance/production-tags-ruleset.json on GitHub per APPLY_GOVERNANCE.md §3, confirm `GET /rulesets` reports two active rulesets with target=tag, then delete this entry IN THE SAME CHANGE. Deleting it earlier makes the ratchet red for an unexpected failure; deleting it later makes the ratchet red for a stale gap. The four N-1 content checks need no record edit at all — they live in `expected_unverified`, which is a subset bound, so EXTERNAL → PASS is an improvement that passes on its own."
-    },
-    {
       "id": "github.codeowners_errors_zero",
       "summary": "GitHub reports zero CODEOWNERS errors, but the file contains no active rule, so it routes no review to anybody.",
       "observed_evidence": "zero errors, but no rule is active — a commented-out file also reports zero",
