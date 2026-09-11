@@ -379,6 +379,25 @@ jobs:
         # not blanket-reported as "already exists".
         run: .github/scripts/run_control.sh n1_release_tag_control -- .github/scripts/n1_release_tag_control.sh
 
+      - name: Prove the governance evidence credential stays isolated
+        # N-2. Reading `bypass_actors` requires `Administration: read`, which
+        # the built-in token does not have, so the advisory workflow now mints
+        # an installation token for App 4902397 — the same App that holds
+        # tag-creation bypass, in a workflow that runs on every pull request
+        # including forks. Actions scopes secrets to a JOB, so the key is
+        # either beside third-party code or it is not.
+        #
+        # This asserts it is not: the evidence job has zero `uses:` entries,
+        # checks nothing out, declares `permissions: {}`, issues exactly one
+        # non-GET call (the documented token mint), masks both the JWT and the
+        # token, and exits 0 on every path so an evidence failure degrades the
+        # run instead of deleting the verdict. It also lifts the payload shape
+        # gate out of the workflow and runs it against a table — including the
+        # case that matters most, a payload with NO bypass_actors, which must
+        # still be adopted so the validator can report EXTERNAL rather than the
+        # workflow manufacturing a PASS upstream of it.
+        run: .github/scripts/run_control.sh n2_evidence_credential_control -- .github/scripts/n2_evidence_credential_control.sh
+
       - name: Prove the enforcement wiring itself cannot mask a failure
         # The control on the CI wiring. It reads this workflow and asserts that
         # every enforcement step still propagates a non-zero exit, then breaks

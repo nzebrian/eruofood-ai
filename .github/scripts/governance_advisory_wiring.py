@@ -142,7 +142,13 @@ def check_advisory(root: str, f: Findings) -> None:
         if not isinstance(job, dict):
             continue
         job_perms = job.get("permissions")
-        if job_perms is not None and job_perms != {"contents": "read"}:
+        # N-2. `{}` joins the accepted set — the narrowest block GitHub accepts,
+        # and the correct one for the evidence job, which authenticates as a
+        # GitHub App and must not also hold the built-in token. Everything wider
+        # than `{contents: read}` is still a finding; this is a narrowing, not a
+        # relaxation, and the set is written out rather than computed so that a
+        # future `{contents: write}` cannot slip in through a comparison.
+        if job_perms is not None and job_perms not in ({"contents": "read"}, {}):
             f.add(
                 "ADVISORY_PERMISSIONS",
                 f"job `{job_id}` overrides permissions with {job_perms!r}",

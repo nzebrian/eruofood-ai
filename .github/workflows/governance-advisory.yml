@@ -71,7 +71,263 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # N-2. The one thing `github.token` cannot read.
+  #
+  # `GET /rulesets/{id}` returns `bypass_actors` ONLY to a caller holding
+  # `Administration: read`. The advisory job's built-in token holds
+  # `contents: read`, so every payload it fetches omits the field entirely —
+  # measured, not assumed: all three rulesets answer HTTP 200 at
+  # `X-Accepted-GitHub-Permissions: metadata=read` with no `bypass_actors` key,
+  # while `GET /rulesets/rule-suites` answers 403 naming `administration=read`.
+  #
+  # The validator refuses to read a missing key as an empty list (M37 Phase 4B),
+  # so the three checks that decide whether anybody can still cut a release —
+  # github.no_bypass_actors, github.tag_ruleset_bypass_empty and
+  # github.tag_ruleset_release_actors — have never been anything but EXTERNAL.
+  # Nothing in this repository has ever confirmed that ruleset 22844673 actually
+  # grants Integration#4902397. If it does not, releases are already impossible.
+  #
+  # ## Why this is a separate job and not four more lines in the one below
+  #
+  # Secrets in Actions are scoped to a JOB, not to a step. Putting the release
+  # App's private key anywhere in `governance` would hand it to every step of a
+  # job that runs `composer install` on every pull request — a third-party
+  # dependency tree, in the same process space as the credential that holds
+  # tag-creation authority for this repository. Reordering the steps would not
+  # help; the secret is in the job environment either way.
+  #
+  # So this job exists to be small. It has NO `uses:` entries at all — not even
+  # `actions/checkout` — because it needs no repository code to do its work, and
+  # code it does not check out is code that cannot run beside the key. That is
+  # the same posture `release-tag.yml` takes, for the same credential.
+  #
+  # ## It must never fail
+  #
+  # `governance` declares `needs: evidence`, and a failed dependency SKIPS the
+  # dependent job. A hard failure here would therefore delete the advisory
+  # verdict rather than report one — the precise opposite of what an evidence
+  # problem should do. So every path exits 0 and says what happened in `mode`:
+  #
+  #   app          authenticated evidence was obtained
+  #   fallback     no App credential in this context (fork PR) — expected
+  #   unavailable  a credential WAS present and something went wrong — not
+  #                expected, and the job below turns it into a red ratchet
+  evidence:
+    name: Governance Advisory · Evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Nothing. The built-in token is not used here and must not be reachable:
+    # this job authenticates as the App or it produces no evidence at all.
+    permissions: {}
+
+    outputs:
+      mode: ${{ steps.acquire.outputs.mode }}
+      detail: ${{ steps.acquire.outputs.detail }}
+      rulesets_b64: ${{ steps.acquire.outputs.rulesets_b64 }}
+      details_b64: ${{ steps.acquire.outputs.details_b64 }}
+
+    steps:
+      - name: Acquire authoritative ruleset evidence as the governance App
+        id: acquire
+        env:
+          APP_ID: ${{ secrets.RELEASE_GOVERNOR_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.RELEASE_GOVERNOR_PRIVATE_KEY }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Outputs are written base64-encoded, and that is a safety property
+          # rather than a convenience. The payloads are GitHub API responses:
+          # multi-line, and containing ruleset NAMES that a repository
+          # administrator chose. A raw `::`-prefixed line reaching an output
+          # file or a log is read by the runner as a workflow command. Base64
+          # cannot contain a colon, so neither the heredoc-delimiter dance nor
+          # the injection question arises.
+          emit() {   # $1 mode, $2 detail, $3 rulesets b64, $4 details b64
+            {
+              printf 'mode=%s\n' "$1"
+              printf 'detail=%s\n' "$2"
+              printf 'rulesets_b64=%s\n' "$3"
+              printf 'details_b64=%s\n' "$4"
+            } >> "${GITHUB_OUTPUT}"
+          }
+
+          # Fork pull requests receive no repository secrets, by design. This is
+          # the expected path for them, and it must stay quiet: the job below
+          # falls back to the built-in token, the three bypass checks report
+          # EXTERNAL, and `expected_unverified` — a SUBSET bound — keeps the
+          # ratchet green. Converting this workflow to `pull_request_target` to
+          # reach the secret would run fork code with the key in scope, which is
+          # the vulnerability this job is shaped to avoid.
+          if [ -z "${APP_ID}" ] || [ -z "${APP_PRIVATE_KEY}" ]; then
+            echo "No App credential in this context — falling back to the built-in token."
+            echo "The three bypass_actors checks will report EXTERNAL, which is the correct result for evidence nobody could fetch."
+            emit "fallback" "no App credential is available in this context (fork pull request, or the secrets are unset)" "" ""
+            exit 0
+          fi
+
+          # Anything below this line that goes wrong is NOT routine: a credential
+          # was present and did not work. `unavailable` is recorded as an
+          # endpoint failure by the job below, which the ratchet turns into
+          # INCOMPLETE — red. A broken release credential must not be able to
+          # hide behind the same green that a fork pull request earns honestly.
+          give_up() {   # $1 detail
+            echo "::warning::authoritative evidence could not be acquired: $1"
+            emit "unavailable" "$1" "" ""
+            exit 0
+          }
+
+          umask 077
+          keyfile="$(mktemp)"
+          trap 'rm -f "${keyfile}"' EXIT
+          printf '%s\n' "${APP_PRIVATE_KEY}" > "${keyfile}"
+
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+          # Reads only. There is exactly one non-GET call in this job — the
+          # documented token mint below — and it is written out in full rather
+          # than routed through here, so that this helper cannot be handed a
+          # method by a future edit. `n2_evidence_credential_control.sh` asserts
+          # both halves of that.
+          get() {   # $1 path, $2 auth -> "<code>\n<body>"
+            local path="$1" auth="$2" out code
+            out="$(mktemp)"
+            if ! code="$(curl -sS --max-time 30 --retry 2 --retry-connrefused \
+                  -o "${out}" -w '%{http_code}' -X GET \
+                  -H "Authorization: Bearer ${auth}" \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" \
+                  "https://api.github.com/${path}")"; then
+              code="000"
+            fi
+            printf '%s\n%s' "${code}" "$(cat "${out}")"
+            rm -f "${out}"
+          }
+
+          now="$(date +%s)"
+          header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
+          payload="$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now - 60))" "$((now + 540))" "${APP_ID}" | b64url)"
+          signature="$(printf '%s.%s' "${header}" "${payload}" \
+            | openssl dgst -sha256 -sign "${keyfile}" -binary | b64url)"
+          jwt="${header}.${payload}.${signature}"
+          echo "::add-mask::${jwt}"
+
+          response="$(get "repos/${REPO}/installation" "${jwt}")"
+          code="$(printf '%s' "${response}" | head -n1)"
+          body="$(printf '%s' "${response}" | tail -n +2)"
+
+          if [ "${code}" != "200" ]; then
+            give_up "GET /repos/${REPO}/installation returned HTTP ${code}"
+          fi
+
+          installation_id="$(printf '%s' "${body}" | jq -r '.id')"
+          authenticated_app_id="$(printf '%s' "${body}" | jq -r '.app_id')"
+
+          # The same identity binding release-tag.yml carries (N-1, review
+          # finding M-2). A secret naming some OTHER App would otherwise mint
+          # that App's token and present whatever IT can read as this
+          # repository's governance evidence.
+          if [ "${authenticated_app_id}" != "4902397" ]; then
+            give_up "authenticated as App ${authenticated_app_id}, but the recorded governance actor is Integration#4902397 (.github/governance/identities.json)"
+          fi
+
+          echo "App ${authenticated_app_id} (Integration#4902397), installation ${installation_id}"
+
+          # The single POST in this job, and the only reason one is needed:
+          # GitHub mints installation tokens at this endpoint and nowhere else.
+          # It changes no repository state. Every call that touches repository
+          # data is a GET.
+          mint="$(mktemp)"
+          if ! code="$(curl -sS --max-time 30 --retry 2 --retry-connrefused \
+                -o "${mint}" -w '%{http_code}' -X POST \
+                -H "Authorization: Bearer ${jwt}" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/app/installations/${installation_id}/access_tokens")"; then
+            code="000"
+          fi
+
+          if [ "${code}" != "201" ]; then
+            rm -f "${mint}"
+            give_up "could not mint an installation token (HTTP ${code})"
+          fi
+
+          token="$(jq -r '.token' "${mint}")"
+          echo "::add-mask::${token}"
+          rm -f "${mint}"
+
+          response="$(get "repos/${REPO}/rulesets" "${token}")"
+          code="$(printf '%s' "${response}" | head -n1)"
+          list="$(printf '%s' "${response}" | tail -n +2)"
+          echo "GET /rulesets -> HTTP ${code}"
+
+          if [ "${code}" != "200" ] || ! printf '%s' "${list}" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            give_up "GET /rulesets returned HTTP ${code} without a JSON array"
+          fi
+
+          details="[]"
+          attempted=0
+          collected=0
+          with_bypass=0
+          failures=""
+
+          for id in $(printf '%s' "${list}" | jq -r '.[] | select(has("id")) | .id'); do
+            attempted=$((attempted + 1))
+            response="$(get "repos/${REPO}/rulesets/${id}" "${token}")"
+            code="$(printf '%s' "${response}" | head -n1)"
+            detail="$(printf '%s' "${response}" | tail -n +2)"
+            echo "GET /rulesets/${id} -> HTTP ${code}"
+
+            # The N-4b shape gate, unchanged. A 200 that does not carry `rules`
+            # is not evidence and is never promoted as if it were.
+            if [ "${code}" = "200" ] \
+               && printf '%s' "${detail}" | jq -e 'type == "object" and has("rules")' >/dev/null 2>&1; then
+              details="$(printf '%s\n%s' "${details}" "${detail}" | jq -s '.[0] + [.[1]]')"
+              collected=$((collected + 1))
+
+              # Counted, never REQUIRED. If the App's `Administration: read`
+              # grant is missing or has not taken effect, GitHub answers 200 and
+              # silently omits the field — and the right outcome then is the
+              # validator's own: EXTERNAL, because a missing key is not an empty
+              # list. Demanding the field here would convert that honest
+              # EXTERNAL into a red job, which is a worse lie in the other
+              # direction.
+              if printf '%s' "${detail}" | jq -e 'has("bypass_actors")' >/dev/null 2>&1; then
+                with_bypass=$((with_bypass + 1))
+              fi
+            else
+              failures="${failures}${failures:+, }#${id} (HTTP ${code})"
+            fi
+          done
+
+          if [ -n "${failures}" ]; then
+            give_up "${collected}/${attempted} ruleset detail(s) fetched; unusable: ${failures}"
+          fi
+
+          echo "${collected}/${attempted} ruleset detail(s) fetched; ${with_bypass} carry a bypass_actors field"
+
+          if [ "${with_bypass}" -lt "${collected}" ]; then
+            echo "::warning::${collected} ruleset(s) were read as App 4902397 but only ${with_bypass} carried bypass_actors — the installation may not hold Administration: read. The bypass checks will stay EXTERNAL."
+          fi
+
+          rulesets_b64="$(printf '%s' "${list}" | base64 -w0)"
+          details_b64="$(printf '%s' "${details}" | base64 -w0)"
+
+          # A step output larger than GitHub will carry would be truncated into
+          # malformed JSON, and malformed evidence is the one thing the
+          # validator fails CLOSED on. Bounded well below the limit, and
+          # degraded deliberately rather than discovered downstream.
+          if [ "${#rulesets_b64}" -gt 400000 ] || [ "${#details_b64}" -gt 400000 ]; then
+            give_up "the ruleset evidence is too large to pass between jobs (${#rulesets_b64}/${#details_b64} bytes encoded)"
+          fi
+
+          emit "app" "HTTP 200 for the list and all ${attempted} ruleset(s), read as Integration#4902397" \
+            "${rulesets_b64}" "${details_b64}"
+
   governance:
+    needs: evidence
+
     # The context string. GitHub matches a required status check against the
     # JOB name, never the workflow name, so this is the load-bearing one.
     #
@@ -134,6 +390,13 @@ jobs:
       - name: Fetch live governance evidence
         env:
           GH_TOKEN: ${{ github.token }}
+          # N-2. Through `env:`, never `${{ }}` inside the script — these carry
+          # GitHub API content and a ruleset name is administrator-supplied
+          # text. Rendered into the shell source it would be code.
+          APP_MODE: ${{ needs.evidence.outputs.mode }}
+          APP_DETAIL: ${{ needs.evidence.outputs.detail }}
+          APP_RULESETS_B64: ${{ needs.evidence.outputs.rulesets_b64 }}
+          APP_DETAILS_B64: ${{ needs.evidence.outputs.details_b64 }}
         # Deliberately exits 0 even when GitHub cannot be reached.
         #
         # That is not `|| true` masking: a failed fetch is a real outcome this
@@ -199,7 +462,66 @@ jobs:
               '{($n): {status: $s, detail: $d}}')"
           }
 
-          fetch rulesets "rulesets" "${EVIDENCE}/rulesets.json" 'type == "array"'
+          # N-2. Adopt the App-authenticated payloads when the evidence job
+          # produced them, and re-verify their shape here rather than trusting
+          # the upstream job's word for it. Two jobs agreeing that a payload is
+          # well-formed costs one `jq` call; a malformed one reaching the
+          # validator is a FAIL with a misleading cause.
+          adopt_app_evidence() {
+            local list details
+
+            if ! list="$(printf '%s' "${APP_RULESETS_B64}" | base64 -d 2>/dev/null)" \
+               || ! details="$(printf '%s' "${APP_DETAILS_B64}" | base64 -d 2>/dev/null)" \
+               || ! printf '%s' "${list}" | jq -e 'type == "array"' >/dev/null 2>&1 \
+               || ! printf '%s' "${details}" | jq -e 'type == "array" and all(.[]; has("rules"))' >/dev/null 2>&1; then
+              return 1
+            fi
+
+            printf '%s' "${list}" > "${EVIDENCE}/rulesets.json"
+            printf '%s' "${details}" > "${EVIDENCE}/ruleset-details.json"
+            return 0
+          }
+
+          use_app_evidence="no"
+
+          case "${APP_MODE}" in
+            app)
+              if adopt_app_evidence; then
+                use_app_evidence="yes"
+                echo "ruleset evidence: App-authenticated (Integration#4902397)"
+                entries="${entries}$(jq -nc --arg d "${APP_DETAIL}" \
+                  '{rulesets: {status: "ok", detail: $d},
+                    ruleset_details: {status: "ok", detail: $d},
+                    ruleset_details_app: {status: "ok", detail: $d}}')"
+              else
+                # The upstream job said `app` and handed over something that is
+                # not what it claimed. That is a defect, not a degradation, and
+                # it is recorded as an endpoint failure so the ratchet goes red
+                # rather than quietly re-reading the same blind payloads.
+                entries="${entries}$(jq -nc \
+                  '{ruleset_details_app: {status: "unexpected_shape",
+                    detail: "the evidence job reported mode=app but its payloads did not decode into well-formed ruleset JSON"}}')"
+              fi
+              ;;
+            unavailable)
+              # A credential WAS present and did not work. Never silent: the
+              # ratchet turns any endpoint that is not `ok` into INCOMPLETE.
+              entries="${entries}$(jq -nc --arg d "${APP_DETAIL}" \
+                '{ruleset_details_app: {status: "unavailable", detail: $d}}')"
+              ;;
+            *)
+              # `fallback`, or an empty mode because the job was skipped. The
+              # expected path on a fork pull request: no endpoint is recorded,
+              # the built-in token supplies what it can, and the three bypass
+              # checks report EXTERNAL — which `expected_unverified` permits,
+              # because it is a subset bound.
+              echo "ruleset evidence: built-in token (no App credential in this context)"
+              ;;
+          esac
+
+          if [ "${use_app_evidence}" = "no" ]; then
+            fetch rulesets "rulesets" "${EVIDENCE}/rulesets.json" 'type == "array"'
+          fi
 
           # M50-05 N-4b. A SECOND ruleset call, to a different endpoint, because
           # the list above cannot answer the question:
@@ -285,7 +607,9 @@ jobs:
             fi
           }
 
-          fetch_ruleset_details   # N-1 · walk every ruleset the list reported
+          if [ "${use_app_evidence}" = "no" ]; then
+            fetch_ruleset_details   # N-1 · walk every ruleset the list reported
+          fi
 
           fetch codeowners_errors "codeowners/errors" "${EVIDENCE}/codeowners-errors.json" 'type == "object"'
 

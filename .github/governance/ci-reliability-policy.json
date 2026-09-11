@@ -83,6 +83,10 @@
       "class": "governance-integrity",
       "measured_seconds": 104
     },
+    "governance-advisory.yml:evidence": {
+      "class": "fast-validation",
+      "_note": "N-2. Mints an installation token for App 4902397 and issues one GET per ruleset. No checkout, no toolchain, no install, no action — the private key must not sit in a job that also runs third-party code. The bound exists to catch a hang."
+    },
     "governance-advisory.yml:governance": {
       "class": "fast-validation",
       "measured_seconds": 23
@@ -371,7 +375,7 @@
     "components_seconds": {
       "fixed_overhead": {
         "value": 150,
-        "note": "Checkout, two extractions, actionlint over 15 files, and every structural control that makes no network call \u2014 n1_release_tag_control among them, measured at 0.16s. Measured healthy total for the whole job was 104s on run 33879626208; 150 carries headroom."
+        "note": "Checkout, two extractions, actionlint over 15 files, and every structural control that makes no network call \u2014 n1_release_tag_control and n2_evidence_credential_control among them, measured at 0.16s and 0.4s. Measured healthy total for the whole job was 104s on run 33879626208; 150 carries headroom."
       },
       "governed_downloads": {
         "count": 2,
@@ -417,6 +421,7 @@
       "m31_platform_negative_control",
       "m37_governance_advisory_control",
       "n1_release_tag_control",
+      "n2_evidence_credential_control",
       "verify_deployment_safety",
       "m44_deployment_safety_control",
       "verify_dependency_audit_gate",

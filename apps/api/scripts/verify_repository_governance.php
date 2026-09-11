@@ -2409,7 +2409,38 @@ if ($liveRulesets === null) {
     // Iterating `$liveRulesets` rather than `$byName` is part of the fix:
     // `$byName` is keyed by name, so an entry without one never appeared here
     // at all. Now it arrives, fails classification, and blocks a PASS.
-    externalCheck('no bypass actors on the main or tag-immutability rulesets', function () use ($liveRulesets): array {
+    // N-2. The evidence source this check has always been missing.
+    //
+    // The note in known-gaps.json named the remedy exactly: "Closing this gap
+    // needs an evidence source that actually carries the field." `GET /rulesets`
+    // never will — the omission is structural, not a permission. `GET
+    // /rulesets/{id}` does carry it, to a caller holding `Administration: read`,
+    // and the advisory workflow now fetches one per ruleset as the release App.
+    //
+    // So each live ruleset is enriched from its own detail payload, matched by
+    // id, before classification. Nothing else moves: the four-way discrimination
+    // below is untouched, classification still runs on the merged record, and a
+    // run with no detail evidence — a fork pull request among them — sees
+    // exactly what it saw before and reports EXTERNAL. Only a payload that
+    // genuinely carries the field can change the outcome, which is the property
+    // that made the field absent-vs-empty distinction worth having.
+    // `rules` is merged alongside `bypass_actors`, and that is not incidental.
+    // classifyRulesetForBypass() excludes a ruleset whose only rule is
+    // `creation` — an actor exempt from it can create a ref, not delete or move
+    // one — but the list payload carries no `rules`, so the creation ruleset
+    // cannot be recognised as creation-only and is treated as enforcing. Supply
+    // `bypass_actors` without `rules` and the release App's legitimate grant
+    // reads as a standing bypass: a FAIL, on a repository that is correctly
+    // configured. The two fields answer one question and travel together.
+    $detailsById = [];
+
+    foreach (($rulesetDetailPool ?? []) as $detail) {
+        if (is_array($detail) && isset($detail['id'])) {
+            $detailsById[(string) $detail['id']] = $detail;
+        }
+    }
+
+    externalCheck('no bypass actors on the main or tag-immutability rulesets', function () use ($liveRulesets, $detailsById): array {
         $examined = 0;
         $excluded = 0;
         $offenders = [];
@@ -2418,6 +2449,19 @@ if ($liveRulesets === null) {
         $unclassifiable = [];
 
         foreach ($liveRulesets as $index => $rs) {
+            // Merged only when the detail payload actually carried the key, so
+            // a detail read that came back without it leaves the list entry
+            // exactly as silent as it already was.
+            if (is_array($rs) && isset($rs['id']) && isset($detailsById[(string) $rs['id']])) {
+                $detail = $detailsById[(string) $rs['id']];
+
+                foreach (['rules', 'bypass_actors'] as $field) {
+                    if (array_key_exists($field, $detail)) {
+                        $rs[$field] = $detail[$field];
+                    }
+                }
+            }
+
             [$class, $label] = classifyRulesetForBypass($rs, $index);
 
             if ($class === 'ambiguous') {

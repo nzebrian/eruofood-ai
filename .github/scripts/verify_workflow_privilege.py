@@ -173,6 +173,37 @@ def normalise(perms: object) -> object:
     return perms
 
 
+# GitHub's three levels, ordered. `none` is what an omitted scope means once a
+# `permissions:` block exists at all.
+_LEVELS = {"none": 0, "read": 1, "write": 2}
+
+
+def narrows_or_equals(job_perms: object, want: object) -> bool:
+    """Is a job-level `permissions:` block no wider than the workflow's?
+
+    True when every scope the job declares sits at or below the workflow's level
+    for that same scope. `{}` — no scope at any level — is therefore the
+    narrowest acceptable block rather than a violation, which is the point:
+    a job that mints its own credential should not also be handed the built-in
+    token, and saying so must not read as privilege escalation.
+
+    String forms (`read-all`, `write-all`) cannot be compared scope-by-scope and
+    are never accepted here.
+    """
+    if isinstance(job_perms, str) or isinstance(want, str):
+        return False
+    if not isinstance(job_perms, dict) or not isinstance(want, dict):
+        return False
+
+    for scope, level in job_perms.items():
+        granted = _LEVELS.get(str(want.get(scope, "none")), 0)
+        asked = _LEVELS.get(str(level), max(_LEVELS.values()) + 1)
+        if asked > granted:
+            return False
+
+    return True
+
+
 def main(argv: list[str]) -> int:
     repo_root = Path.cwd()
     json_out: Path | None = None
@@ -269,6 +300,19 @@ def main(argv: list[str]) -> int:
 
         # A job-level block replaces the workflow-level one outright, so a job
         # can widen past a correct top-level policy.
+        #
+        # N-2 corrected the comparison from `!= want` to an ordering. Equality
+        # rejected `permissions: {}` — the strictest block GitHub accepts, and
+        # the right one for a job holding a GitHub App private key, which must
+        # not also carry a built-in token it has no use for. Reading "different
+        # from the workflow" as "widened" would have forced that job to accept
+        # a credential in order to satisfy a control named no_job_widening.
+        #
+        # The direction is still enforced: every scope a job declares must sit
+        # at or below the workflow's level for that scope, and a scope the
+        # workflow does not grant may only be declared `none`. A string form
+        # (`read-all`, `write-all`) is not comparable scope-by-scope and stays
+        # rejected.
         widened = []
         for jk, job in (doc.get("jobs") or {}).items():
             if not isinstance(job, dict):
@@ -276,7 +320,7 @@ def main(argv: list[str]) -> int:
             jp = job.get("permissions")
             if jp is None:
                 continue
-            if isinstance(jp, str) or jp != want:
+            if not narrows_or_equals(jp, want):
                 widened.append(f"{jk}={jp!r}")
         report.check(
             f"privilege.{s}.no_job_widening",

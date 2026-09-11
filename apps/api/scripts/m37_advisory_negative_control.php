@@ -1394,6 +1394,114 @@ if (outcomeOf($result['output'], $rcCheck) === 'EXTERNAL') {
     bad('G25 · an ambiguous branch payload set was accepted as the answer');
 }
 
+// =============================================================================
+// H) N-2 — the detail payload as the bypass-actor evidence source
+// =============================================================================
+//
+// `github.no_bypass_actors` read `GET /rulesets`, which never carries
+// `bypass_actors` for anybody: the omission is structural, not a permission, so
+// the check could not have passed however privileged the caller was. N-2 merges
+// the per-ruleset detail payload — which does carry the field, to a caller
+// holding `Administration: read` — into each list entry before classification.
+//
+// Two things have to hold, and the first is not the interesting one. It must
+// now be able to answer. It must ALSO stay silent on every input that does not
+// genuinely answer it, because the merge is new reachability into a check whose
+// entire history is a vacuous PASS being found and closed twice.
+//
+// The sharp case is H4. `bypass_actors` and `rules` travel together: without
+// `rules` the creation ruleset cannot be recognised as creation-only, so the
+// release App's legitimate, recorded grant reads as a standing bypass and the
+// check FAILS on a correctly configured repository. A first implementation
+// merged only `bypass_actors` and did exactly that.
+
+heading('H) N-2 · bypass_actors merged from the ruleset detail payload');
+
+$mainList = static fn (): array => [[
+    'id' => 21203909,
+    'name' => 'main branch protection (sole owner)',
+    'target' => 'branch',
+    'enforcement' => 'active',
+]];
+
+$mainDetail = static function (mixed $bypass, bool $withRules = true) use ($tagDetail): array {
+    $d = $tagDetail(21203909, 'main branch protection (sole owner)', ['deletion', 'non_fast_forward'], $bypass);
+    $d['target'] = 'branch';
+
+    if (! $withRules) {
+        unset($d['rules']);
+    }
+
+    return $d;
+};
+
+$releaseActor = [['actor_id' => 4902397, 'actor_type' => 'Integration', 'bypass_mode' => 'always']];
+
+$hCases = [
+    [
+        'H1 · the detail payload supplies an explicitly empty bypass_actors → PASS',
+        $mainList(), [$mainDetail([])], 'PASS',
+    ],
+    [
+        'H2 · the detail payload supplies a standing bypass actor → FAIL',
+        $mainList(), [$mainDetail([['actor_id' => 5, 'actor_type' => 'RepositoryRole', 'bypass_mode' => 'always']])], 'FAIL',
+    ],
+    [
+        'H3 · a detail payload that itself omits bypass_actors → EXTERNAL, not PASS',
+        $mainList(), [$mainDetail('__omit__')], 'EXTERNAL',
+    ],
+    [
+        'H4 · the release App grant on a creation-only ruleset is NOT a standing bypass',
+        [$tagListEntry(22844673, $creationName), $tagListEntry(22845720, $immutableName)],
+        [
+            $tagDetail(22844673, $creationName, ['creation'], $releaseActor),
+            $tagDetail(22845720, $immutableName, ['deletion', 'non_fast_forward', 'update'], []),
+        ],
+        'PASS',
+    ],
+    [
+        'H5 · the same grant on the IMMUTABILITY ruleset is still a FAIL',
+        [$tagListEntry(22844673, $creationName), $tagListEntry(22845720, $immutableName)],
+        [
+            $tagDetail(22844673, $creationName, ['creation'], []),
+            $tagDetail(22845720, $immutableName, ['deletion', 'non_fast_forward', 'update'], $releaseActor),
+        ],
+        'FAIL',
+    ],
+    [
+        'H6 · a detail payload whose id matches no listed ruleset merges nothing → EXTERNAL',
+        $mainList(), [array_replace($mainDetail([]), ['id' => 99999999])], 'EXTERNAL',
+    ],
+    [
+        'H7 · no detail evidence at all → EXTERNAL, exactly as before N-2',
+        $mainList(), null, 'EXTERNAL',
+    ],
+    // H8/H9 record a deliberate asymmetry rather than a defect. `rules` is what
+    // lets a creation-only ruleset be EXCLUDED; it is not needed to read an
+    // answer that has already been given. An explicitly empty bypass list means
+    // nobody is exempt from whatever the rules turn out to be, so it is
+    // decisive without them — and a NON-empty one is treated as a violation
+    // rather than waived, which is the conservative direction.
+    [
+        'H8 · an empty bypass list answers the question even with no rules → PASS',
+        $mainList(), [$mainDetail([], false)], 'PASS',
+    ],
+    [
+        'H9 · a non-empty bypass list with no rules is NOT waived for want of them → FAIL',
+        $mainList(), [$mainDetail($releaseActor, false)], 'FAIL',
+    ],
+];
+
+foreach ($hCases as [$description, $list, $details, $expected]) {
+    $actual = $runTag($list, $details, $bypassCheck);
+
+    if ($actual === $expected) {
+        ok($description);
+    } else {
+        bad($description.' — expected '.$expected.', got '.$actual);
+    }
+}
+
 // -- Integrity ----------------------------------------------------------------
 
 $fingerprintAfter = m37_fingerprint($repoRoot);

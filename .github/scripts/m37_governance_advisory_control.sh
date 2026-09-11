@@ -188,7 +188,7 @@ control 'the evidence fetch is removed' \
 
 control 'the ruleset-detail endpoint is no longer called (N-4b/N-1 evidence source)' \
     'ADVISORY_RULESET_DETAIL_MISSING' \
-    "py_sub '$ADVISORY_REL' 'rulesets/\${id}' 'nothing/0'"
+    "py_sub '$ADVISORY_REL' '\${GITHUB_REPOSITORY}/rulesets/\${id}' '\${GITHUB_REPOSITORY}/nothing/0'"
 
 control 'the ruleset-detail walk is defined but never invoked' \
     'ADVISORY_RULESET_DETAIL_MISSING' \
@@ -196,7 +196,7 @@ control 'the ruleset-detail walk is defined but never invoked' \
 
 control 'the ruleset ids are no longer derived from the fetched list (N-1)' \
     'ADVISORY_RULESET_IDS_UNDERIVED' \
-    "py_sub '$ADVISORY_REL' 'jq -r '\"'\"'.[] | select(has(\"id\")) | .id'\"'\"'' 'echo 21203909 #'"
+    "py_sub '$ADVISORY_REL' 'jq -r '\"'\"'.[] | select(has(\"id\")) | .id'\"'\"' \"\$list\"' 'echo 21203909 #'"
 
 control 'the validator invocation is removed' \
     'ADVISORY_VALIDATOR_MISSING' \
@@ -219,11 +219,15 @@ control 'the advisory workflow is deleted' \
 
 control 'the job is renamed' \
     'ADVISORY_JOB_NAME_WRONG' \
-    "py_sub '$ADVISORY_REL' '    name: Governance Advisory' '    name: Governance Advisory (non-blocking)'"
+    "py_sub '$ADVISORY_REL' '    name: Governance Advisory
+    runs-on' '    name: Governance Advisory (non-blocking)
+    runs-on'"
 
 control 'the job name collides with a required context' \
     'ADVISORY_JOB_NAME_COLLIDES' \
-    "py_sub '$ADVISORY_REL' '    name: Governance Advisory' '    name: CI · Workflow Integrity'"
+    "py_sub '$ADVISORY_REL' '    name: Governance Advisory
+    runs-on' '    name: CI · Workflow Integrity
+    runs-on'"
 
 control 'the advisory context is added to the required set' \
     'ADVISORY_CONTEXT_REQUIRED' \
