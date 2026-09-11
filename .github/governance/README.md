@@ -1,15 +1,65 @@
 # Repository Governance
 
-Prepared by **M29-A**, extended by **M29-B** and **M29-I**. **Nothing here has been applied.**
+Prepared by **M29-A**, extended by **M29-B** and **M29-I**, and **applied** —
+branch protection in M37, the two production tag rulesets on **2026-09-11**
+(N-1). See *Deployed rulesets* below for what is live and what is still not.
 
-Every file in this directory describes protection that GitHub is *not* currently
-enforcing. They exist so that when an administrator with the right credential
-and the missing identities sits down, the work is a transcription rather than a
-design exercise.
+Most of this directory is still a description rather than an enforcement: the
+tag rulesets and the `main` ruleset are live, CODEOWNERS is not, and identity
+governance is deliberately deferred. Which is which is the first thing to
+establish before trusting any file here.
 
-## What the audit found
+## Deployed rulesets
 
-Read live from the GitHub API on 2026-08-21 against `main` at `cbdc2ab`:
+Applied by the repository administrator. The ids are recorded so a later
+`GET /rulesets/<id>` can be run by hand, and so a ruleset that quietly
+disappears can be told apart from one that was recreated.
+
+| Ruleset | ID | Target | Applied |
+|---|---|---|---|
+| `main branch protection (sole owner)` | **21203909** | **branch** — `refs/heads/main` | M37 |
+| `production release tags — restricted creation` | **22844673** | **tag** — `refs/tags/v*` | **2026-09-11** |
+| `production release tags — immutable` | **22845720** | **tag** — `refs/tags/v*` | **2026-09-11** |
+
+The first is branch protection and has nothing to do with tags. The other two
+are the pair `production-tags-ruleset.json` describes, and they are two rather
+than one on purpose: GitHub scopes `bypass_actors` to a whole ruleset, so an
+actor allowed to *create* a release tag inside a combined ruleset would be
+exempt from `deletion` as well.
+
+- **22844673** carries `creation`, and its only bypass actor is
+  `Integration#4902397` — the *EruoFood Release Governor* GitHub App. Bypass
+  actor types are `Integration`, `OrganizationAdmin`, `RepositoryRole` and
+  `Team`; there is no `User`, so no person holds this grant. Release tags are
+  cut by dispatching `.github/workflows/release-tag.yml`, which acts as that App.
+- **22845720** carries `deletion`, `non_fast_forward` and `update`, with
+  `bypass_actors: []` — empty for everyone, permanently. All three rules matter:
+  without `update` a tag can be **moved**, without `non_fast_forward` rewritten,
+  without `deletion` removed and recreated.
+
+First exercised end to end on 2026-09-11: run
+[`34540481139`](https://github.com/nzebrian/eruofood-ai/actions/runs/34540481139)
+created `v0.0.1-rc3` at `b3f5ad64034f9d7123d916a13185009099ddbc0f` as the App,
+and `Release · Production Gates`
+[#47](https://github.com/nzebrian/eruofood-ai/actions/runs/34540492686) passed
+on it.
+
+What is live is asserted on every `Governance Advisory` run against
+`GET /rulesets` and `GET /rulesets/{id}` — never against the JSON in this
+directory. Those checks are `github.tag_rulesets_active`,
+`github.tag_ruleset_split`, `github.tag_ruleset_rules`,
+`github.tag_ruleset_bypass_empty` and `github.tag_ruleset_release_actors`.
+
+**Still not applied:** `.github/CODEOWNERS` remains inert with every rule
+commented out, and reviewer identity is deferred under `SOLE_OWNER` — see
+`known-gaps.json` and `identities.json`.
+
+## What the original audit found
+
+**Historical.** Read live from the GitHub API on **2026-08-21** against `main`
+at `cbdc2ab`, before anything was applied. Rows below are the starting state,
+not the current one — `Rulesets?` and `Tag creation restricted?` in particular
+are superseded by *Deployed rulesets* above.
 
 | Question | Answer | Evidence |
 |---|---|---|
@@ -27,15 +77,21 @@ Read live from the GitHub API on 2026-08-21 against `main` at `cbdc2ab`:
 | Signed commits/tags required? | **No** | — |
 | CODEOWNERS owners resolve? | **No — 8 errors** | `GET /codeowners/errors` |
 
-Two consequences worth stating plainly, because they are easy to read past:
+Two consequences of that state, worth keeping because they are what the work
+since has been for. **Both are now closed:**
 
 **Every check on PR #21 was advisory.** M28 merged with five green checks, and it
 would have merged with five red ones. The gates that M27 and M28 spent their
-effort building are, at this moment, decoration.
+effort building were, at that moment, decoration. *Closed by ruleset 21203909:
+nine required contexts, asserted live on every advisory run by
+`github.required_checks_enforced`.*
 
-**A production release is one `git push --tags` away.** `release.yml` triggers on
-`v*.*.*` and ends by promoting a container image. Nothing restricts who may
-create that tag.
+**A production release was one `git push --tags` away.** `release.yml` triggers
+on `v*.*.*`, and nothing restricted who could create that tag — demonstrated
+rather than argued, since `v0.0.1-rc1` and `v0.0.1-rc2` were both cut by an
+ordinary account with no approval and no required check. *Closed on 2026-09-11
+by rulesets 22844673 and 22845720: creation is restricted to the release App,
+and a release tag can no longer be moved, rewritten or deleted by anyone.*
 
 ## Why CODEOWNERS names nobody
 
