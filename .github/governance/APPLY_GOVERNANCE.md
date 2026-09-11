@@ -346,8 +346,8 @@ applied wrongly. Do not record that as a gap; fix the ruleset.
 
 ## 4. Configure required checks
 
-The seven contexts are already in `main-ruleset.json`. Verify GitHub received
-them exactly — five contain **U+00B7 MIDDLE DOT (·)**, and a mistyped context
+The nine contexts are already in `main-ruleset.json`. Verify GitHub received
+them exactly — six contain **U+00B7 MIDDLE DOT (·)**, and a mistyped context
 never reports, which leaves pull requests pending forever:
 
 ```bash
@@ -360,9 +360,17 @@ Compare against `.github/governance/required-checks.json`. They must match byte
 for byte.
 
 M29-A removed `paths:` from the `pull_request` trigger of `ci-api.yml`,
-`ci-web.yml`, `contracts.yml` and `ci-docker.yml` so all seven report on every
-pull request. **If you re-add a path filter to any of them, the corresponding
-required check will hang.**
+`ci-web.yml`, `contracts.yml` and `ci-docker.yml` so the contexts they carry
+report on every pull request. **If you re-add a path filter to any of them, the
+corresponding required check will hang.**
+
+The required set has grown since M29-A wrote this — `Mobile Certification`
+(M50-05) brought it to nine, carried by seven workflows in total. Do not read a
+count off this page: `verify_ci_dispatchability.py` checks every required
+workflow's trigger, and since M50-05 N-4b the live GitHub ruleset is compared
+against `required-checks.json` as an exact set on every advisory run
+(`github.required_checks_enforced`). Those two are the authority; this section is
+the procedure.
 
 ---
 
