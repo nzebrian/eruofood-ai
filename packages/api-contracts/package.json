@@ -10,7 +10,7 @@
     "preview": "redocly build-docs openapi.yaml -o generated/docs.html"
   },
   "devDependencies": {
-    "@redocly/cli": "^2.51.2",
+    "@redocly/cli": "^2.63.0",
     "openapi-typescript": "^7.4.1"
   },
   "overrides": {
